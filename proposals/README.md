@@ -33,7 +33,7 @@ read or assumed, it says so.
 | 11 | [Music](0011-music.md): the part `music`; artists, albums (release groups) and tracks (recordings) by MusicBrainz ID; titles carry their own names; art from the Cover Art Archive; one audio playback per track | Adopted; every type optional (`video`, `music`); open points still open |
 | 12 | [Groups](0012-groups.md): servers whose operators chose each other, as a list of signed events every member keeps; an owner, admins, members; one kind of code; requests encrypted for each member; offers and limits per group; the part `groups` | Adopted 2026-11-20, written into spec/v0 (groups.md, core, catalog, playback) |
 | 13 | [Version 0](0013-version-0.md): the protocol is a draft until it's stable: every version becomes 0, spec/history/test-draft.md moves to history | Adopted and done 2026-11-20 |
-| 14 | [Relations](0014-relations.md): the pairing becomes the low-level link; operators manage relations (a direct one, chosen by both, and one per group); a link lasts while one relation does; `direct` in `hello` | Proposed 2026-11-21 |
+| 14 | [Relations](0014-relations.md): the pairing becomes the low-level link; operators manage relations (an individual one, chosen by both, and one per group); a link lasts while one relation does; `individual` in `hello`; keys forgotten only on blocking | Adopted 2026-11-21, not yet written into spec/v0 |
 | – | [Clarifications](clarifications.md): 34 small fixes that need only a "yes" | Accepted, all 34 |
 
 Some proposals lean on others; each says how it reads without them:

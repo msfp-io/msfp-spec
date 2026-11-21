@@ -1,10 +1,13 @@
 # Proposal 14: Relations
 
-Status: Proposed (2026-11-21), from the owner's model of 2026-11-21: "the
-direct pairing itself is a low-level unit. It doesn't necessarily have to
-be controllable by the user directly. Individual and group pairings are
-higher-level relations, which the user creates and manages. The pairing
-exists as long as there is a relation between both peers."
+Status: Adopted (2026-11-21), with the owner's choices on the open points
+(see the end): the name "individual", keys forgotten only on blocking,
+fingerprints offered. Not yet written into spec/v0. From the owner's
+model of 2026-11-21: "the direct pairing itself is a low-level unit. It
+doesn't necessarily have to be controllable by the user directly.
+Individual and group pairings are higher-level relations, which the user
+creates and manages. The pairing exists as long as there is a relation
+between both peers."
 Touches: [core](../spec/v0/core.md) sections 7 and 9.2 (`hello`), 17.1
 (its vector); [groups](../spec/v0/groups.md) sections 1, 2, 4, 6, 7, 9
 and 10; [playback section 5](../spec/v0/playback.md#5-limits); the
@@ -34,14 +37,14 @@ four problems.
    (groups section 2). So the inviter appears in both panels (Overfin's
    and the Jellyfin plugin's) next to the servers the operator paired with
    themselves, and it stays after the newcomer leaves the group. The
-   owner found it "bizarre": the operator made a group relation, not a
-   direct one.
+   owner found it "bizarre": the operator made a group relation, not an
+   individual one.
 3. **Relations nobody chose.** When a member leaves without ticking its
    links (groups section 7), each one held only by the group "becomes a
    pairing by hand". The other side does the same when it receives
    `left`: msfp-go (`groups.go`, after a member's events) turns that link
    into one by hand and copies the group's offers and pool into it. Both
-   operators now have a direct pairing neither of them asked for.
+   operators now have an individual pairing neither of them asked for.
 4. **Sources are per side and never told.** Each server keeps its own
    sources, and nothing on the wire carries them. One side can count a
    pairing by hand the other doesn't, and neither panel can show the
@@ -55,38 +58,39 @@ four problems.
   states, rotation, revocation, calls. It is the low-level unit, and the
   panels don't present it as something to manage.
 - **Relation**: why two servers are linked. There are two kinds:
-  - the **direct relation**, chosen by both operators;
+  - the **individual relation**, chosen by both operators;
   - a **group relation**, one per group the two servers share and are
     linked through.
 - A link exists while the two servers have **at least one relation**.
   When the last one goes, the link ends.
-- Relations are **mutual**: both servers hold the same set. A direct
+- Relations are **mutual**: both servers hold the same set. An individual
   relation exists only when both sides want it. A group relation exists
   when both are members and their link was made or kept through that
   group, as groups section 1 already defines it.
 
 The groups part's "sources" become relations, and "a pairing by hand"
-becomes "the direct relation", everywhere.
+becomes "the individual relation", everywhere.
 
-### What each side says: `direct` in `hello`
+### What each side says: `individual` in `hello`
 
-The signed `hello` body (core section 9.2) gains one member, `direct`, a
-boolean: whether this side wants the direct relation. The direct relation
-holds when both sides' latest `hello` say `true`. A server sends `hello`
-at once when its own `direct` changes, as it does for a new address
+The signed `hello` body (core section 9.2) gains one member,
+`individual`, a boolean: whether this side wants the individual
+relation. The individual relation holds when both sides' latest `hello`
+say `true`. A server sends `hello`
+at once when its own `individual` changes, as it does for a new address
 (core section 13).
 
-The table below shows how `direct` behaves in each case.
+The table below shows how `individual` behaves in each case.
 
-| Situation | Our `direct` | Theirs | Relation | Panel |
+| Situation | Our `individual` | Theirs | Relation | Panel |
 |---|---|---|---|---|
-| Paired with a code, both accepted | `true` | `true` | direct | Servers: paired |
-| We ask a group member for a direct relation | `true` | `false` | asked | Servers: "asked" |
+| Paired with a code, both accepted | `true` | `true` | individual | Servers: paired |
+| We ask a group member for an individual relation | `true` | `false` | asked | Servers: "asked" |
 | A group member asks us | `false` | `true` | none yet | Servers: "asks you", Accept or Refuse |
 | Either side ends it | `false` | either | none | gone from Servers |
 
-A server that can't be called (core section 7.5) carries `direct` in the
-`hello` it sends on schedule, as it carries everything else.
+A server that can't be called (core section 7.5) carries `individual` in
+the `hello` it sends on schedule, as it carries everything else.
 
 No new call is needed. `hello` already brings both sides to the same state
 (core section 9.2), and an asked relation that is never accepted costs
@@ -95,43 +99,58 @@ nothing.
 ### What changes in each flow
 
 1. **Pairing with a code (core section 7.1).** Both sides start with
-   `direct: true`. The code is the consent, as today. A plain code gives
-   a direct relation and nothing else.
+   `individual: true`. The code is the consent, as today. A plain code gives
+   an individual relation and nothing else.
 2. **A group's code (groups sections 2 and 4).** The newcomer's link to
-   its inviter has the group relation only, with `direct: false` on both
-   sides. The inviter no longer appears among the newcomer's direct
+   its inviter has the group relation only, with `individual: false` on both
+   sides. The inviter no longer appears among the newcomer's individual
    relations, and leaving the group ends that link like any other group
    link.
-3. **Asking for a direct relation.** Between two servers already linked
+3. **Asking for an individual relation.** Between two servers already linked
    through a group, either operator asks, and the other accepts or
    refuses in its panel. No code is needed: the keys are already trusted
-   through the group. The panel offers a fingerprint comparison then,
-   because a group link never had one (groups section 11, "Trust passes
-   through the inviter").
-4. **Ending the direct relation.** The server sends `hello` with
-   `direct: false`. If a group relation remains, the link stays, and
-   nothing is forgotten. If none remains, the link ends as core section
-   7.4 says, with the keys recorded as forgotten.
+   through the group. The panel offers a fingerprint comparison then, and
+   doesn't require it, because a group link never had one (groups section
+   11, "Trust passes through the inviter").
+4. **Ending the individual relation.** The server sends `hello` with
+   `individual: false`. If a group relation remains, the link stays. If
+   none remains, the link ends as core section 7.4 says, but without
+   recording the keys as forgotten (see "Forgetting" below).
 5. **Leaving a group (groups section 7).** The group relation goes, on
    both sides, as today. A link with no relation left ends, and nothing is
-   turned into a direct relation any more. The leave dialog lists the
-   links that would end and offers to **ask** those servers for a direct
+   turned into an individual relation any more. The leave dialog lists the
+   links that would end and offers to **ask** those servers for an individual
    relation first. The links that are asked stay until the answer: an
-   accepted one becomes direct, a refused one ends.
+   accepted one becomes individual, a refused one ends.
 6. **Banning and dissolving.** Same rule: the group relation goes, and a
    link with no relation left ends. `keepPairings` on `dissolved`
-   (groups section 7) can no longer create direct relations on its own:
-   see open point 2.
+   (groups section 7) no longer creates individual relations: with it,
+   each link held only by the group asks for an individual relation on
+   both sides, as in item 5, and stays until both answer. One that both
+   accept becomes individual, and one that either refuses ends.
 7. **Blocking** stays a link-level action: it ends the link whatever its
-   relations, and drops the server's requests in every group.
+   relations, drops the server's requests in every group, and is the
+   only action that records the keys as forgotten.
+
+### Forgetting
+
+Core section 7.4 records a peer's keys as forgotten on every ending.
+From now on only **blocking** does. A link that ends because its last
+relation went (an individual relation ended, a group left, a ban, a
+dissolution) is deleted on both sides with `ended` as today, but its keys
+aren't recorded. The two servers may be linked again later, through a
+group they share or with a new code. A server that was ended answers the
+former peer's calls as it answers any unknown key, with the plain `404`
+of core section 6.4. Only a blocked server gets the signed `404` of the
+forgotten list.
 
 ### What belongs to a relation and what to the link
 
 - **Each relation has:** what this server offers the peer, and the
-  limits it grants. The direct relation keeps its own offers and limits,
+  limits it grants. The individual relation keeps its own offers and limits,
   as the pairing by hand does today. A group relation takes the group's
   offers and pool. The rules of groups section 9 stay as they are, with
-  "pairing by hand" read as "direct relation": the link is offered the
+  "pairing by hand" read as "individual relation": the link is offered the
   union of its relations' offers, and the first pool with room counts.
 - **The link has:** the keys, the fingerprint, rotation and revocation,
   the address, what this server reads and shows of the peer's titles
@@ -141,23 +160,23 @@ nothing.
 
 These rules are for the panels, not the wire.
 
-- **Servers** lists the direct relations, the asked ones, and the
+- **Servers** lists the individual relations, the asked ones, and the
   requests waiting for an answer.
 - **Each group** lists its members, each with its link state (linked,
   asked, not linked) and the same window a server row opens: what you
   offer, what you show of it, its key, and Block.
 - **A server in several relations** appears in each place, with the
   others named on its row, for example "also in Family".
-- **Ending acts on one relation:** "End our direct relation", "Leave
+- **Ending acts on one relation:** "End our individual relation", "Leave
   Family". The link itself has only Block.
 - **"No way in"** (groups section 6) stays for the cases that remain, but
-  ending a direct relation no longer causes it.
+  ending an individual relation no longer causes it.
 
 ## Alternatives considered
 
 - **Change the panels only.** Hiding sources from the panels doesn't
   make ending act on one relation: "End" would still end the link (item
-  1), and leaving would still create direct pairings nobody chose (item
+  1), and leaving would still create individual pairings nobody chose (item
   3).
 - **A separate `relation` call** instead of a member of `hello`: more
   explicit, but `hello` already carries each side's state, already
@@ -166,7 +185,7 @@ These rules are for the panels, not the wire.
   all of that.
 - **Keep sources per side, and let "End" remove only our own source.**
   Then each server ends up with a different picture: one side sees no
-  direct relation while the other keeps offering through one. That is
+  individual relation while the other keeps offering through one. That is
   item 4, made worse.
 
 ## Cost
@@ -175,13 +194,13 @@ These rules are for the panels, not the wire.
   groups 1, 2, 4, 7, 9 and 10, playback 5, and the conformance suite's
   `hello` checks. "Pairing by hand" is renamed throughout.
 - **msfp-go and msfp-dotnet:**
-  - keep each side's `direct` flag, and send and read it in `hello`;
-  - add three operations: ask for a direct relation, accept or refuse
+  - keep each side's `individual` flag, and send and read it in `hello`;
+  - add three operations: ask for an individual relation, accept or refuse
     one, and end one;
   - end a link when its last relation goes;
-  - no longer turn group links into direct ones;
+  - no longer turn group links into individual ones;
   - change the group code's newcomer link to the group relation only.
-  - A migration: a link with a pairing by hand today gets `direct: true`
+  - A migration: a link with a pairing by hand today gets `individual: true`
     on that side, and learns the other side's flag at the next `hello`.
 - **Overfin and the plugin:** both panels rebuilt around relations, as
   above (Servers, each group, the server window, the leave dialog), and
@@ -194,27 +213,22 @@ mechanics (events, mail, `group-pair`) don't change.
 
 MSFP version 0 is a draft (proposal 13), so this ships in one release of
 every implementation, as proposal 12 did. During the update, a `hello`
-without `direct` is read as "unchanged": the peer's last known flag, and
+without `individual` is read as "unchanged": the peer's last known flag, and
 for a peer never heard with it, the same as ours. So a link already paired
-by hand on both sides stays direct when only one side has updated.
+by hand on both sides stays individual when only one side has updated.
 Links that only one side counted as by hand, such as the ones created
 when a member left (item 3), show as "asked" on that side after the
 update, and its operator chooses to keep or end them.
 
-## Open points
+## Decisions (2026-11-21)
 
-1. **Forgetting keys.** When the last relation goes because of leaving,
-   a ban or a dissolution, should the link end without recording the
-   keys as forgotten? Forgetting makes a later group link with the same
-   server impossible without a new code. The proposal forgets only on an
-   operator's own end of the direct relation, and on blocking.
-2. **`keepPairings` on `dissolved`.** Remove it, so each member asks the
-   others for a direct relation before the owner dissolves. Or keep it,
-   with each link held only by the group then asking for a direct
-   relation automatically, both sides still having to accept. The
-   proposal leans toward the second, so that dissolving never ends
-   friendships by surprise.
-3. **Fingerprints on a new direct relation** between group members:
-   offered (the proposal) or required.
-4. **The name** shown to operators: "direct" (the proposal, set against
-   "through a group") or "individual" (the owner's word).
+1. **Forgetting keys:** only on blocking, never on an ending (the
+   proposal had forgotten them on an operator's own end of the individual
+   relation too).
+2. **`keepPairings` on `dissolved`:** each link held only by the group
+   asks for an individual relation, both sides still accepting. This was
+   the proposal's lean, and the owner made no other choice.
+3. **Fingerprints on a new individual relation** between group members:
+   offered, not required.
+4. **The name:** "individual", on the wire (`individual` in `hello`) and
+   in the panels.
