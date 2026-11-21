@@ -954,8 +954,8 @@ For each peer:
 - whether it can be called: its `inbound` (section 7.5);
 - what the parts keep: offers, wants and catalogs
   ([catalog](catalog.md)), limits ([playback](playback.md)), and the
-  link's sources: a pairing by hand, and each group it was made or kept
-  through ([groups](groups.md#1-terms)).
+  link's relations: whether each side wants the individual relation, and
+  each group the link was made or kept through (section 7.7).
 
 A stores B's address as B gave it in the pair request. B stores A's
 address as the code gave it.
@@ -981,7 +981,9 @@ server that can't be called (section 7.5).
 
 ### 7.4 Ending a pairing
 
-Either operator ends a pairing at once, or refuses a waiting one.
+Either operator ends a pairing at once, or refuses a waiting one. Once
+paired, an operator usually ends a relation instead, and the link ends
+with its last relation (section 7.7).
 Removing a peer, in any state (`gone` and suspended included), is an
 ending:
 
@@ -1000,7 +1002,17 @@ ending:
 From then on, the ender answers that key's valid requests with a signed
 `404` (except `pair` while a code is live, section 6.5). The other server,
 on a signed `404` to `hello`, marks the ender `gone`. A pairing that ended
-starts again only with a new code.
+starts again with a new code, or through a group both servers are in
+([groups section 4.2](groups.md#42-making-the-link)): either takes the
+keys off the forgotten list (section 7.1, step 5).
+
+**Blocking** is an ending that also marks the keys it records as
+blocked. The forgotten list then does one more thing for those keys: a
+blocked server is kept away from every group (groups section 7), its
+requests dropped and its `group-pair` refused, until a code from this
+server takes it off the list. An ending that isn't a block keeps the
+server away from nothing: its keys are recorded only so that its calls
+get the signed `404` above.
 
 Entries of the forgotten list may be removed after a year. A removed
 entry only turns that key's signed `404` into an unsigned one.
@@ -1125,6 +1137,53 @@ makes them `paired` at once, and `hello` follows as in section 7.1, step
 pairing like any other: everything in this core holds for it. A request
 refused through a group sends nothing: no pairing existed, so there is
 no `ended` (section 7.4).
+
+### 7.7 Relations
+
+An operator doesn't manage the link itself, but its **relations**: why
+the two servers are linked. There are two kinds:
+
+- the **individual relation**, chosen by both operators;
+- a **group relation**, one for each group the two servers share and are
+  linked through ([groups section 1](groups.md#1-terms)).
+
+A link lasts while at least one relation holds.
+
+**The individual relation.** Each side says, in every `hello`, whether
+it wants it: `individual` (section 9.2). The relation holds while both
+sides' latest `hello` say `true`. A side never heard with `individual`
+(an implementation from before it) counts as wanting what this side
+wants.
+
+- **Pairing with a plain code** (section 7.1): both sides want it from
+  the start. **A group's code** gives the group relation only: neither
+  side wants it ([groups section 2](groups.md#2-codes-for-a-group)).
+- **Asking**: an operator sets its own `individual` to `true`, and the
+  server sends `hello` at once. The other side's panel shows the ask, and
+  its operator accepts it (its own `true`) or refuses. A refusal is
+  private, as in groups section 4.1: nothing is sent, and the asker's
+  panel keeps showing its ask until it withdraws it. Refusing an ask on a
+  link with no other relation ends the link.
+- **Ending**: an operator sets its own `individual` to `false`, and the
+  server sends `hello` at once. A side that sees the other's `individual`
+  go from `true` to `false` while the relation held sets its own to
+  `false` too: the relation has ended for both.
+- A server sends `hello` at once when its own `individual` changes. A
+  server that can't be called (section 7.5) carries it in its scheduled
+  `hello`.
+
+**When the last relation goes**, each side ends the link (section 7.4),
+unless either side wants the individual relation (its `individual` is
+`true`), or its operator is still choosing whether to keep the link (a
+dissolution, groups section 7). An ask that waits keeps the link until
+it is answered.
+
+**What the panel shows** is relations, in words the operator knows: the
+servers it chose one by one, each group with its members, and for each
+an "End", "Leave" or "Block". The link, its keys and the forgotten list
+stay out of sight, except for the fingerprint checks of section 7.1 and
+of a new individual relation between group members, which the panel
+offers and doesn't require.
 
 ## 8. Common rules for every call
 
@@ -1420,6 +1479,7 @@ Request and answer `200` carry the same members:
 | `address` | string | no | the sender's address now (section 13) |
 | `nextCommitment` | string | no | the sender's next key commitment, base64url of 32 bytes; it only repeats the one the receiver stores, and never changes it (section 12.5) |
 | `inbound` | boolean | no | `false`: the sender can't be called (section 7.5); absent or `true`: it can |
+| `individual` | boolean | no | whether the sender wants the individual relation (section 7.7); absent: what the sender last said |
 
 A request and an answer may also carry members that go one way only:
 
@@ -1457,7 +1517,8 @@ Then, unless the request said `ended`, the receiver:
 - keeps the request's `core` and `parts` as the caller's versions
   (section 10.3);
 - keeps the request's `certificates` as the caller's pins (section 3.2);
-- keeps the request's `inbound` as the caller's (section 7.5);
+- keeps the request's `inbound` as the caller's (section 7.5), and its
+  `individual`, when present (section 7.7);
 - if `address` differs from the caller's stored address, starts the
   check of section 13.2, or, for a caller that can't be called, stores
   it at once (section 13.2); if it is the stored address again, drops a
@@ -1472,7 +1533,8 @@ Then, unless the request said `ended`, the receiver:
 
 What the caller does with the answer:
 
-- `200`: it keeps the answer's versions, pins, address and `inbound`, as
+- `200`: it keeps the answer's versions, pins, address, `inbound` and
+  `individual`, as
   the receiver does above, and ignores its `nextCommitment`. Any
   server applies a valid `revocation` found in an answer signed with the
   key it revokes (sections 12.6, 12.7), and keeps nothing else of that

@@ -9,7 +9,7 @@ authority, no register, nothing that depends on one server staying up.
 Joining a group starts like any pairing, from a code its maker accepts
 (core section 7.1); the newcomer then asks every member to pair, each
 member answers for itself, and the pairings that follow carry everything
-a pairing by hand does. Nothing about a group is visible from outside: a
+a pairing made with a code does. Nothing about a group is visible from outside: a
 server that isn't a member gets the plain `404` of
 [core section 6.4](core.md#64-checking-a-request).
 
@@ -65,8 +65,9 @@ an admin, C and D members, and N a server joining.
   the same events compute the same state.
 - **Link**: a pairing between two servers (core section 7), whatever made
   it. Two servers are linked once, however many groups they share. Each
-  server keeps, per link, its **sources**: a pairing by hand, and each
-  group the two servers share and pair through.
+  server keeps, per link, its **relations** (core section 7.7): the
+  individual relation, and each group the two servers share and are
+  linked through. A link lasts while one of them holds.
 - **Mail**: a message from one member to another, carried by the members
   between them and readable by its recipient only (section 5).
 
@@ -74,7 +75,7 @@ an admin, C and D members, and N a server joining.
 
 A group's invitation is a pairing code with the group attached
 ([core section 5.1](core.md#51-format)): the same code, made and used the
-same way as one for a pairing by hand. An admin or the owner makes it,
+same way as a plain code. An admin or the owner makes it,
 with a number of uses (1 by default) and an expiry (24 hours by default,
 at most 30 days). A server that uses it calls `pair` on the code's maker
 (core section 9.1), and the maker's operator accepts it after the
@@ -85,14 +86,16 @@ Family, invited by B").
 **After the maker's operator accepts** a server that used a group code,
 and the two are `paired`, the maker signs a `joined` event for it
 (section 3.3), if the maker still holds the right to invite and its daily
-cap allows. Otherwise the pairing stands as a pairing by hand, and the
-maker's panel says the server couldn't be added to the group. A group code
+cap allows. Otherwise the link has no relation yet: the maker asks the
+server for the individual relation (core section 7.7), and its panel says
+the server couldn't be added to the group. A group code
 made by an admin stops working when the admin loses its role or is
 banned; one made by any member, when the group is dissolved or its maker
 leaves it.
 
-The newcomer is then paired with its inviter, a link whose sources are
-the pairing by hand and the group, and receives the list through it
+The newcomer is then paired with its inviter, a link whose one relation
+is the group (neither side wants the individual relation, core section
+7.7), and receives the list through it
 (section 6). Until it is accepted, it is nothing to the group.
 
 **A server already paired with the code's maker** doesn't call `pair`
@@ -101,7 +104,7 @@ pairing (section 8.4), with the code's secret hash and a proof. The code's
 use counts as for `pair`. The maker's operator accepts it as any server
 that used its code, the fingerprint there to check, or refuses it; then,
 as above, the maker signs `joined`, and the list follows through the
-pairing, which gains the group as a source. A refusal sends nothing: the
+pairing, which gains the group as a relation. A refusal sends nothing: the
 caller's operator gives up on its side, and a caller still waiting drops
 the group 30 days after calling (a code works 30 days at most).
 
@@ -314,7 +317,7 @@ the refusing member changes its mind: it lifts it, or sends a request
 itself. It is private: nothing is sent, the requester sees no answer, and
 the others never know. A request from a server the receiver blocked
 (section 7) is dropped without a trace. A request from a member already
-linked with the receiver adds the group to the link's sources, without
+linked with the receiver adds the group to the link's relations, without
 asking.
 
 ### 4.2 Making the link
@@ -334,7 +337,7 @@ have consented: one by sending the request, the other by accepting it.
 Both store each other as `paired` at once (core section 7.3), with the
 group as the link's source, and the caller sends `hello` (core section
 9.2) for versions and pins, as after an operator's acceptance. A link
-that already exists isn't made twice: the group is added to its sources.
+that already exists isn't made twice: the group is added to its relations.
 
 ## 5. Requests and answers: the mail
 
@@ -397,8 +400,8 @@ exchanges them with the members it is paired with through that group.
 
 **No way in.** A member whose links through a group have all ended has no
 way in: nothing it signs or sends leaves it, and nothing from the others
-reaches it, while the group has other members. A pairing by hand with a
-member doesn't change that, since it isn't a link through the group.
+reaches it, while the group has other members. An individual relation
+with a member doesn't change that: it isn't a link through the group.
 
 - Before ending a link that is the server's last one through a group
   with other members, the panel names that group and offers to leave it
@@ -411,30 +414,31 @@ member doesn't change that, since it isn't a link through the group.
 
 ## 7. Leaving, blocking, banning, dissolving
 
-- **Leaving**: the member signs `left` and passes it on. Its panel lists
-  the links made through this group, nothing ticked, one click to tick
-  them all. A ticked link ends (core section 7.4), whatever its other
-  sources. An unticked link loses this group as a source and keeps the
-  others; one whose only source was this group becomes a pairing by hand,
-  keeping what the group gave it, its offers and limits now its own
-  (section 9). The owner gives the group away before leaving.
+- **Leaving**: the member signs `left` and passes it on. Every link
+  through the group loses it as a relation, on both sides, and a link
+  with no relation left ends (core section 7.7). Before it leaves, its
+  panel lists the links only this group holds, nothing ticked, and asks
+  the ticked servers for the individual relation first: those links stay
+  until their operators answer. The owner gives the group away before
+  leaving.
 - **Blocking** is private and covers everything: a server that blocks
-  another ends its link with it (core section 7.4), whatever its sources,
-  and drops its requests in every group. Nothing goes to the group: a
+  another ends its link with it, whatever its relations, and keeps it
+  away from every group: its keys are blocked (core section 7.4). Nothing goes to the group: a
   count others could check would name who blocked, and one they couldn't
   check could be faked. Blocking a member offers to block the members it
   invited too, and theirs, nothing ticked, one click for all.
 - **Banning**: a `banned` event (section 3.3). Every member removes the
-  group from the banned server's link sources; a link with no other
-  source ends. The banned server keeps the ban like any event, through
+  group from the banned server's link relations; a link with no other
+  relation ends. The banned server keeps the ban like any event, through
   any member still paired with it: it removes the group, ends the links
-  that had no other source, and its panel says it was banned, with the
+  that had no other relation, and its panel says it was banned, with the
   reason if one was given. If that misses it, the members' `ended`
   give the same result.
 - **Dissolving**: a `dissolved` event, the owner's only. Each member
   passes it on first, then removes the group. With `keepPairings` false,
-  links whose only source was the group end; with true, they become
-  pairings by hand as when leaving. A member offline at the time learns
+  links whose only relation was the group end; with true, each waits for
+  its operator on each side, to keep it (asking for the individual
+  relation, core section 7.7) or end it. A member offline at the time learns
   it from a link's `ended`, or from its next `group-sync`.
 
 ## 8. The calls
@@ -501,7 +505,7 @@ The receiver checks that the caller's key is the current key of a member
 of the group, and that `answers` names a request it sent to that member,
 or an answer that member sent for one of its requests, not used before.
 Then it stores the caller as `paired` (or adds the group to an existing
-link's sources), and answers `200`, signed, with `name`,
+link's relations), and answers `200`, signed, with `name`,
 `nextCommitment` and `inbound`. Refusals: the `404` above; `409` when
 that request or answer was already used.
 
@@ -543,14 +547,14 @@ newcomer that used `pair`.
 - **Offers to a group.** A member chooses, per group, the libraries it
   offers that group, as if the group were one server: every member it is
   linked with through that group is offered them. A link is offered what
-  each of its sources offers (their union). On the wire nothing changes:
+  each of its relations offers (their union). On the wire nothing changes:
   `libraries` answers what the caller is offered
   ([catalog section 2](catalog.md#2-libraries)).
 - **Limits for a group as a whole.** A member sets, per group, a pool of
   streams, transcodes and a bitrate cap it lends that group, shared by all
   the group's other members. A playback counts against the **first pool
-  with room**: a pairing by hand's own limits first, then its groups'
-  pools; it is refused only when all are full, and counts against exactly
+  with room**: the individual relation's own limits first, then its
+  groups' pools; it is refused only when all are full, and counts against exactly
   one. The `limits` member of `libraries` gives the most generous
   source's limits ([playback section 5](playback.md#5-limits)); since a
   pool is shared, a peer may be refused before reaching them. A server's

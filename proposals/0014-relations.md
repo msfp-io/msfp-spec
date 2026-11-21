@@ -2,7 +2,8 @@
 
 Status: Adopted (2026-11-21), with the owner's choices on the open points
 (see the end): the name "individual", keys forgotten only on blocking,
-fingerprints offered. Not yet written into spec/v0. From the owner's
+fingerprints offered. Written into spec/v0 on 2026-11-21 (core 7.2,
+7.4, 7.7 and 9.2; groups 1, 2, 4, 6, 7, 9; playback 5; catalog). From the owner's
 model of 2026-11-21: "the direct pairing itself is a low-level unit. It
 doesn't necessarily have to be controllable by the user directly.
 Individual and group pairings are higher-level relations, which the user
@@ -114,8 +115,8 @@ nothing.
    11, "Trust passes through the inviter").
 4. **Ending the individual relation.** The server sends `hello` with
    `individual: false`. If a group relation remains, the link stays. If
-   none remains, the link ends as core section 7.4 says, but without
-   recording the keys as forgotten (see "Forgetting" below).
+   none remains, the link ends as core section 7.4 says, without
+   keeping the server away (see "Forgetting" below).
 5. **Leaving a group (groups section 7).** The group relation goes, on
    both sides, as today. A link with no relation left ends, and nothing is
    turned into an individual relation any more. The leave dialog lists the
@@ -129,20 +130,19 @@ nothing.
    both sides, as in item 5, and stays until both answer. One that both
    accept becomes individual, and one that either refuses ends.
 7. **Blocking** stays a link-level action: it ends the link whatever its
-   relations, drops the server's requests in every group, and is the
-   only action that records the keys as forgotten.
+   relations, and it is the only action that keeps the server away from
+   every group.
 
 ### Forgetting
 
-Core section 7.4 records a peer's keys as forgotten on every ending.
-From now on only **blocking** does. A link that ends because its last
-relation went (an individual relation ended, a group left, a ban, a
-dissolution) is deleted on both sides with `ended` as today, but its keys
-aren't recorded. The two servers may be linked again later, through a
-group they share or with a new code. A server that was ended answers the
-former peer's calls as it answers any unknown key, with the plain `404`
-of core section 6.4. Only a blocked server gets the signed `404` of the
-forgotten list.
+Only **blocking** keeps a server away. Every ending still records the
+peer's keys on the forgotten list, as core section 7.4 says, so that the
+peer's later calls get a signed `404` and it learns the pairing ended.
+But only a block marks them **blocked**, and only blocked keys are kept
+away from groups: their requests are dropped and their `group-pair`
+refused. Any other ended key comes off the list as soon as the two
+servers are linked again, with a code or through a group they share.
+Panels never show the list: the operator sees "End" and "Block".
 
 ### What belongs to a relation and what to the link
 
@@ -222,9 +222,10 @@ update, and its operator chooses to keep or end them.
 
 ## Decisions (2026-11-21)
 
-1. **Forgetting keys:** only on blocking, never on an ending (the
-   proposal had forgotten them on an operator's own end of the individual
-   relation too).
+1. **Forgetting keys:** only blocking keeps a server away. Written into
+   the spec as: every ending still records the keys, for the signed
+   `404`, but only blocked keys are kept away from groups, and an ended
+   key comes off the list when the two servers are linked again.
 2. **`keepPairings` on `dissolved`:** each link held only by the group
    asks for an individual relation, both sides still accepting. This was
    the proposal's lean, and the owner made no other choice.

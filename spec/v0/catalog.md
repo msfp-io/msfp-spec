@@ -36,7 +36,7 @@ specifications.
   a kind.
 - **Offer**: the libraries a server lets one peer see. Each server sets
   its own offers, per peer, or per group: a peer is then offered what
-  each of its link's sources offers ([groups section 9](groups.md#9-sharing-and-limits)).
+  each of its link's relations offers ([groups section 9](groups.md#9-sharing-and-limits)).
 - **Want**: the libraries of a peer's offer that this server reads. Only
   titles in a library one side offers and the other wants are shared.
 - **Owning server**: the server that holds a title's copy.

@@ -352,10 +352,11 @@ enforce limits sends none.
 
 **Shared limits.** Limits may be shared with other peers: a group's pool
 is shared by all its members ([groups section 9](groups.md#9-sharing-and-limits)).
-A peer linked through a group is sent the most generous of its sources'
+A peer linked through a group is sent the most generous of its relations'
 limits, and may be refused (`409` `stream-limit-reached`) before reaching
 them, its pool being in use by others. A playback counts against exactly
-one pool: the first with room, a pairing by hand's own limits first.
+one pool: the first with room, the individual relation's own limits
+first.
 
 ## 6. What the owning server enforces
 
