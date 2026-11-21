@@ -196,8 +196,9 @@ so.
 | `revoked` | the member | `statement`: an object with `key`, `date` and `signature`, as in `revoke` ([core section 9.4](core.md#94-revoke)); `lastSeq` | the statement verifies as core section 12.6 says, and its `key` is one of the member's keys (its member ID, or a key a kept `rotated` moved it to); the member's events signed with the revoked key after `lastSeq` don't count (those under its next key, from its `rotated` on, do); with two, the lower `lastSeq` holds |
 
 `name` is cleaned as core section 9.1 cleans names. `settings` is an
-object: `waitDays` (integer, 0 to 30; 3 when absent) and `capPerDay`
-(integer, 1 to 100; 5 when absent). Unknown members are ignored (core
+object: `capPerDay` (integer, 1 to 100; 5 when absent). `waitDays`
+(integer, 0 to 30), which earlier drafts sent, is still read for its
+type and range, and changes nothing. Unknown members are ignored (core
 section 2.3); an unknown `type` is kept and passed on, and changes
 nothing in the state.
 
@@ -304,13 +305,11 @@ it.
 
 ### 4.1 Answering
 
-Each member chooses, per group:
-
-- **ask me** (the default): requests wait in its panel;
-- **accept members**: its server accepts by itself, once the requester
-  has been in the group for the group's `waitDays`, counted from its
-  `joined` `date`. Until then, requests wait in the panel as with "ask
-  me".
+Each member chooses, per group, whether it **automatically accepts new
+members**. Off (the default), each request waits in its panel for its
+operator. On, its server accepts a request as soon as it arrives. The
+panel shows the choice as one checkbox, "Automatically accept new
+members", in the member's settings for that group.
 
 Accepting by hand is possible at any time. A **refusal** is final until
 the refusing member changes its mind: it lifts it, or sends a request
@@ -575,9 +574,10 @@ servers; addresses too.
 - **A hacked member** sees names and keys, never an address it wasn't
   given, and gets no link without a yes.
 - **A hacked admin** can invite (each newcomer still asks every member,
-  and waits `waitDays` before any automatic acceptance) and ban members,
-  until the owner lifts the bans and removes it. Its invitations are
-  capped per day.
+  and only members that accept new members automatically say yes without
+  their operator) and ban members, until the owner lifts the bans and
+  removes it. Its invitations are capped per day. A member that accepts
+  new members automatically trusts the group's admins entirely.
 - **A hacked owner** can do anything the owner does, dissolving the group
   included. The members' way out: block it, leave, make a new group.
 - **Forging rights** needs the right key: every member checks every event
@@ -603,7 +603,7 @@ sealed with HPKE); the codes' cases are in
 1. **Large groups.** The part was thought out for friends. With hundreds
    of members: the list's size over years (a snapshot to start from,
    signed by the owner?), one mail per member for each newcomer, and
-   whether pools, `waitDays` and the cap still make sense.
+   whether pools and the cap still make sense.
 2. **Sizes.** 4,096-byte events, 2,048-byte mail, 1,000 mails, 500 events
    a call: first guesses, to check against the first implementation.
 3. **Catching up after a long absence.** A member offline past a mail's
