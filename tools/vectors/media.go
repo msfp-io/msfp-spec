@@ -1,11 +1,13 @@
 package main
 
-// The media rules of version 0, as revised by proposal 16: HLS playlists,
-// ranges and the file's answers, the scan cap of scanBytes (spec/v0/media.md sections
-// 2.1, 3.1, 3.2 and 4.2), WebVTT, ASS, PGS and fonts (spec/v0/video.md
-// sections 6.3 to 6.6), and the destinations of spec/v0/core.md section
-// 3.3. Written from the specification's text, to check
-// vectors/v0/media.json and the destinations of vectors/v0/strict.json.
+// The media rules of version 0, as revised by proposals 16 and 17: the
+// names an owning server serves, HLS playlists, the relayed media type,
+// ranges and the file's answers, the scan cap of the scan answer's
+// scanBytes (spec/v0/media.md sections 1, 2.1, 3, 3.1, 3.2 and 4.2),
+// WebVTT, ASS, PGS and fonts (spec/v0/video.md sections 6.3 to 6.6), and
+// the destinations of spec/v0/core.md section 3.3. Written from the
+// specification's text, to check vectors/v0/media.json and the
+// destinations of vectors/v0/strict.json.
 
 import (
 	"bytes"
@@ -16,6 +18,7 @@ import (
 	"math"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -462,15 +465,15 @@ func checkFileAnswer(a mediaAnswer) error {
 	return nil
 }
 
-// The scan cap is the owning server's scanBytes (playback section 5): 4
-// MiB to 1 GiB, 4 MiB when it sends none.
+// The scan cap is the scan answer's scanBytes (playback section 8): 4
+// MiB to 1 GiB, 4 MiB when the answer has none, or one out of range.
 const (
 	scanFloor = 4 << 20
 	scanTop   = 1 << 30
 )
 
-// scanCapOf is the cap an owning server enforces for the scanBytes it
-// sends (0: none sent).
+// scanCapOf is the cap an owning server enforces for the scanBytes its
+// scan answer states (0: none).
 func scanCapOf(scanBytes int64) int64 {
 	if scanBytes < scanFloor || scanBytes > scanTop {
 		return scanFloor
@@ -492,6 +495,156 @@ func scanAnswer(scanCap, sent int64, rng string, size int64) (int, string) {
 	}
 	end = min(end, start+(scanCap-sent)-1)
 	return 206, fmt.Sprintf("bytes %d-%d/%d", start, end, size)
+}
+
+// --- The names an owning server serves (media section 1) ---
+
+// mediaTicket is what an owning server knows of a ticket: its kind
+// (playback, download, scan, previews or image), and for a playback what
+// its answer opened: the protocol, the subtitle entries, fontCount, the
+// sheet count of the copy's previewLayout, the protocol of each queue
+// entry it prepared ("" for one it didn't), and the bare names the
+// playlists of its streams give.
+type mediaTicket struct {
+	Kind       string             `json:"kind"`
+	Protocol   string             `json:"protocol,omitempty"`
+	Subtitles  []playbackSubtitle `json:"subtitles,omitempty"`
+	FontCount  int64              `json:"fontCount,omitempty"`
+	SheetCount int64              `json:"sheetCount,omitempty"`
+	Queue      []string           `json:"queue,omitempty"`
+	Names      []string           `json:"names,omitempty"`
+}
+
+var mediaNumberForm = regexp.MustCompile(`^(0|[1-9][0-9]*)$`)
+
+// mediaNumber reads a decimal number without leading zeros, below top.
+func mediaNumber(s string, top int64) (int64, bool) {
+	if !mediaNumberForm.MatchString(s) || len(s) > 15 {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	return n, err == nil && n < top
+}
+
+// mediaServes says whether the owning server serves name, the URL's path
+// after <stream root><ticket>/, under a ticket: nil, or why it answers
+// 404. It serves exactly the names section 1 lists, within their counts.
+func mediaServes(t mediaTicket, name string) error {
+	p := strings.Split(name, "/")
+	stream := func(protocol string, p []string) error {
+		switch {
+		case len(p) != 1:
+			return errors.New("not a name of the stream")
+		case protocol == "file" && p[0] == "file", protocol == "hls" && p[0] == "master.m3u8":
+			return nil
+		case protocol == "hls" && checkMediaName(p[0]) == nil && slices.Contains(t.Names, p[0]):
+			return nil
+		}
+		return errors.New("not a name of the stream")
+	}
+	switch t.Kind {
+	case "image":
+		if name == "image" {
+			return nil
+		}
+		return errors.New("an image ticket opens image only")
+	case "scan":
+		if name == "file" {
+			return nil
+		}
+		return errors.New("a scan ticket opens file only")
+	case "previews":
+		if len(p) == 2 && p[0] == "trickplay" {
+			if _, ok := mediaNumber(p[1], t.SheetCount); ok {
+				return nil
+			}
+			return errors.New("a sheet at or past the sheet count")
+		}
+		return errors.New("a previews ticket opens the sheets only")
+	case "playback", "download":
+	default:
+		return errors.New("no ticket of that kind")
+	}
+	switch p[0] {
+	case "subtitles", "ass", "pictures":
+		if len(p) != 3 {
+			return errors.New("a subtitle URL is <kind>/<id>/<part> or /whole")
+		}
+		var e *playbackSubtitle
+		for i := range t.Subtitles {
+			if t.Subtitles[i].ID == p[1] {
+				e = &t.Subtitles[i]
+			}
+		}
+		switch {
+		case e == nil:
+			return errors.New("a subtitle track the answer didn't list")
+		case p[0] == "subtitles" && e.Form != "text", p[0] == "pictures" && e.Form != "picture", p[0] == "ass" && !e.ASS:
+			return errors.New("a form the answer didn't open for that track")
+		case p[2] == "whole" && p[0] != "pictures":
+			return nil
+		}
+		if _, ok := mediaNumber(p[2], 10000); !ok {
+			return errors.New("a part that isn't a number from 0 to 9,999")
+		}
+		return nil
+	case "fonts":
+		if len(p) == 2 {
+			if _, ok := mediaNumber(p[1], t.FontCount); ok {
+				return nil
+			}
+		}
+		return errors.New("a font at or past fontCount")
+	case "trickplay":
+		if t.Kind != "playback" {
+			return errors.New("a download ticket opens no sheets")
+		}
+		if len(p) == 2 {
+			if _, ok := mediaNumber(p[1], t.SheetCount); ok {
+				return nil
+			}
+		}
+		return errors.New("a sheet at or past the sheet count")
+	case "queue":
+		if t.Kind != "playback" {
+			return errors.New("a download ticket opens no queue")
+		}
+		if len(p) < 2 {
+			return errors.New("a queue URL is queue/<n>/<name>")
+		}
+		n, ok := mediaNumber(p[1], int64(len(t.Queue)))
+		if !ok || t.Queue[n] == "" {
+			return errors.New("a queue entry the owning server didn't prepare")
+		}
+		return stream(t.Queue[n], p[2:])
+	}
+	return stream(t.Protocol, p)
+}
+
+// --- The relayed media type (media section 3) ---
+
+// mediaRelayType is the Content-Type the viewer's server relays the file
+// with, from the copy's mediaType in the catalog ("" for none), or a
+// segment with, from the owning server's Content-Type.
+func mediaRelayType(what, value string) string {
+	const other = "application/octet-stream"
+	if what == "file" {
+		if playbackMediaType(value) {
+			return value
+		}
+		return other
+	}
+	mt := mediaType(value)
+	top, sub, ok := strings.Cut(mt, "/")
+	if !ok || top != "video" && top != "audio" || sub == "" {
+		return other
+	}
+	for _, c := range []byte(sub) {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '+' || c == '-') {
+			return other
+		}
+	}
+	return mt
 }
 
 // --- WebVTT (video section 6.3) ---

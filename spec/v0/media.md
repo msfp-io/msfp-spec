@@ -293,7 +293,8 @@ own `mediaType` from the catalog, whatever its top-level type, and as
 `application/octet-stream` when it has none. For segments, it keeps a
 `video/*` or `audio/*` type made only of letters, digits and `.+-`,
 which it sends lowercased, and sends `application/octet-stream` instead
-of any other.
+of any other. Test cases: `relayTypes` in
+[vectors/v0/media.json](../../vectors/v0/media.json).
 
 Test cases for sections 3.1 to 3.4 are in
 [vectors/v0/media.json](../../vectors/v0/media.json), beside video's

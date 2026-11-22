@@ -9,7 +9,7 @@ import (
 )
 
 // verifyRevMedia checks the media vectors of the revision of version 0
-// (proposal 16), read back from the files: each value on its own.
+// (proposals 16 and 17), read back from the files: each value on its own.
 func verifyRevMedia(read func(string) []byte) []error {
 	const file = "v0/media.json"
 	var errs []error
@@ -43,7 +43,7 @@ func verifyRevMedia(read func(string) []byte) []error {
 			}
 			names[n] = true
 			valid, ok := x["valid"].(bool)
-			if name != "scans" {
+			if name != "scans" && name != "relayTypes" {
 				if !ok {
 					bad("%s %q: no valid", name, n)
 				}
@@ -124,6 +124,35 @@ func verifyRevMedia(read func(string) []byte) []error {
 	for _, x := range list("hls") {
 		if err := checkPlaylist([]byte(str(x, "text"))); (err == nil) != (x["valid"] == true) || !sameReason(err, x) {
 			bad("hls %q: the file says valid=%v; the check says %v", str(x, "name"), x["valid"], err)
+		}
+	}
+	for _, x := range list("names") {
+		var t mediaTicket
+		b, _ := json.Marshal(x["ticket"])
+		if err := json.Unmarshal(b, &t); err != nil || t.Kind == "" {
+			bad("names %q: no ticket", str(x, "name"))
+		}
+		err := mediaServes(t, str(x, "text"))
+		if (err == nil) != (x["valid"] == true) || !sameReason(err, x) {
+			bad("names %q: the file says valid=%v; the rules give %v", str(x, "name"), x["valid"], err)
+		}
+		// A name served is a bare name or one of section 1's paths, never
+		// a part that is empty, a dot, or holds a %, a query or a fragment.
+		if err == nil {
+			for _, part := range strings.Split(str(x, "text"), "/") {
+				if checkMediaName(part) != nil {
+					bad("names %q: a part %q that isn't a bare name", str(x, "name"), part)
+				}
+			}
+		}
+	}
+	for _, x := range list("relayTypes") {
+		got := mediaRelayType(str(x, "what"), str(x, "value"))
+		if got != str(x, "output") {
+			bad("relayTypes %q: the file says %q; the rules give %q", str(x, "name"), str(x, "output"), got)
+		}
+		if got != "application/octet-stream" && !playbackMediaType(got) {
+			bad("relayTypes %q: %q isn't a media type", str(x, "name"), got)
 		}
 	}
 	for _, x := range list("ranges") {
