@@ -494,9 +494,10 @@ Request entry:
   transcode codec that is well formed but one the owning server doesn't
   make is refused as the request's would be: `409` `delivery-refused`.
 - A track of the queue the owning server doesn't hold in the libraries
-  it offers the caller, whose `versionId` isn't one of its copies, or
-  that it can't play, is left out of the answer; the request isn't
-  refused for it.
+  it offers the caller, or that it can't play, is left out of the
+  answer; the request isn't refused for it. An entry whose `versionId`
+  names none of the track's copies plays its first copy, as `play`'s own
+  `versionId` does ([playback section 2.6](playback.md#26-choosing-the-copy-and-the-tracks)).
 - **Counting.** The playback, queue included, counts once against
   `streams` (and `audioStreams`), and once against `transcodes` (and
   `audioTranscodes`) when any of its tracks is converted. It stays live
