@@ -144,6 +144,15 @@ func openToken(s string) bool {
 	return true
 }
 
+// openTokenValue is v when it is a string and a token (openToken),
+// else "": an open field keeps any token, known or not.
+func openTokenValue(v any) string {
+	if s, ok := v.(string); ok && openToken(s) {
+		return s
+	}
+	return ""
+}
+
 // openTokenReason is openToken with the reason a value isn't a token.
 func openTokenReason(s string) error {
 	if len(s) < 1 || len(s) > 32 {

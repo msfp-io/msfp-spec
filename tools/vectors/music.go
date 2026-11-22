@@ -29,16 +29,11 @@ var (
 	musicDateForm   = regexp.MustCompile(`^([0-9]{4})(?:-([0-9]{2})(?:-([0-9]{2}))?)?$`)
 	musicDayForm    = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 	musicMediaName  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
-	musicTokenForm  = regexp.MustCompile(`^[a-z0-9._-]{1,32}$`)                                // core section 8.5
 	musicTypeForm   = regexp.MustCompile(`^[a-z0-9._/-](?:[a-z0-9 ._/-]{0,30}[a-z0-9._/-])?$`) // music section 3
 	musicCodecsForm = regexp.MustCompile(`^[A-Za-z0-9.-]{1,64}$`)                              // RFC 6381, video section 3.3
 
 	musicMethods = []string{"direct", "remux", "transcode"}
 )
-
-// musicToken: a token of core section 8.5, 1 to 32 characters of
-// a-z 0-9 . _ - (to be unified with core's openToken).
-func musicToken(s string) bool { return musicTokenForm.MatchString(s) }
 
 // musicType: a MusicBrainz release-group type as music section 3 sends
 // it: lowercased, 1 to 32 characters of a-z 0-9 space . _ - /, no space
@@ -427,7 +422,7 @@ func keepMusicCopies(list []any) []musicCopy {
 		// container and codec are open (core section 8.5): an unknown
 		// token is kept; a value that isn't a token is dropped, and the
 		// copy, missing a required member, skipped.
-		if !musicIDForm.MatchString(id) || seen[id] || dur == nil || !okC || !okK || !musicToken(container) || !musicToken(codec) || size == nil || !musicIDForm.MatchString(etag) {
+		if !musicIDForm.MatchString(id) || seen[id] || dur == nil || !okC || !okK || !openToken(container) || !openToken(codec) || size == nil || !musicIDForm.MatchString(etag) {
 			continue
 		}
 		seen[id] = true
@@ -764,7 +759,7 @@ func musicKeepLyrics(raw []byte) ([]byte, error) {
 		if l, ok := so["lang"].(string); ok && validTag(l) {
 			s.Lang = l
 		}
-		if k, ok := so["kind"].(string); ok && musicToken(k) { // open (core section 8.5)
+		if k, ok := so["kind"].(string); ok && openToken(k) { // open (core section 8.5)
 			s.Kind = k
 		}
 		if off := integerIn(so["offset"], -600_000, 600_000); off != nil {

@@ -132,7 +132,7 @@ func verifyRevMusic(read func(string) []byte) []error {
 				}
 			}
 			for _, c := range t.Copies {
-				if !musicToken(c.Container) || !musicToken(c.Codec) {
+				if !openToken(c.Container) || !openToken(c.Codec) {
 					bad("%s %q: a copy's container or codec kept that isn't a token", arr, str(x, "name"))
 				}
 			}

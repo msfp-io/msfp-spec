@@ -311,7 +311,7 @@ func videoCheckKeptTitle(out []byte, libs []string) []error {
 	if _, ok := t["ids"]; ok && (strings.Contains(key, "/local/") || kind == "season" || kind == "extra") {
 		bad("ids kept on a %s %q", kind, key)
 	}
-	if x, ok := t["extraType"]; ok != (kind == "extra") || ok && videoToken(x) == "" {
+	if x, ok := t["extraType"]; ok != (kind == "extra") || ok && openTokenValue(x) == "" {
 		bad("extraType %v on a %s", x, kind)
 	}
 	name, hasName := t["name"].(string)
@@ -353,10 +353,10 @@ func videoCheckKeptCopy(c map[string]any) []error {
 	if s, _ := n(c, "size"); s < 1 || s > videoMaxSize {
 		bad("size %d", s)
 	}
-	if !videoTokenForm.MatchString(str(c, "container")) {
+	if !openToken(str(c, "container")) {
 		bad("container %q isn't a token", str(c, "container"))
 	}
-	if e, ok := c["edition"]; ok && videoToken(e) == "" {
+	if e, ok := c["edition"]; ok && openTokenValue(e) == "" {
 		bad("edition %v isn't a token", e)
 	}
 	if utf8.RuneCountInString(str(c, "name")) > 64 {
@@ -369,7 +369,7 @@ func videoCheckKeptCopy(c map[string]any) []error {
 		bad("startMs %d", s)
 	}
 	if v, ok := c["video"].(map[string]any); ok {
-		if !videoTokenForm.MatchString(str(v, "codec")) {
+		if !openToken(str(v, "codec")) {
 			bad("video codec %q isn't a token", str(v, "codec"))
 		}
 		hdr, _ := v["hdr"].([]any)
@@ -379,7 +379,7 @@ func videoCheckKeptCopy(c map[string]any) []error {
 		last, dv := "", false
 		for _, h := range hdr {
 			x, _ := h.(string)
-			if !videoTokenForm.MatchString(x) || x <= last {
+			if !openToken(x) || x <= last {
 				bad("hdr entry %q not a token, repeated or out of byte order", x)
 			}
 			last, dv = x, dv || x == "dv"
@@ -419,7 +419,7 @@ func videoCheckKeptCopy(c map[string]any) []error {
 				bad("track %q repeated, or its title or profile over 64 characters", str(m, "id"))
 			}
 			for _, k := range []string{"codec", "role", "format"} {
-				if x, ok := m[k]; ok && videoToken(x) == "" {
+				if x, ok := m[k]; ok && openTokenValue(x) == "" {
 					bad("track %q: %s %v isn't a token", str(m, "id"), k, x)
 				}
 			}
@@ -443,7 +443,7 @@ func videoCheckKeptCopy(c map[string]any) []error {
 		m := e.(map[string]any)
 		s, _ := n(m, "startMs")
 		t, _ := n(m, "endMs")
-		if s < 0 || s >= t || t > d || videoToken(m["kind"]) == "" {
+		if s < 0 || s >= t || t > d || openTokenValue(m["kind"]) == "" {
 			bad("segment %v", m)
 		}
 	}

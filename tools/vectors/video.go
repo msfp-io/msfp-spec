@@ -38,7 +38,6 @@ var (
 	videoIMDbForm    = regexp.MustCompile(`^tt[0-9]{7,10}$`)          // ids.imdb
 	videoCodecTag    = regexp.MustCompile(`^[A-Za-z0-9]{1,8}$`)       // video codecTag
 	videoLayoutForm  = regexp.MustCompile(`^[A-Za-z0-9()._-]{1,32}$`) // audio layout
-	videoTokenForm   = regexp.MustCompile(`^[a-z0-9._-]{1,32}$`)      // a token (core section 8.5)
 	videoCodecsForm  = regexp.MustCompile(`^[A-Za-z0-9.-]{1,64}$`)    // an RFC 6381 codecs string
 	videoFPSForm     = regexp.MustCompile(`^([1-9][0-9]{0,6})/([1-9][0-9]{0,6})$`)
 	videoAspectForm  = regexp.MustCompile(`^([1-9][0-9]{0,4}):([1-9][0-9]{0,4})$`)
@@ -47,18 +46,8 @@ var (
 )
 
 // The one closed list left (section 3.2). Every other list of sections
-// 3.2 to 3.9 is open: its values are tokens (videoToken).
+// 3.2 to 3.9 is open: its values are tokens (openTokenValue).
 var videoThreeD = []string{"sbs", "tab", "mvc"}
-
-// videoToken is v when it is a token of core section 8.5 (1 to 32
-// characters of a-z 0-9 . _ -), else "". An open field keeps any token,
-// known or not.
-func videoToken(v any) string {
-	if s, ok := v.(string); ok && videoTokenForm.MatchString(s) {
-		return s
-	}
-	return ""
-}
 
 func videoIn(s string, list []string) bool {
 	for _, v := range list {
@@ -465,7 +454,7 @@ func keepVideoStream(v any) *videoStream {
 	if !ok {
 		return nil
 	}
-	codec := videoToken(o["codec"])
+	codec := openTokenValue(o["codec"])
 	w, h := videoInt(o["width"], 1, 100_000), videoInt(o["height"], 1, 100_000)
 	if codec == "" || w == nil || h == nil {
 		return nil
@@ -484,10 +473,10 @@ func keepVideoStream(v any) *videoStream {
 	s.BitDepth = videoInt(o["bitDepth"], 1, 16)
 	if c, ok := o["colour"].(map[string]any); ok {
 		col := videoColour{
-			Primaries: videoToken(c["primaries"]),
-			Transfer:  videoToken(c["transfer"]),
-			Matrix:    videoToken(c["matrix"]),
-			Range:     videoToken(c["range"]),
+			Primaries: openTokenValue(c["primaries"]),
+			Transfer:  openTokenValue(c["transfer"]),
+			Matrix:    openTokenValue(c["matrix"]),
+			Range:     openTokenValue(c["range"]),
 		}
 		if col != (videoColour{}) {
 			s.Colour = &col
@@ -496,7 +485,7 @@ func keepVideoStream(v any) *videoStream {
 	if list, ok := o["hdr"].([]any); ok {
 		var hdr []string
 		for _, e := range list {
-			if t := videoToken(e); t != "" && !videoIn(t, hdr) {
+			if t := openTokenValue(e); t != "" && !videoIn(t, hdr) {
 				hdr = append(hdr, t)
 			}
 		}
@@ -552,7 +541,7 @@ func keepVideoAudio(list []any) []videoAudio {
 			continue
 		}
 		id := videoForm(o["id"], videoAudioID)
-		codec := videoToken(o["codec"])
+		codec := openTokenValue(o["codec"])
 		if id == "" || seen[id] || codec == "" {
 			continue
 		}
@@ -561,7 +550,7 @@ func keepVideoAudio(list []any) []videoAudio {
 			ID:         id,
 			Language:   videoTag(o["language"]),
 			Channels:   videoInt(o["channels"], 1, 64),
-			Role:       videoToken(o["role"]),
+			Role:       openTokenValue(o["role"]),
 			Default:    videoBool(o["default"]),
 			Forced:     videoBool(o["forced"]),
 			FileIndex:  videoInt(o["fileIndex"], 0, 999),
@@ -597,7 +586,7 @@ func keepVideoSubtitles(list []any) []videoSubtitle {
 			Default:         videoBool(o["default"]),
 			Forced:          videoBool(o["forced"]),
 			HearingImpaired: videoBool(o["hearingImpaired"]),
-			Format:          videoToken(o["format"]),
+			Format:          openTokenValue(o["format"]),
 			External:        videoBool(o["external"]),
 			FileIndex:       videoInt(o["fileIndex"], 0, 999),
 			Title:           videoPlain(o["title"], 64),
@@ -631,7 +620,7 @@ func keepVideoSegments(v any, duration int64) []videoSegment {
 		if !ok || len(out) == 32 {
 			continue
 		}
-		kind := videoToken(o["kind"])
+		kind := openTokenValue(o["kind"])
 		s, t := videoInt(o["startMs"], 0, duration), videoInt(o["endMs"], 0, duration)
 		if kind == "" || s == nil || t == nil || *s >= *t {
 			continue
@@ -656,7 +645,7 @@ func keepCopy(v any) (*videoCopy, error) {
 	if d == nil {
 		return nil, errors.New("durationMs isn't an integer from 0 to 8,640,000,000")
 	}
-	container := videoToken(o["container"])
+	container := openTokenValue(o["container"])
 	if container == "" {
 		return nil, errors.New("container isn't a token")
 	}
@@ -674,7 +663,7 @@ func keepCopy(v any) (*videoCopy, error) {
 	}
 	c := &videoCopy{ID: id, DurationMs: *d, Container: container, Size: *size, ETag: etag}
 	c.Name = videoPlain(o["name"], 64)
-	c.Edition = videoToken(o["edition"])
+	c.Edition = openTokenValue(o["edition"])
 	c.StartMs = videoInt(o["startMs"], 0, *d)
 	c.Parts = keepVideoParts(o["parts"], *size)
 	c.BitrateKbps = videoInt(o["bitrateKbps"], 1, 10_000_000)
@@ -741,7 +730,7 @@ func keepVideoTitle(raw []byte, libraries []string) ([]byte, error) {
 
 	// Extras (section 3.9).
 	if kind == "extra" {
-		if t.ExtraType = videoToken(o["extraType"]); t.ExtraType == "" {
+		if t.ExtraType = openTokenValue(o["extraType"]); t.ExtraType == "" {
 			return nil, errors.New("an extra whose extraType is missing or isn't a token")
 		}
 		t.Name = videoPlain(o["name"], 64)

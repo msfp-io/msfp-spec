@@ -58,7 +58,6 @@ var (
 	playbackObjIDForm  = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 	playbackAudioForm  = regexp.MustCompile(`^a(0|[1-9][0-9]{0,2})$`)
 	playbackSubForm    = regexp.MustCompile(`^s(0|[1-9][0-9]{0,2})$`)
-	playbackTokenForm  = regexp.MustCompile(`^[a-z0-9._-]{1,32}$`)
 	playbackTicketForm = `[A-Za-z0-9_-]{1,64}`
 
 	// Title keys (video section 4, music section 2).
@@ -84,10 +83,6 @@ var (
 		{"artist", "", regexp.MustCompile(`^artist/(mb/` + pbMBID + `|local/` + pbOpaque + `)$`)},
 	}
 )
-
-// playbackToken: a token of core section 8.5, 1 to 32 characters of
-// a-z 0-9 . _ -. (Core's own helper is openToken; the two are one rule.)
-func playbackToken(s string) bool { return playbackTokenForm.MatchString(s) }
 
 // playbackTitleKind names the kind (IDs of at most 10 digits are at most
 // 9,999,999,999 by their form) of a title key and the content part
@@ -199,7 +194,7 @@ func playbackReadTargets(v any) (playbackTargets, error) {
 			return nil
 		}
 		s, ok := raw.(string)
-		if !ok || !playbackToken(s) {
+		if !ok || !openToken(s) {
 			return pbBad("transcode.%s isn't a token (core section 8.5)", name)
 		}
 		*dst = s
@@ -440,7 +435,7 @@ func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw 
 	if d, present, err := text("delivery"); err != nil {
 		return nil, err
 	} else if present {
-		if !playbackToken(d) {
+		if !openToken(d) {
 			return nil, pbBad("delivery %q isn't a token (core section 8.5)", d)
 		}
 		unknownDelivery = !slices.Contains(playbackDeliveries, d)
@@ -452,7 +447,7 @@ func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw 
 		if s.Delivery != "remux" {
 			return nil, pbBad("container without delivery remux")
 		}
-		if !playbackToken(c) {
+		if !openToken(c) {
 			return nil, pbBad("container %q isn't a token (core section 8.5)", c)
 		}
 		s.Container = c
@@ -825,7 +820,7 @@ func playbackKeepAnswer(raw []byte, delivery, catalogEtag, root string) ([]byte,
 			if n, ok := playbackInt(eo["channels"]); ok && n >= 1 && n <= 64 {
 				t.Channels = &n
 			}
-			if r, ok := eo["role"].(string); ok && playbackToken(r) {
+			if r, ok := eo["role"].(string); ok && openToken(r) {
 				t.Role = r
 			}
 			for _, f := range []struct {
