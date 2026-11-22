@@ -5,9 +5,11 @@
 The `media` part says what the stream URLs serve, and how a viewer's
 server fetches them: HLS, and the file itself read by byte ranges. It
 says which tickets open them: a playback's, a download's, a scan's, and
-the short tickets of preview sheets and images. The content parts add
-their own URLs: [video](video.md#6-media) adds text and picture
-subtitles, fonts and seek-bar preview sheets. It needs only the
+the short ticket of a `previews` call, for preview sheets and the image
+of a `local` title. The content parts add their own URLs, whose forms,
+fetches and sizes are all here: [video](video.md#6-media) adds text and
+picture subtitles, fonts, seek-bar preview sheets and the image; what
+their bytes must be is video's to say. It needs only the
 [core](core.md); [playback](playback.md) gives the URLs, and says when a
 download, a scan or a restart may happen. Media is fetched with plain
 `GET` requests that carry the ticket only: they are not signed.
@@ -76,26 +78,35 @@ Every media URL is absolute, under the owning server's stream root:
   `application/vnd.apple.mpegurl`; or `file`, with `<name>` `file` (the
   copy as it is, all its tracks, read by byte ranges: section 3.2).
   `file` serves playback's `file` delivery; a `remux` or a `transcode`
-  ([playback](playback.md): the delivery a `play` asks for) is served as
-  `hls`. The `file` protocol is only for a copy of one file; a copy of
-  several parts ([playback section 1](playback.md#1-terms)) is served as
+  ([playback section 2.7](playback.md#27-delivery)) is served as `hls`.
+  The `file` protocol is only for a copy of one file: a `delivery` `file`
+  of a copy made of several parts
+  ([playback section 1](playback.md#1-terms)) is refused with `409`
+  `delivery-refused`, and without `delivery` such a copy is served as
   `hls`. With `file`, the viewer's player selects `audioTrack` itself.
 - A content part adds URLs of its own under `<stream root><ticket>/`,
-  with a `<track>` name where it needs one: [video](video.md#6-media)
-  adds subtitle, picture subtitle, font and preview sheet URLs, and the
-  `local` description of video and music adds an image. Their shapes,
+  with a `<track>` name (the track's ID) where it needs one:
+  [video](video.md#6-media) adds subtitle, picture subtitle, font and
+  preview sheet URLs, and the image of a `local` title. Their shapes,
   which this part fetches as section 3.4 says:
 
 | URL | What it serves |
 |-----|----------------|
-| `<stream root><ticket>/subtitles/<track>/<part>` | a stretch of a text track, `<part>` from 0 to 9,999 |
-| `<stream root><ticket>/subtitles/<track>/whole` | a whole text track |
-| `<stream root><ticket>/pictures/<track>/<part>` | a stretch of a picture track (PGS, VobSub, DVB), `<part>` from 0 to 9,999 |
+| `<stream root><ticket>/subtitles/<track>/<part>` | a stretch of a text track, as WebVTT, `<part>` from 0 to 9,999 |
+| `<stream root><ticket>/subtitles/<track>/whole` | a whole text track, as WebVTT |
+| `<stream root><ticket>/ass/<track>/<part>` | a stretch of an ASS or SSA track, as ASS, `<part>` from 0 to 9,999 |
+| `<stream root><ticket>/ass/<track>/whole` | a whole ASS or SSA track, as ASS |
+| `<stream root><ticket>/pictures/<track>/<part>` | a stretch of a picture track, as PGS, `<part>` from 0 to 9,999 |
 | `<stream root><ticket>/fonts/<n>` | font *n* of the copy, `<n>` from 0 to 7 |
 | `<stream root><ticket>/trickplay/<n>` | preview sheet *n*, `<n>` from 0 to 999 |
-| `<stream root><ticket>/image` | the image of a `local` title's description |
+| `<stream root><ticket>/image` | the image of a `local` title, under a `previews` ticket |
 
-Numbers in these URLs are decimal, without leading zeros.
+A content part's answer gives a subtitle track by its **track URL**,
+without the last part: `<stream root><ticket>/subtitles/<track>`,
+`<stream root><ticket>/ass/<track>` or
+`<stream root><ticket>/pictures/<track>`. The viewer's server adds
+`/<part>` or, for the first two, `/whole`. Numbers in these URLs are
+decimal, without leading zeros.
 
 The viewer's server refuses any URL that doesn't start with the owning
 server's stream root, or that names another ticket, or another file
@@ -220,9 +231,9 @@ implementation's; the bounds are required.
 | What | At most |
 |------|---------|
 | a playlist | 2 MiB (2,097,152 bytes) |
-| a stretch of a text track | 5 MiB (5,242,880 bytes) |
-| a whole text track | 16 MiB (16,777,216 bytes) |
-| a stretch of a picture track (PGS, VobSub, DVB) | 64 MiB (67,108,864 bytes) |
+| a stretch of a text track (WebVTT or ASS) | 5 MiB (5,242,880 bytes) |
+| a whole text track (WebVTT or ASS) | 16 MiB (16,777,216 bytes) |
+| a stretch of a picture track (PGS) | 64 MiB (67,108,864 bytes) |
 | a font | 10 MiB (10,485,760 bytes) |
 | a preview sheet | 8 MiB (8,388,608 bytes) |
 | an image | 1 MiB (1,048,576 bytes) |
@@ -259,8 +270,8 @@ peer's `HEAD`, the file's headers and the new sizes are still to build.
 - **File.** Fetch `file`, with ranges (section 3.2).
 - **What a content part adds.** Fetched as section 3.4 says, with the
   same plain `GET`s and the ticket of the URL; what the bytes must be is
-  the content part's to say ([video](video.md#6-media): the subtitle
-  formats, fonts, sheets).
+  the content part's to say ([video section 6](video.md#6-media): the
+  subtitle formats, fonts, sheets, the image).
 
 The owning server serves only what these rules allow. The viewer's server
 checks again everything it relays, whatever the owning server says it
@@ -298,7 +309,7 @@ by the viewer's server: a player reads it as live, with no total time
 and no seeking.
 
 **Several audio tracks.** When the `play` request asks for several audio
-tracks ([playback](playback.md): the request), the master playlist names
+tracks (`audioRenditions`, [playback section 2.1](playback.md#21-the-request)), the master playlist names
 them as `#EXT-X-MEDIA` audio renditions, one per track, and every
 `#EXT-X-STREAM-INF` names their group with `AUDIO="audio"`. Switching
 tracks then needs no new playback. Without that ask, the audio comes in
@@ -395,22 +406,22 @@ build.
 remuxed or converted.
 
 - **Its size and identity are the catalog's.** The copy's `size` and
-  `etag` are in the catalog ([video](video.md): a title's copies),
+  `etag` are in the catalog ([video section 3.2](video.md#32-copies)),
   before anyone plays it. `size` is the file's exact length in bytes;
   `etag` changes whenever its bytes change.
 - **Stable bytes.** While a copy's `etag` holds, every read of it, under
   any ticket of any playback, gives the same bytes at the same offsets.
   When its bytes change, the owning server gives it a new `etag`, and
   the change reaches the catalog as a change of the title
-  ([catalog](catalog.md): changes readings).
+  ([catalog section 3.2](catalog.md#32-whole-list-or-changes)).
 - **Headers.** Every `200` or `206` for the file carries
   `Accept-Ranges: bytes` and `ETag: "<etag>"`, a strong entity tag
   holding the copy's `etag`. A `206` carries `Content-Range` with the
   exact `size` as *total* (section 2.1).
 - **What the viewer's server checks.** On every answer for the file:
   `ETag` is the `etag` it knows for the copy (the catalog's, or the
-  `play` answer's when they disagree, as [playback](playback.md) says of
-  the answer), and `Content-Range`'s *total* (or, for a `200`,
+  `play` answer's when they disagree, as
+  [playback section 2.3](playback.md#23-the-answer) says), and `Content-Range`'s *total* (or, for a `200`,
   `Content-Length`) is its `size`. Either one different means the copy
   changed: a failed fetch, and the viewer's server reads the title
   again. It never joins bytes of two `etag`s in one read.
@@ -419,8 +430,8 @@ remuxed or converted.
 
 A viewer's server may present a peer's copy to its media server and its
 clients as a plain file at an address of its own, before anyone plays it
-([playback](playback.md): the `file` delivery, and a playback started by
-the first read). What it may rely on:
+([playback section 2.7](playback.md#27-delivery): the `file` delivery,
+and a playback started by the first read). What it may rely on:
 
 - **The length**: the copy's `size` from the catalog. It answers its
   clients' `HEAD` with it, and their ranges against it, with `206` and
@@ -439,12 +450,13 @@ the first read). What it may rely on:
 - **A restart.** When the playback ends while the file is still being
   read (a long pause), it may start a new playback of the same copy and
   go on reading at the same byte, under the new ticket, only if the
-  `etag` is unchanged ([playback](playback.md): restarts). The first
+  `etag` is unchanged ([playback section 2.7](playback.md#27-delivery):
+  restarts). The first
   answer under the new ticket is checked as section 3.2 says: a
   different `ETag` or length ends the read, as a failed fetch.
 
 It must not read the file to learn what it holds: the details come from
-the catalog only ([video](video.md): a title's copies), since each read
+the catalog only ([video section 3.2](video.md#32-copies)), since each read
 would start a playback on the owning server. Its media type is the
 container's, as section 3 says for the file.
 
@@ -458,39 +470,42 @@ server's URLs to the viewer.
 
 | What | URL (section 1) | Tickets | Answer | Relayed as |
 |------|-----------------|---------|--------|------------|
-| a stretch of a text track | `subtitles/<track>/<part>` | playback, download | WebVTT, rebuilt ([video](video.md#6-media): WebVTT) | `text/vtt; charset=utf-8` |
-| a whole text track | `subtitles/<track>/whole` | playback, download | WebVTT, or ASS for an ASS or SSA track, rebuilt ([video](video.md#6-media): WebVTT, ASS) | `text/vtt; charset=utf-8`, or `text/x-ssa; charset=utf-8` |
-| a stretch of a picture track | `pictures/<track>/<part>` | playback, download | PGS, VobSub or DVB pictures, checked as video says ([video](video.md#6-media): PGS and the other picture formats) | `application/octet-stream` |
-| a font | `fonts/<n>` | playback, download | a TrueType or OpenType file ([video](video.md#6-media): fonts) | `font/ttf` or `font/otf` |
-| a preview sheet | `trickplay/<n>` | playback, previews | a JPEG ([video](video.md#6-media): sheets) | `image/jpeg` |
-| an image | `image` | image | a JPEG or a PNG | `image/jpeg` or `image/png` |
+| a text track as WebVTT, a stretch or whole | `subtitles/<track>/<part>`, `subtitles/<track>/whole` | playback, download | WebVTT, rebuilt ([video section 6.3](video.md#63-webvtt)) | `text/vtt; charset=utf-8` |
+| an ASS or SSA track as ASS, a stretch or whole | `ass/<track>/<part>`, `ass/<track>/whole` | playback, download | ASS, rebuilt ([video section 6.4](video.md#64-ass)) | `text/x-ass; charset=utf-8` |
+| a stretch of a picture track | `pictures/<track>/<part>` | playback, download | PGS (a VobSub or DVB track converted by the owning server), checked ([video section 6.5](video.md#65-picture-subtitles)) | `application/octet-stream` |
+| a font | `fonts/<n>` | playback, download | a TrueType or OpenType file ([video section 6.6](video.md#66-fonts)) | `font/ttf` or `font/otf` |
+| a preview sheet | `trickplay/<n>` | playback, previews | a JPEG ([video section 5.5](video.md#55-seek-bar-previews)) | `image/jpeg` |
+| the image of a `local` title | `image` | previews | a JPEG or a PNG ([video section 6.7](video.md#67-the-image-of-a-local-title)) | `image/jpeg` or `image/png` |
 
 - **Stretches** cover 120 seconds of the copy each, part *n* from
-  *n* × 120 seconds, starting 10 seconds early
-  ([video](video.md#6-media)). A stretch with nothing in it is a `200`
-  with an empty body for a picture track, and a WebVTT part with no cue
-  for a text track.
+  *n* × 120 seconds to (*n* + 1) × 120 seconds, starting 10 seconds
+  early, so that a line already on screen comes along; the viewer's
+  server drops the doubles. A stretch with nothing in it is a `200` with
+  an empty body for a picture track, and a WebVTT part with no cue, or
+  an ASS part with no event, for a text track.
 - **Whole text tracks.** A text track may be fetched whole, not only in
   stretches, under a playback's or a download's ticket. An ASS or SSA
-  track comes as ASS only whole; its stretches come as WebVTT.
+  track may be fetched as WebVTT, its styling flattened, or as ASS, in
+  stretches or whole. Picture tracks come in stretches only.
 - **Fonts.** The fonts a copy's ASS tracks use, as the content part
-  lists them ([video](video.md#6-media): fonts), at most 8 per copy. The
+  lists them ([video section 6.6](video.md#66-fonts)), at most 8 per copy. The
   viewer's server tells a font by its first four bytes: `00 01 00 00` or
   `true` is TrueType (`font/ttf`), `OTTO` is OpenType (`font/otf`); any
   other is refused, a font collection (`ttcf`) included. A viewer's
   server may refuse fonts entirely, and never fetch them.
 - **Sheets** are fetched under the playback's ticket, or under the
-  ticket of a `previews` call ([video](video.md): seek-bar previews),
-  which opens sheets only. The owning server answers `404` for a sheet
-  number at or past the sheet count.
-- **Images.** The image of a `local` title's description ([video](video.md)
-  and [music](music.md): `local` titles) is fetched as a sheet is, under
-  a ticket of its own kind, which opens that image only. The viewer's
-  server tells JPEG from PNG by content (`FF D8 FF`, or the 8-byte PNG
-  signature), checks its dimensions from its header before decoding (at
-  most 4,096 pixels each way), re-encodes it in the same format so that
-  only its pixels reach the viewer, and may keep it as it keeps a
-  title's other pictures.
+  ticket of a `previews` call with a `versionId`
+  ([video section 5.6](video.md#56-previews)), which opens that copy's
+  sheets only. The owning server answers `404` for a sheet number at or
+  past the sheet count.
+- **Images.** The image of a `local` title
+  ([video section 3.10](video.md#310-the-description-of-a-local-title),
+  [music section 4](music.md#4-pictures)) is fetched under the ticket of
+  a `previews` call without `versionId`
+  ([video section 5.6](video.md#56-previews)), which opens that image
+  only. The viewer's server tells JPEG from PNG by content (`FF D8 FF`,
+  or the 8-byte PNG signature), and checks and re-encodes it as
+  [video section 6.7](video.md#67-the-image-of-a-local-title) says.
 
 ## 4. How long a ticket works
 
@@ -500,10 +515,9 @@ its kind opens:
 | Kind | Given by | Opens | Works until |
 |------|----------|-------|-------------|
 | playback | `play`, to watch ([playback](playback.md#2-play)) | the stream (`hls` or `file`) and what the content parts add for it | its playback ends (below) |
-| download | `play` with `purpose: download` | the stream, its subtitles and fonts | its playback ends, without the 2-minute rule; at most 24 hours after the answer (section 4.1) |
-| scan | `play` with `purpose: scan` and `delivery: file` | `file` only, by ranges, within 32 MiB (section 4.2) | its playback ends (below) |
-| previews | a `previews` call ([video](video.md): seek-bar previews) | the sheets it lists | 10 minutes after the answer |
-| image | the `local` description that names the image | that image | 10 minutes after the answer that gave it |
+| download | `play` with `purpose: download` ([playback section 7](playback.md#7-downloads)) | the stream, its subtitles and fonts | its playback ends, without the 2-minute rule; at most 24 hours after the answer (section 4.1) |
+| scan | `play` with `purpose: scan` and `delivery: file` ([playback section 8](playback.md#8-scan-access)) | `file` only, by ranges, within 32 MiB (section 4.2) | its playback ends (below); at most 10 minutes after the answer |
+| previews | a `previews` call ([video section 5.6](video.md#56-previews)) | the sheets or the image its answer lists | 10 minutes after the answer |
 
 A playback's ticket works while its playback is live. The playback ends,
 and the ticket with it, when:
@@ -514,10 +528,10 @@ and the ticket with it, when:
 - the pairing ends, the caller is no longer `paired`, or its key is
   suspended ([core section 12.6](core.md#126-revocation));
 - the library holding the copy is no longer offered to that peer;
-- or for any other ending [playback](playback.md) lists (how a playback
-  ends).
+- or for any other ending
+  [playback section 6.3](playback.md#63-how-a-playback-ends) lists.
 
-A previews or an image ticket is no playback: it counts against no
+A previews ticket is no playback: it counts against no
 limit, gets no `progress` or `stop`, and fetches under it don't make it
 last longer. The third and fourth endings above end it too.
 
@@ -529,8 +543,9 @@ before a peer's address changed keeps its URLs until it ends
 
 ### 4.1 Downloads
 
-A download's limits are in `limits` ([playback](playback.md): limits,
-`downloads`, `downloadsPerDay`, `downloadKbps`). At the media level:
+A download's limits are in `limits`
+([playback section 5](playback.md#5-limits): `downloads`,
+`downloadsPerDay`, `downloadKbps`). At the media level:
 
 - **Pacing.** The owning server sends a download ticket's bytes no
   faster than `downloadKbps`, measured over every window of 10 seconds,
@@ -543,18 +558,21 @@ A download's limits are in `limits` ([playback](playback.md): limits,
 ### 4.2 Scans
 
 A scan lets a media server that reads files to list them read a capped
-part of a copy, outside a watched playback ([playback](playback.md):
-scan access). At the media level:
+part of a copy, outside a watched playback
+([playback section 8](playback.md#8-scan-access)). At the media level:
 
 - Every fetch under a scan ticket is a fetch of `file` with a `Range`.
   A fetch without one is answered `416`.
 - **The cap.** The owning server counts the body bytes it sends under
-  the ticket. Together, they never pass 32 MiB (33,554,432 bytes) per
-  copy. A range that would pass the cap is served as a `206` cut short
+  the ticket, a byte sent twice counted twice. Together, they never pass
+  32 MiB (33,554,432 bytes) per scan ticket (a scan is of one copy); the
+  pairing's `scansPerDay` bounds the total. A range that would pass the cap is served as a `206` cut short
   at the cap (its *end* earlier than asked, as section 2.1 allows); a
   range that starts once the cap is spent is answered `416`.
-- **Pace.** The owning server may pace a scan's reads as it does a
-  download's, and answer `503` past its own bound of scans at once.
+- **Pace.** The owning server serves at most 2 of a scan's fetches at
+  once, and answers `503` past that
+  ([playback section 8](playback.md#8-scan-access)); it may pace them as
+  it does a download's.
 - The viewer's server passes a `416` past the cap to its reader as a
   failed read.
 
@@ -618,13 +636,16 @@ out of this part on 2026-11-17):
 proposal gives no number or form; they may change as implementations
 show):
 
-7. **URL forms**: `subtitles/<track>/whole`, `fonts/<n>` (0 to 7) and
-   `image` (section 1).
+7. **URL forms**: `subtitles/<track>/whole`, `ass/<track>/<part>` and
+   `ass/<track>/whole`, `fonts/<n>` (0 to 7) and `image` (section 1).
+   The forms of every URL a content part adds are here; video says only
+   what their bytes are.
 8. **Sizes**: a whole text track 16 MiB; a font 10 MiB, an image 1 MiB
    and the scan cap 32 MiB, reading the proposal's MB as MiB
    (sections 2.4 and 4.2).
-9. **Tickets**: an image ticket lives 10 minutes, as a previews ticket
-   does; a scan ticket follows a playback's 2-minute rule (section 4).
+9. **Tickets**: a `local` title's image comes under a previews ticket,
+   of 10 minutes; a scan ticket follows a playback's 2-minute rule, and
+   lasts 10 minutes at most (section 4).
 10. **The file**: `ETag: "<etag>"` and `Accept-Ranges: bytes` on every
     answer, a `206` required for a satisfiable range, never `*` as its
     total; no conditional headers (sections 2, 2.1 and 3.2).
@@ -632,8 +653,8 @@ show):
     ID, in one group `audio`, at most 32; a segment's headers within 30
     seconds (sections 2.4 and 3.1).
 12. **Fonts** as `font/ttf` or `font/otf`, told by their first bytes; no
-    font collections. **ASS** fetched as ASS only whole, relayed as
-    `text/x-ssa` (section 3.4).
+    font collections. **ASS** fetched as ASS in stretches or whole, at
+    URLs of its own, relayed as `text/x-ass` (section 3.4).
 13. **Pacing** of downloads over windows of 10 seconds; a scan read past
     the cap cut short rather than refused; a scan read without `Range`
     refused (sections 4.1 and 4.2).

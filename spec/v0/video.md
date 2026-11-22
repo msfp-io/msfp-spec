@@ -199,8 +199,9 @@ Example:
 - **Media info comes from the catalog only.** A viewer's server must not
   read a peer's file to learn what it is: each read starts a playback on
   the owning server. It builds its library from `copies`, and reads a
-  file only to play it, or under the scan access of the playback section
-  on scan access, where its media server reads it to list it.
+  file only to play it, or under scan access
+  ([playback section 8](playback.md#8-scan-access)), where its media
+  server reads it to list it.
 - **A change of `copies`** (a copy added, gone or replaced, or changed:
   its `etag`) is a change of the title: a changes reading sends it again.
   An owning server changes a copy's `etag` whenever its bytes change, and
@@ -217,8 +218,9 @@ Example:
   languages, or its best picture, works them out from `copies`.
 
 **Pages.** A title with copies is some 2 to 3 KB of JSON: pages are
-bounded by size as well as by count, as the catalog section on paging
-says (at most 5,000 titles and 3 MiB of JSON a page).
+bounded by size as well as by count, as
+[catalog section 3.1](catalog.md#31-paging-and-ordering) says (at most
+5,000 titles and 3 MiB of JSON a page).
 
 **Overfin.** As an owning server, Overfin fills `copies` from its index,
 which keeps each version's streams, length and size as its media server
@@ -265,8 +267,8 @@ Audio track: a track of `play`'s answer
 | `codec` | string | from the names list (section 3.5) |
 | `profile` | string, optional | `atmos`, `dtsx`, `dts-hd-ma`, `dts-hd-hra`, `dts-es`, `he-aac` or `lc` |
 | `layout` | string, optional | the channel layout as ffmpeg names it (`stereo`, `5.1(side)`, `7.1`), 1 to 32 characters of `A–Z a–z 0–9 ( ) . _ -` |
-| `sampleRate` | integer, optional | in hertz, 1 to 768,000 |
-| `bitDepth` | integer, optional | 1 to 64 |
+| `sampleRate` | integer, optional | in hertz, 8,000 to 768,000 |
+| `bitDepth` | integer, optional | 8 to 32 |
 | `title` | string, optional | the track's title, limited (section 3.6) |
 | `original` | boolean, optional | `true`: the title's original language |
 
@@ -325,18 +327,18 @@ some kinds sends those.
 
 `container`, the video `codec` and the audio `codec` take these values,
 lowercase. The first column is what `play`'s capabilities list
-(the playback section on the request, and section 5.1); the second, what
+([playback section 2.1](playback.md#21-the-request), and section 5.1); the second, what
 a viewer's device may not play but a viewer's server must know of to
 convert it.
 
 | Member | In the capabilities | Known for conversion |
 |--------|---------------------|----------------------|
-| `container` | `mp4`, `m4v`, `mov`, `webm`, `mkv`, `ts`, `mp3`, `aac`, `m4a`, `flac`, `ogg`, `opus`, `wav` | `avi`, `m2ts`, `mpegts`, `wmv`, `flv`, `3gp` |
+| `container` | `mp4`, `m4v`, `mov`, `webm`, `mkv`, `ts` (MPEG-TS), `mp3`, `aac`, `m4a`, `flac`, `ogg`, `opus`, `wav` | `avi`, `m2ts`, `wmv`, `flv`, `3gp` |
 | video `codec` | `h264`, `hevc`, `av1`, `vp8`, `vp9` | `mpeg2video`, `mpeg4`, `vc1`, `wmv3`, `h263`, `theora` |
 | audio `codec` | `aac`, `mp3`, `opus`, `vorbis`, `flac`, `ac3`, `eac3`, `alac`, `pcm_s16le` | `dts`, `truehd`, `mp2`, `wmav2`, `pcm_s24le`, `pcm_bluray` |
 
-The capabilities lists take the second column too (section 5.1 and the
-playback section on the request), so a device that plays one of these
+The capabilities lists take the second column too (section 5.1 and
+[playback section 2.1](playback.md#21-the-request)), so a device that plays one of these
 can say so. Anything else is sent as `other`. A viewer's server reads
 `other` as "convert it".
 
@@ -371,8 +373,8 @@ after those with one. So `play` without `versionId` and without an
 A viewer whose language only a lesser copy has gets that copy.
 
 A copy says what it is, not how it reaches a viewer: a device that can't
-play it gets it converted, or asks for something else (the playback
-section on delivery).
+play it gets it converted, or asks for something else
+([playback section 2.7](playback.md#27-delivery)).
 
 ### 3.8 What the caller keeps of copies
 
@@ -470,7 +472,7 @@ sends a small description of it, for films and series only:
 |-------|------|---------|
 | `name` | string | the title's name, at most 128 characters |
 | `year` | integer, optional | its year, 1800 to 9,999 |
-| `image` | boolean, optional | `true` when the owner shares one image of it, fetched with `previews` (section 6.7) |
+| `image` | boolean, optional | `true` when the owner shares one image of it, asked for with `previews` without `versionId` (sections 5.6 and 6.7) |
 
 - The caller makes `name` plain text and cuts it to 128 characters; a
   local film or series without a `name` left is skipped. A `year` out of
@@ -643,8 +645,8 @@ episodes by the owner's numbers.
 - **The owner chooses** whether to share local titles at all: off by
   default, it is allowed per pairing and per group. An owning server
   sends local titles only to a peer it allows them; a change of that
-  choice is a change of what it offers (the catalog section on what is
-  shared).
+  choice is a change of what it offers
+  ([catalog section 5](catalog.md#5-what-is-shared)).
 
 Test cases: `localKeys` and `tvdbKeys` in
 [vectors/v0/video.json](../../vectors/v0/video.json).
@@ -662,8 +664,9 @@ title it belongs to.
 
 `play` ([playback section 2](playback.md#2-play)) takes the key of a
 film, an episode or an extra. Everything [playback](playback.md) says
-holds, the delivery a request asks for included (the playback section on
-delivery); this section adds the members and rules that only video has.
+holds, the delivery a request asks for included
+([playback section 2.7](playback.md#27-delivery)); this section adds the
+members and rules that only video has.
 
 ### 5.1 The request
 
@@ -690,27 +693,27 @@ values are ignored):
 taken to play no Dolby Vision. An entry of `dvProfiles` that isn't an
 integer refuses the request (`400`), as a non-string entry of the other
 arrays does; one not in the list is ignored. The audio capabilities (its
-codecs, profiles, sample rates and bit depths) are the playback section's
-on the request, shared with music.
+codecs, profiles, sample rates and bit depths) are
+[playback section 2.1](playback.md#21-the-request)'s, shared with music.
 
-**Coarsening**, besides the playback section's: only the values listed,
+**Coarsening**, besides [playback section 2.1](playback.md#21-the-request)'s: only the values listed,
 each once, sorted (`dvProfiles` in increasing order); `maxHeight` stepped
 down to 480, 720, 1080, 1440, 2160 or 4320 (below 480 becomes 480).
 
-**Transcode targets.** With `delivery: transcode` (the playback section
-on delivery), these targets join those the playback section gives:
+**Transcode targets.** The `transcode` object and its targets
+(`videoCodec`, `maxHeight`, `maxBitrateKbps`, `audioCodec`,
+`audioChannels`) are [playback section 2.7](playback.md#27-delivery)'s.
+Video adds one:
 
 | Field | Type | Content |
 |-------|------|---------|
-| `videoCodec` | string | the video codec to convert to, one of `videoCodecs`' values |
-| `maxHeight` | integer | the picture's height at most, one of the six steps above |
 | `burnSubtitle` | string | `s<n>`: a subtitle track of the copy to burn into the picture, as a fallback for devices that can't draw it (ASS, say) |
 
-The owning server converts to exactly those targets, or refuses with the
-playback section's `409` `delivery-refused`, as it does for a
+The owning server burns that track in, or refuses with `409`
+`delivery-refused` ([playback section 2.5](playback.md#25-refusals)) a
 `burnSubtitle` that isn't a track of the copy, or one it can't burn. A
-malformed `burnSubtitle`, or a `videoCodec` or `maxHeight` outside its
-values, is refused (`400`).
+malformed `burnSubtitle` (not `s` and a number from 0 to 999 without
+leading zeros) is refused (`400`).
 
 **Nothing said.** Without `delivery`, the owning server decides from the
 capabilities, and when they say nothing: nothing said about `containers`
@@ -765,8 +768,8 @@ with the ID `s<n>` and the members of section 3.3, and these besides:
 
 | Field | Type | Content |
 |-------|------|---------|
-| `url` | string, optional | where to fetch it: as WebVTT for a text track, as PGS for a picture track (section 6.1) |
-| `assUrl` | string, optional | for an `ass` or `ssa` track: where to fetch it as ASS (section 6.1) |
+| `url` | string, optional | its track URL: as WebVTT for a text track, as PGS for a picture track (section 6.1) |
+| `assUrl` | string, optional | for an `ass` or `ssa` track: its track URL as ASS (section 6.1) |
 
 ### 5.4 Choosing the subtitles
 
@@ -801,7 +804,7 @@ can be fetched at apart:
 |----------|-------|----------|
 | `subrip`, `webvtt`, `mov_text`, `ttml` | WebVTT (section 6.3) | absent |
 | `ass`, `ssa` | WebVTT, its styling flattened (section 6.3) | ASS (section 6.4) |
-| `pgs`, `vobsub`, `dvb` | PGS (section 6.5) | absent |
+| `pgs`, `vobsub`, `dvb` | PGS, VobSub and DVB converted by the owning server (section 6.5) | absent |
 | `other` | absent | absent |
 
 A track the owning server can't serve apart has neither URL: it reaches a
@@ -809,7 +812,7 @@ viewer only in the copy played as it is, or burned in. A track beside
 the video (`external`) isn't in the file: a viewer's server fetches it
 apart, whatever the delivery.
 
-**A copy played as it is** (the playback section on delivery, `file`)
+**A copy played as it is** (`delivery` `file`, [playback section 2.7](playback.md#27-delivery))
 carries its own tracks and fonts untouched: the rules of section 6 cover
 converted streams and subtitles fetched apart.
 
@@ -864,13 +867,16 @@ The same object comes in `play`'s answer, for the copy playing, and in
 `previews`, under the peer's base path, signed as every call is. The
 viewer's server asks for a copy's seek-bar previews before anyone plays
 it, so that a viewer sees them from the first play; or for a local
-title's image (section 3.10).
+title's image (section 3.10). [Music](music.md#4-pictures) uses the same
+call, without `versionId`, for the image of a `local` artist or album:
+a server answers `previews` while `video` or `music` is on between the
+two, for the titles of the parts that are on.
 
 Request:
 
 | Field | Type | Required | Content |
 |-------|------|----------|---------|
-| `title` | string | yes | the key of a film, an episode or an extra, or of a local film or series, as the owning server sent it in `titles` |
+| `title` | string | yes | the key of a film, an episode or an extra, or of a local film or series (or a `local` artist or album of `music`), as the owning server sent it in `titles` |
 | `versionId` | string | no | the copy's `id`: required for previews; absent asks for a local title's image |
 
 Answer `200`:
@@ -881,13 +887,13 @@ Answer `200`:
 | `image` | string, optional | without `versionId`: the image's URL (section 6.1) | exactly the URL section 6.1 gives; otherwise dropped |
 
 - The URLs carry a ticket of the answer's own, made as every ticket is
-  (the media section on URLs). It works for 10 minutes from the answer,
+  ([media section 1](media.md#1-the-urls)). It works for 10 minutes from the answer,
   for these URLs only, and is no playback: it doesn't count against
   `streams`, starts no conversion, and gets no `progress` or `stop`.
 - The owning server answers `404` for a title or a copy it doesn't offer
   the caller, a copy without previews (`previews` not `true` in the
   catalog) or a title without an image; `400` for a malformed request;
-  `404` `not-supported` when `video` is off; and may refuse with `429`
+  `404` `not-supported` when neither `video` nor `music` is on; and may refuse with `429`
   `rate-limited` when asked too often
   ([core section 8.3](core.md#83-limits-and-overload)).
 - A viewer's server asks once per copy whose `previews` is `true`, after
@@ -901,20 +907,25 @@ Test cases: `previews` in
 
 ## 6. Media
 
-What [media](media.md) says holds. This section adds the URLs and the
-answers of subtitles, fonts, preview sheets and local titles' images.
-A copy served as it is (`file`) is the media section's alone: its own
-tracks and fonts come in it, untouched.
+What [media](media.md) says holds: the forms of the URLs below, how
+they are fetched, under which tickets, their sizes and the types the
+viewer's server relays them as are all media's
+([media sections 1](media.md#1-the-urls), [2.4](media.md#24-bounds) and
+[3.4](media.md#34-subtitles-fonts-sheets-and-images)). This section says
+which member holds which URL, and what the bytes must be. A copy served
+as it is (`file`) is the media part's alone: its own tracks and fonts
+come in it, untouched.
 
 ### 6.1 The URLs
 
-Under the owning server's stream root
-([media section 1](media.md#1-the-urls)):
+Each member holds exactly the URL media section 1 gives, under the
+owning server's stream root:
 
-- A subtitle or forced track's `url` is
-  `<stream root><ticket>/subtitles/<track>` for WebVTT, or
-  `<stream root><ticket>/pictures/<track>` for PGS; its `assUrl` is
-  `<stream root><ticket>/ass/<track>`, where `<track>` is the track ID.
+- A subtitle or forced track's `url` is its WebVTT track URL,
+  `<stream root><ticket>/subtitles/<track>`, for a text track, or its
+  PGS track URL, `<stream root><ticket>/pictures/<track>`, for a picture
+  track; the `assUrl` of an `ass` or `ssa` track is its ASS track URL,
+  `<stream root><ticket>/ass/<track>`. `<track>` is the track's ID.
 - `fonts[n]` is exactly `<stream root><ticket>/fonts/<n>`.
 - `trickplay.sheets[n]` is exactly `<stream root><ticket>/trickplay/<n>`.
 - A local title's `image` is exactly `<stream root><ticket>/image`.
@@ -929,41 +940,29 @@ matches the same pattern as `<name>`.
 
 ### 6.2 What is fetched
 
-- **Text subtitles in stretches.** Fetch `<track url>/<part>`, where
-  `<part>` is a decimal integer from 0 to 9,999 without leading zeros.
-  Part *n* covers the video from *n* × 120 to (*n* + 1) × 120 seconds,
-  and starts 10 seconds early, so a line already on screen comes along;
-  drop the doubles. From `url`, the answer is WebVTT, at most 5 MiB, in
-  the form of section 6.3; from `assUrl`, ASS, at most 5 MiB, in the
-  form of section 6.4, holding the script's header and the events that
-  show during the stretch.
-- **Whole text tracks.** During a playback, fetch `<track url>/all`, from
-  `url` or `assUrl`: the whole track, WebVTT or ASS, at most 32 MiB, in
-  the same form.
-- **PGS subtitles.** Fetch `<track url>/<part>` the same way. The answer
-  is the stretch's PGS data, `application/octet-stream`, at most 64 MiB,
+Everything here is fetched as
+[media section 3.4](media.md#34-subtitles-fonts-sheets-and-images) says:
+read whole, with plain `GET`s and no `Range`, within the sizes of
+[media section 2.4](media.md#24-bounds). What the answers are:
+
+- **Text subtitles**, in stretches (`<track url>/<part>`) or whole
+  (`<track url>/whole`). From `url`, WebVTT in the form of section 6.3;
+  from `assUrl`, ASS in the form of section 6.4, a stretch holding the
+  script's header and the events that show during it.
+- **Picture subtitles**, in stretches (`<track url>/<part>`): PGS,
   checked as section 6.5 says. A stretch with no subtitles is a `200`
   with an empty body (no segments), and the viewer's server relays it as
-  such: a `200` with an empty body.
-- **Fonts.** Fetch `fonts[n]`, plain `GET`, no `Range`. The answer is a
-  TrueType or OpenType file of at most 10 MiB, checked as section 6.6
-  says.
-- **Preview sheets.** Fetch `trickplay.sheets[n]` (section 5.5), the same
-  plain `GET` with the ticket, no `Range`. The owning server answers
-  `404` for a sheet number at or past the sheet count, one with leading
-  zeros, a query string, or a ticket not live
-  ([media section 4](media.md#4-how-long-a-ticket-works)). The answer is
-  `200`, `Content-Type: image/jpeg`, a JPEG of at most 8 MiB, no wider
-  than `columns` × `tileWidth` and no taller than `rows` × `tileHeight`
-  pixels. The owning server should re-encode every sheet before sending
-  it. A viewer's server may fetch the sheets when the playback starts or
-  when the viewer needs them; the fetches count as media requests for
-  media section 4.
-- **A local title's image.** Fetch `image` (section 6.7), the same way.
-
-The owning server answers `404` for a part, a font or a sheet the
-playback has no such thing for, and for any of them under a `previews`
-ticket other than its sheets or its image.
+  such.
+- **Fonts** (`fonts[n]`): a TrueType or OpenType file, checked as
+  section 6.6 says.
+- **Preview sheets** (`trickplay.sheets[n]`, section 5.5): a JPEG no
+  wider than `columns` × `tileWidth` and no taller than `rows` ×
+  `tileHeight` pixels. The owning server should re-encode every sheet
+  before sending it. A viewer's server may fetch the sheets when the
+  playback starts or when the viewer needs them; under a playback's
+  ticket, the fetches count as media requests for
+  [media section 4](media.md#4-how-long-a-ticket-works).
+- **A local title's image** (`image`): as section 6.7 says.
 
 The viewer's server checks again everything it relays, as
 [media section 3](media.md#3-what-is-fetched) says, and besides:
@@ -973,19 +972,11 @@ The viewer's server checks again everything it relays, as
   fails is a failed fetch
   ([media section 2.3](media.md#23-statuses)), answered `404` to the
   viewer;
-- a preview sheet is read whole, refused past 8 MiB, then checked from its
-  header, before decoding, to be a JPEG (by its content, whatever its
-  `Content-Type`) within the size above; any other is refused. It is
-  re-encoded as JPEG, so that only its pixels reach the viewer, and
-  served at the viewer's server's own route, to its own people only. A
-  viewer's server should bound how many sheets it reads at once (for
-  example 4).
-
-The viewer's server sets the `Content-Type` of what it relays itself:
-`text/vtt; charset=utf-8` for WebVTT, `text/x-ass; charset=utf-8` for
-ASS, `application/octet-stream` for PGS, `font/ttf` or `font/otf` for a
-font (by its first four bytes, section 6.6), `image/jpeg` for sheets,
-`image/jpeg` or `image/png` for an image.
+- a preview sheet is checked from its header, before decoding, to be a
+  JPEG (by its content, whatever its `Content-Type`) within the size
+  above; any other is refused. It is re-encoded as JPEG, so that only its
+  pixels reach the viewer, and served at the viewer's server's own route,
+  to its own people only.
 
 Test cases for sections 6.3 to 6.6 are in
 [vectors/v0/media.json](../../vectors/v0/media.json): `webvtt`, `ass`,
@@ -1002,7 +993,7 @@ The same rules hold for a whole track, with its own bounds (section 6.2).
 **Reading.**
 
 1. A part over 5 MiB (5,242,880 bytes) is refused; a whole track, over
-   32 MiB (33,554,432 bytes).
+   16 MiB (16,777,216 bytes) ([media section 2.4](media.md#24-bounds)).
 2. Each carriage return and line feed pair becomes a line feed, then each
    remaining carriage return becomes a line feed. One byte order mark
    (U+FEFF) at the start is removed.
@@ -1107,7 +1098,7 @@ server.
 
 ### 6.4 ASS
 
-An `ass` or `ssa` track served at its `assUrl` is ASS (Advanced
+An `ass` or `ssa` track served at its `assUrl` (`ass/<track>/<part>` or `ass/<track>/whole`, [media section 1](media.md#1-the-urls)) is ASS (Advanced
 SubStation Alpha, script type `v4.00+`), rebuilt, not filtered: known
 sections, known lines and known override tags only, anything else
 dropped, sizes capped. The owning server applies these rules to what it
@@ -1123,7 +1114,7 @@ every event.
 **Reading.**
 
 1. A part over 5 MiB (5,242,880 bytes) is refused; a whole track, over
-   32 MiB (33,554,432 bytes).
+   16 MiB (16,777,216 bytes) ([media section 2.4](media.md#24-bounds)).
 2. Line ends and the byte order mark as WebVTT's step 2 (section 6.3).
    The script is split into lines; white space at both ends of a line is
    removed. Empty lines, and lines starting with `;` or `!:`, are
@@ -1475,7 +1466,7 @@ the proposal's own default.
    **Settled:** 16, kept.
 4. **Descriptions for video too**
    ([proposal 11](../../proposals/0011-music.md), open point 2;
-   [music open question 2](music.md#8-open-questions)). Video titles
+   [music's open questions](music.md#9-open-questions)). Video titles
    carry keys only; optional names would let a viewer's server list a
    peer's titles without TMDB
    ([core open question 26](core.md#18-open-questions)).
@@ -1492,7 +1483,7 @@ the proposal's own default.
    4.1); the key stays the episode's identity when TMDB renumbers.
 
 Choices confirmed by the owner on 2026-11-17, moved here from
-[playback](playback.md#8-open-questions) and [media](media.md#6-open-questions)
+[playback](playback.md#10-open-questions) and [media](media.md#6-open-questions)
 (they may still change as implementations show):
 
 6. **`startPositionMs` with several episodes in one copy** (section 5.2).
@@ -1544,6 +1535,6 @@ absorbing [proposal 15](../../proposals/0015-copies-in-the-catalog.md)):
     absolute numbers included, and the `local` scheme, off by default.
 14. **Extras** (sections 3.9 and 4.6), without theme songs and videos.
 15. **Styled subtitles, fonts and previews** (sections 5.6 and 6): ASS
-    rebuilt, at most 8 fonts of 10 MiB, VobSub and DVB as pictures,
+    rebuilt, at most 8 fonts of 10 MiB, VobSub and DVB converted to PGS,
     WebVTT keeping italics, bold, colours and positions, burning in on
     request, whole text tracks, and `previews` before a first play.
