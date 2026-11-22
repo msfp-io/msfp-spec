@@ -1225,27 +1225,113 @@ def image_kind(b, size=None):
     return fmt, w, h
 
 
-def image_answer(root, body):
-    """The viewer's server's check of an image answer (catalog 4.4): the
-    ticket of its url, exactly <stream root><ticket>/image; raises
-    Refused (the answer dropped). body is the parsed answer."""
+def image_answer(body):
+    """The viewer's server's check of an image answer (catalog 4.4):
+    {"ticket"}, the ticket 1 to 64 characters of A-Z a-z 0-9 _ -; raises
+    Refused (the answer dropped, no image). The URL is built from it
+    (image_url), never read from the answer: a url member is unknown."""
     if not isinstance(body, dict):
         raise Refused("not a JSON object")
-    u = body.get("url")
-    if not isinstance(u, str):
-        raise Refused("url absent or not a string")
-    if not u.startswith(root):
-        raise Refused("url not under the owning server's stream root")
-    rest = u[len(root):]
-    if not rest.endswith("/image"):
-        raise Refused("url not ending in /image")
-    t = rest[:-len("/image")]
+    t = body.get("ticket")
+    if not isinstance(t, str):
+        raise Refused("ticket absent or not a string")
     if not 1 <= len(t) <= 64:
         raise Refused("a ticket not 1 to 64 characters")
     for c in t:
         if not re.fullmatch(r"[A-Za-z0-9_-]", c):
             raise Refused("a ticket with byte %r outside A-Z a-z 0-9 _ -" % c)
     return t
+
+
+def image_url(root, ticket):
+    """The URL of a local title's image (catalog 4.4, media 1)."""
+    return root + ticket + "/image"
+
+
+# ---- The names an owning server serves (media 1) ---------------------------------------------
+
+_NUMBER = re.compile(r"0|[1-9][0-9]*")
+
+
+def _number(s, top):
+    return int(s) if _NUMBER.fullmatch(s) and len(s) <= 15 and int(s) < top else None
+
+
+def serves(t, name):
+    """Media 1 and 4: None when the owning server serves name (the URL's
+    path after <stream root><ticket>/) under a ticket t (its kind; for a
+    playback or a download what its answer opened: protocol, subtitles,
+    fontCount, sheetCount, queue (each entry's protocol, "" for one not
+    prepared) and the bare names its playlists give), else why it answers
+    404. It serves exactly the names media 1 lists, within their counts."""
+    from .wire import check_media_name
+    p = name.split("/")
+
+    def stream(proto, q):
+        if len(q) == 1 and ((proto == "file" and q[0] == "file") or (proto == "hls" and q[0] == "master.m3u8")
+                            or (proto == "hls" and check_media_name(q[0]) is None and q[0] in t.get("names", ()))):
+            return None
+        return "not a name of the stream"
+    kind = t.get("kind")
+    if kind == "image":
+        return None if name == "image" else "an image ticket opens image only"
+    if kind == "scan":
+        return None if name == "file" else "a scan ticket opens file only"
+    if kind == "previews":
+        if len(p) == 2 and p[0] == "trickplay":
+            return None if _number(p[1], t.get("sheetCount", 0)) is not None else "a sheet at or past the sheet count"
+        return "a previews ticket opens the sheets only"
+    if kind not in ("playback", "download"):
+        return "no ticket of that kind"
+    if p[0] in ("subtitles", "ass", "pictures"):
+        if len(p) != 3:
+            return "a subtitle URL is <kind>/<id>/<part> or /whole"
+        e = next((x for x in t.get("subtitles", ()) if x["id"] == p[1]), None)
+        if e is None:
+            return "a subtitle track the answer didn't list"
+        if (p[0] == "subtitles" and e["form"] != "text") or (p[0] == "pictures" and e["form"] != "picture") \
+                or (p[0] == "ass" and not e.get("ass")):
+            return "a form the answer didn't open for that track"
+        if p[2] == "whole" and p[0] != "pictures":
+            return None
+        return None if _number(p[2], 10000) is not None else "a part that isn't a number from 0 to 9,999"
+    if p[0] == "fonts":
+        if len(p) == 2 and _number(p[1], t.get("fontCount", 0)) is not None:
+            return None
+        return "a font at or past fontCount"
+    if p[0] == "trickplay":
+        if kind != "playback":
+            return "a download ticket opens no sheets"
+        if len(p) == 2 and _number(p[1], t.get("sheetCount", 0)) is not None:
+            return None
+        return "a sheet at or past the sheet count"
+    if p[0] == "queue":
+        if kind != "playback":
+            return "a download ticket opens no queue"
+        if len(p) < 2:
+            return "a queue URL is queue/<n>/<name>"
+        q = t.get("queue", [])
+        n = _number(p[1], len(q))
+        if n is None or q[n] == "":
+            return "a queue entry the owning server didn't prepare"
+        return stream(q[n], p[2:])
+    return stream(t.get("protocol"), p)
+
+
+def relay_type(what, value):
+    """Media 3: the Content-Type the viewer's server relays the file with
+    (what "file", value the copy's mediaType from the catalog, "" for
+    none) or a segment with (what "segment", value the owning server's
+    Content-Type)."""
+    from .copies import media_type
+    other = "application/octet-stream"
+    if what == "file":
+        return value if media_type(value) else other
+    mt = (value or "").split(";")[0].strip().lower() or "-"
+    top, _, sub = mt.partition("/")
+    if top not in ("video", "audio") or not sub or not re.fullmatch(r"[a-z0-9.+-]+", sub):
+        return other
+    return mt
 
 
 # ---- PGS (video 6.5) ------------------------------------------------------------------

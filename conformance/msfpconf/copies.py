@@ -1,8 +1,10 @@
 """What a caller keeps of a video title and its copies (spec/v0/video.md
-sections 3.1 to 3.10, as revised by proposal 16), video title keys of the
-tmdb, tvdb and local schemes and extras' keys (video 4), the previews
-answer (video 5.5, 5.6), language tags as catalog 3 sends them, and the
-JSON helpers the vectors' outputs need.
+sections 3.1 to 3.10, as revised by proposals 16 and 17), video title
+keys of the tmdb, tvdb and local schemes and extras' keys (video 4), what
+a viewer's server reads from a codecs string (video 3.5), play's video
+members and the URLs built from its ticket (video 5.3, 6.1), the previews
+answer (video 5.6), language tags as catalog 3 sends them, and the JSON
+helpers the vectors' outputs need.
 
 The keep_* functions take a title or a copy as parsed JSON: from
 loads() here (numbers kept as written, as the vectors are read) or from
@@ -256,27 +258,23 @@ def extra_parent(k):
 # ---- Copies (video 3.2 to 3.8) ------------------------------------------------------
 
 # Every list of video 3.2 to 3.9 is open (core 8.5, proposal 17): its
-# values are tokens, kept known or not. threeD is the one closed list left.
-THREE_D = ["sbs", "tab", "mvc"]
+# values are tokens (or media types), kept known or not.
 _TOKEN = re.compile(r"[a-z0-9._-]{1,32}")
+_MEDIA_TYPE = re.compile(r"[a-z0-9.+_/-]{1,127}")
 MAX_DURATION = 8640000000
 MAX_SIZE = 999999999999999
-_CODEC_TAG = re.compile(r"[A-Za-z0-9]{1,8}")
-_LAYOUT = re.compile(r"[A-Za-z0-9()._-]{1,32}")
 _CODECS = re.compile(r"[A-Za-z0-9.+-]{1,64}")
 _FPS = re.compile(r"([1-9][0-9]{0,6})/([1-9][0-9]{0,6})")
 _ASPECT = re.compile(r"([1-9][0-9]{0,4}):([1-9][0-9]{0,4})")
 MAX_COPIES = 16
 MAX_HDR = 8
 _DATE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
+# The six codecs whose codecs string is required (video 3.5).
+REQUIRES_CODECS = ("h264", "hevc", "av1", "vp9", "aac", "dts")
 
 
 def _form(v, rx):
     return v if isinstance(v, str) and rx.fullmatch(v) else None
-
-
-def _one_of(v, lst):
-    return v if isinstance(v, str) and v in lst else None
 
 
 def token(v):
@@ -285,13 +283,15 @@ def token(v):
     return v if isinstance(v, str) and _TOKEN.fullmatch(v) else None
 
 
-def text_fact(v, n):
-    """A fact given as plain text (a profile, video 3.3): cleaned, None when
-    empty or longer than n code points, never cut."""
-    if not isinstance(v, str):
+def media_type(v):
+    """v when it is a media type of core 8.5 (lowercase, exactly one /, no
+    parameters, each half starting with a letter or a digit, at most 127
+    characters of a-z 0-9 . + - _ /), else None."""
+    if not isinstance(v, str) or not _MEDIA_TYPE.fullmatch(v) or v.count("/") != 1:
         return None
-    t = clean_name(v, n + 1)
-    return t if t and len(t) <= n else None
+    top, sub = v.split("/")
+    ok = lambda h: h != "" and (h[0].isdigit() or "a" <= h[0] <= "z")
+    return v if ok(top) and ok(sub) else None
 
 
 def fps(v):
@@ -327,6 +327,33 @@ def _put(d, k, v):
         d[k] = v
 
 
+def _h273(v):
+    """An H.273 code point, 0 to 255; 2 ("unspecified") counts as absent."""
+    n = int_in(v, 0, 255)
+    return None if n == 2 else n
+
+
+def keep_layout(v):
+    """Video 5.5's reading of a previewLayout: None when it is dropped."""
+    if not isinstance(v, dict):
+        return None
+    w, h = int_in(v.get("tileWidth"), 1, 2048), int_in(v.get("tileHeight"), 1, 2048)
+    c, r = int_in(v.get("columns"), 1, 100), int_in(v.get("rows"), 1, 100)
+    iv = int_in(v.get("intervalMs"), 100, 3600000)
+    if None in (w, h, c, r, iv) or c * w > 4096 or r * h > 4096:
+        return None
+    n = int_in(v.get("tileCount"), 1, 1000 * c * r)
+    if n is None:
+        return None
+    return {"tileWidth": w, "tileHeight": h, "columns": c, "rows": r, "intervalMs": iv, "tileCount": n}
+
+
+def sheet_count(layout):
+    """The number of sheets a kept previewLayout gives (video 5.5)."""
+    per = layout["columns"] * layout["rows"]
+    return -(-layout["tileCount"] // per)
+
+
 def _keep_stream(o):
     if not isinstance(o, dict):
         return None
@@ -335,12 +362,7 @@ def _keep_stream(o):
     if codec is None or w is None or h is None:
         return None
     s = {"codec": codec}
-    _put(s, "codecTag", _form(o.get("codecTag"), _CODEC_TAG))
     _put(s, "codecs", _form(o.get("codecs"), _CODECS))
-    _put(s, "profile", text_fact(o.get("profile"), 64))
-    lv = number(o.get("level"))
-    if lv is not None and 0 <= lv <= 1000:
-        s["level"] = lv
     s["width"], s["height"] = w, h
     _put(s, "sampleAspect", aspect(o.get("sampleAspect")))
     r = int_in(o.get("rotation"), 0, 270)
@@ -350,8 +372,9 @@ def _keep_stream(o):
     c = o.get("colour")
     if isinstance(c, dict):
         col = {}
-        for k in ("primaries", "transfer", "matrix", "range"):
-            _put(col, k, token(c.get(k)))
+        for k in ("primaries", "transfer", "matrix"):
+            _put(col, k, _h273(c.get(k)))
+        _put(col, "fullRange", boolean(c.get("fullRange")))
         if col:
             s["colour"] = col
     if isinstance(o.get("hdr"), list):
@@ -362,30 +385,16 @@ def _keep_stream(o):
                 hdr.append(t)
         _put(s, "hdr", sorted(hdr)[:MAX_HDR])
     dv = o.get("dv")
-    if isinstance(dv, dict) and "dv" in s.get("hdr", []):
+    if isinstance(dv, dict):
         p, lv2, c = int_in(dv.get("profile"), 0, 127), int_in(dv.get("level"), 0, 63), int_in(dv.get("compatibility"), 0, 15)
         if None not in (p, lv2, c):
             s["dv"] = {"profile": p, "level": lv2, "compatibility": c}
-            for f in ("el", "bl", "rpu"):
-                _put(s["dv"], f, boolean(dv.get(f)))
+            _put(s["dv"], "el", boolean(dv.get("el")))
     _put(s, "fps", fps(o.get("fps")))
+    if codec == "h264":
+        _put(s, "refFrames", int_in(o.get("refFrames"), 1, 16))
     _put(s, "interlaced", boolean(o.get("interlaced")))
     return s
-
-
-def _keep_parts(v, size):
-    if not isinstance(v, list) or not 1 <= len(v) <= 16:
-        return None
-    out, total = [], 0
-    for e in v:
-        if not isinstance(e, dict):
-            return None
-        s, d = int_in(e.get("size"), 1, MAX_SIZE), int_in(e.get("durationMs"), 0, MAX_DURATION)
-        if s is None or d is None:
-            return None
-        total += s
-        out.append({"size": s, "durationMs": d})
-    return out if total == size else None
 
 
 def _keep_audio(lst):
@@ -403,14 +412,11 @@ def _keep_audio(lst):
         _put(t, "role", token(o.get("role")))
         _put(t, "default", boolean(o.get("default")))
         _put(t, "forced", boolean(o.get("forced")))
-        _put(t, "fileIndex", int_in(o.get("fileIndex"), 0, 999))
         t["codec"] = codec
         _put(t, "codecs", _form(o.get("codecs"), _CODECS))
-        _put(t, "profile", text_fact(o.get("profile"), 64))
-        _put(t, "layout", _form(o.get("layout"), _LAYOUT))
+        _put(t, "objects", token(o.get("objects")))
         _put(t, "sampleRate", int_in(o.get("sampleRate"), 8000, 768000))
         _put(t, "bitDepth", int_in(o.get("bitDepth"), 8, 32))
-        _put(t, "title", plain(o.get("title"), 64))
         _put(t, "original", boolean(o.get("original")))
         out.append(t)
     return out
@@ -427,12 +433,11 @@ def _keep_subtitles(lst):
         seen.add(tid)
         t = {"id": tid}
         _put(t, "language", o["language"] if valid_tag(o.get("language")) else None)
+        _put(t, "role", token(o.get("role")))
         for f in ("default", "forced", "hearingImpaired"):
             _put(t, f, boolean(o.get(f)))
         _put(t, "format", token(o.get("format")))
         _put(t, "external", boolean(o.get("external")))
-        _put(t, "fileIndex", int_in(o.get("fileIndex"), 0, 999))
-        _put(t, "title", plain(o.get("title"), 64))
         out.append(t)
     return out
 
@@ -460,9 +465,7 @@ def _keep_segments(v, duration):
         s, t = int_in(o.get("startMs"), 0, duration), int_in(o.get("endMs"), 0, duration)
         if kind is None or s is None or t is None or s >= t:
             continue
-        g = {"kind": kind, "startMs": s, "endMs": t}
-        _put(g, "final", boolean(o.get("final")))
-        out.append(g)
+        out.append({"kind": kind, "startMs": s, "endMs": t})
     return out
 
 
@@ -477,9 +480,9 @@ def keep_video_copy(o):
     d = int_in(o.get("durationMs"), 0, MAX_DURATION)
     if d is None:
         raise ValueError("durationMs isn't an integer from 0 to 8,640,000,000")
-    container = token(o.get("container"))
-    if container is None:
-        raise ValueError("container isn't a token (core 8.5)")
+    mt = media_type(o.get("mediaType"))
+    if mt is None:
+        raise ValueError("mediaType missing or not a media type (core 8.5)")
     size = int_in(o.get("size"), 1, MAX_SIZE)
     if size is None:
         raise ValueError("size isn't an integer from 1 to 999,999,999,999,999")
@@ -490,23 +493,20 @@ def keep_video_copy(o):
     if not isinstance(audio, list):
         raise ValueError("audioTracks isn't an array")
     c = {"id": cid}
-    _put(c, "name", plain(o.get("name"), 64))
     _put(c, "edition", token(o.get("edition")))
     c["durationMs"] = d
     _put(c, "startMs", int_in(o.get("startMs"), 0, d))
-    c["container"], c["size"], c["etag"] = container, size, etag
-    _put(c, "parts", _keep_parts(o.get("parts"), size))
-    _put(c, "bitrateKbps", int_in(o.get("bitrateKbps"), 1, 10000000))
+    _put(c, "endMs", int_in(o.get("endMs"), c.get("startMs", 0) + 1, d))
+    c["mediaType"], c["size"], c["etag"] = mt, size, etag
+    _put(c, "parts", int_in(o.get("parts"), 2, 16))
     _put(c, "video", _keep_stream(o.get("video")))
     c["audioTracks"] = _keep_audio(audio)
     if isinstance(o.get("subtitleTracks"), list):
         _put(c, "subtitleTracks", _keep_subtitles(o["subtitleTracks"]))
     _put(c, "chapters", _keep_chapters(o.get("chapters"), d))
     _put(c, "segments", _keep_segments(o.get("segments"), d))
-    _put(c, "previews", boolean(o.get("previews")))
-    if real_day(o.get("added")):
-        c["added"] = o["added"]
-    _put(c, "threeD", _one_of(o.get("threeD"), THREE_D))
+    _put(c, "previewLayout", keep_layout(o.get("previewLayout")))
+    _put(c, "threeD", token(o.get("threeD")))
     return c
 
 
@@ -518,24 +518,24 @@ def keep_video_title(o, libraries):
     ValueError with why it skips the title."""
     if not isinstance(o, dict):
         raise ValueError("not an object")
-    key, kind, lib = o.get("key"), o.get("kind"), o.get("library")
-    if not all(isinstance(x, str) for x in (key, kind, lib)):
-        raise ValueError("key, kind or library isn't a string")
+    # A title carries no kind (catalog 3): its key names it, and a kind
+    # member is unknown, ignored.
+    key, lib = o.get("key"), o.get("library")
+    if not all(isinstance(x, str) for x in (key, lib)):
+        raise ValueError("key or library isn't a string")
     try:
         k = parse_video_key(key)
     except ValueError as e:
         raise ValueError("key: %s" % e)
-    if kind != k.kind:
-        raise ValueError("kind %r, but the key names a %s" % (kind, k.kind))
+    kind = k.kind
     if lib not in libraries:
         raise ValueError("library %r wasn't asked for" % lib)
-    t = {"key": key, "kind": kind, "library": lib}
+    t = {"key": key, "library": lib}
     if kind == "extra":
         et = token(o.get("extraType"))
         if et is None:
             raise ValueError("an extra whose extraType is missing or isn't a token")
         t["extraType"] = et
-        _put(t, "name", plain(o.get("name"), 64))
     if k.scheme == "local" and kind in ("movie", "series"):
         name = plain(o.get("name"), 128)
         if not name:
@@ -560,12 +560,15 @@ def keep_video_title(o, libraries):
             if x and x.kind == "episode" and x.series == k.series:
                 w.append(s)
         _put(t, "with", w)
+    # ids (video 4.3): on episodes of tmdb and tvdb and on tvdb series only.
+    episode = kind == "episode" and k.scheme != "local"
+    tvdb_series = kind == "series" and k.scheme == "tvdb"
     ids = o.get("ids")
-    if isinstance(ids, dict) and k.scheme != "local" and kind in ("movie", "series", "episode"):
+    if isinstance(ids, dict) and (episode or tvdb_series):
         kept = {}
         for scheme, val in ids.items():
             if isinstance(val, str) and ((scheme == "imdb" and _IMDB.fullmatch(val))
-                                         or (scheme == "tvdb" and _ID.fullmatch(val))
+                                         or (scheme == "tvdb" and episode and _ID.fullmatch(val))
                                          or (scheme == "tmdb" and k.scheme == "tvdb" and _ID.fullmatch(val))):
                 kept[scheme] = val
         _put(t, "ids", dict(sorted(kept.items())) or None)
@@ -611,93 +614,193 @@ def check_previews_request(o):
     return None
 
 
-_TRICKPLAY = ["tileWidth", "tileHeight", "columns", "rows", "intervalMs", "tileCount"]
-
-
-def keep_trickplay(o, root):
-    """Video 5.5's reading of a trickplay object: raises ValueError when it
-    refuses the whole answer (a field of another JSON type, a sheet URL
-    that isn't the one video 6.1 gives); None when it drops the previews;
-    else the kept object (with "ticket" not in it: see trickplay_ticket)."""
-    if not isinstance(o, dict):
-        raise ValueError("trickplay isn't an object")
-    n = {}
-    for f in _TRICKPLAY:
-        if f in o:
-            i = int_in(o[f], -MAX_INT, MAX_INT)
-            if i is None:
-                raise ValueError("%s isn't an integer" % f)
-            n[f] = i
-    sheets = None
-    if "sheets" in o:
-        if not isinstance(o["sheets"], list):
-            raise ValueError("sheets isn't an array")
-        sheets, ticket = [], ""
-        for i, s in enumerate(o["sheets"]):
-            if not isinstance(s, str):
-                raise ValueError("sheets[%d] isn't a string" % i)
-            rest = s[len(root):] if s.startswith(root) else None
-            tk, _, tail = (rest or "").partition("/")
-            if rest is None or "/" not in rest or not OPAQUE.fullmatch(tk) or tail != "trickplay/%d" % i:
-                raise ValueError("sheets[%d] isn't <stream root><ticket>/trickplay/%d" % (i, i))
-            if ticket and tk != ticket:
-                raise ValueError("sheets[%d] names another ticket" % i)
-            ticket = tk
-            sheets.append(s)
-
-    def within(f, lo, hi):
-        return f in n and lo <= n[f] <= hi
-    if not (within("tileWidth", 1, 2048) and within("tileHeight", 1, 2048) and within("columns", 1, 100)
-            and within("rows", 1, 100) and within("intervalMs", 100, 3600000) and within("tileCount", 1, MAX_INT)) \
-            or sheets is None:
-        return None
-    if n["columns"] * n["tileWidth"] > 4096 or n["rows"] * n["tileHeight"] > 4096:
-        return None
-    per = n["columns"] * n["rows"]
-    want = -(-n["tileCount"] // per)
-    if want > 1000 or len(sheets) != want:
-        return None
-    return dict([(f, n[f]) for f in _TRICKPLAY] + [("sheets", sheets)])
-
-
-def keep_previews_answer(o, root):
-    """Video 5.6: what the viewer's server keeps of a previews answer ({}
-    when it drops the previews); raises ValueError when it refuses it."""
+def keep_previews_answer(o):
+    """Video 5.6: what the viewer's server keeps of a previews answer (its
+    ticket and etag); raises ValueError when it refuses it (no sheets)."""
     if not isinstance(o, dict):
         raise ValueError("not an object")
-    out = {}
-    if "trickplay" in o:
-        tp = keep_trickplay(o["trickplay"], root)
-        if tp is not None:
-            out["trickplay"] = tp
+    tk, et = _form(o.get("ticket"), OPAQUE), _form(o.get("etag"), OPAQUE)
+    if tk is None:
+        raise ValueError("ticket missing or not 1 to 64 characters of A-Z a-z 0-9 _ -")
+    if et is None:
+        raise ValueError("etag missing or not 1 to 64 characters of A-Z a-z 0-9 _ -")
+    return {"ticket": tk, "etag": et}
+
+
+# ---- codecs (video 3.5) ----------------------------------------------------------------
+
+_AVC = re.compile(r"(avc1|avc3)\.([0-9A-Fa-f]{2})[0-9A-Fa-f]{2}([0-9A-Fa-f]{2})")
+_HEVC = re.compile(r"(hvc1|hev1)\.[ABC]?([0-9]{1,2})\.[0-9A-Fa-f]{1,8}\.([LH])([0-9]{1,3})((?:\.[0-9A-Fa-f]{1,2}){0,6})")
+_AV1 = re.compile(r"(av01)\.([0-7])\.([0-9]{2})([MH])\.([0-9]{2})(?:\.([01])\.([01][01][0-3])\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[01])?")
+_VP9 = re.compile(r"(vp09)\.([0-9]{2})\.[0-9]{2}\.([0-9]{2})(?:\.([0-9]{2})(?:\.[0-9]{2}){0,4})?")
+_AAC = re.compile(r"mp4a\.(40\.[1-9][0-9]?|66|67|68)")
+_DTS = re.compile(r"dtsc|dtsh|dtsl|dtse")
+DV_ENTRY = {"hvc1": "dvh1", "hev1": "dvhe", "av01": "dav1", "avc1": "dva1", "avc3": "dvav"}
+
+
+def read_codecs(o):
+    """Video 3.5: what a viewer's server decides by in a stream or a track
+    as kept (codec, codecs, bitDepth, dv): the parts of codecs it reads,
+    those it ignores left out, and the Dolby Vision string rebuilt from
+    the base 4CC and dv. Raises ValueError when it treats the copy as one
+    it can't play as it is (codecs missing or malformed where required,
+    or unreadable for its codec)."""
+    if not isinstance(o, dict):
+        raise ValueError("not an object")
+    codec = token(o.get("codec"))
+    if codec is None:
+        raise ValueError("codec missing or not a token")
+    f = {"codec": codec}
+    cs = _form(o.get("codecs"), _CODECS)
+    if cs is None:
+        if codec in REQUIRES_CODECS:
+            raise ValueError("codecs missing or malformed, required for %s: can't play as it is" % codec)
+        return f
+    f["codecs"] = cs
+    own = int_in(o.get("bitDepth"), 1, 32)
+    for dv in DV_ENTRY.values():
+        if cs == dv or cs.startswith(dv + "."):
+            raise ValueError("a Dolby Vision 4CC (%s): codecs carries the base codec's; can't play as it is" % dv)
+    four = None
+    if codec == "h264":
+        m = _AVC.fullmatch(cs)
+        if not m:
+            raise ValueError("codecs isn't avc1 or avc3 and three bytes: can't play as it is")
+        four, f["profile"], f["level"] = m.group(1), int(m.group(2), 16), int(m.group(3), 16)
+    elif codec == "hevc":
+        m = _HEVC.fullmatch(cs)
+        if not m:
+            raise ValueError("codecs isn't an HEVC string of hvc1 or hev1: can't play as it is")
+        four, f["profile"], f["tier"], f["level"] = m.group(1), int(m.group(2)), m.group(3), int(m.group(4))
+        cons = m.group(5)[1:] if m.group(5) else ""
+        if f["profile"] >= 4 and not cons:
+            raise ValueError("an HEVC profile of 4 or more without its constraint bytes: can't play as it is")
+        if cons:
+            f["constraints"] = cons
+    elif codec == "av1":
+        m = _AV1.fullmatch(cs)
+        if not m:
+            raise ValueError("codecs isn't an AV1 string of av01: can't play as it is")
+        four, f["profile"], f["level"], f["tier"], f["bitDepth"] = (m.group(1), int(m.group(2)), int(m.group(3)),
+                                                                    m.group(4), int(m.group(5)))
+        if m.group(6) == "1":
+            f["chroma"] = "4:0:0"
+        elif m.group(7):
+            ch = {"110": "4:2:0", "111": "4:2:0", "112": "4:2:0", "113": "4:2:0", "100": "4:2:2",
+                  "000": "4:4:4"}.get(m.group(7))
+            if ch:
+                f["chroma"] = ch
+        elif f["profile"] == 0:
+            f["chroma"] = "4:2:0"
+        elif f["profile"] == 1:
+            raise ValueError("AV1 profile 1 (4:4:4) without the long form: can't play as it is")
+    elif codec == "vp9":
+        m = _VP9.fullmatch(cs)
+        if not m:
+            raise ValueError("codecs isn't a VP9 string of vp09: can't play as it is")
+        four, f["profile"], f["bitDepth"] = m.group(1), int(m.group(2)), int(m.group(3))
+        sub = m.group(4)
+        if sub in ("00", "01"):
+            f["chroma"] = "4:2:0"
+        elif sub == "02":
+            f["chroma"] = "4:2:2"
+        elif sub == "03":
+            f["chroma"] = "4:4:4"
+        elif sub is None:
+            if f["profile"] in (1, 3):
+                raise ValueError("VP9 profile 1 or 3 (not 4:2:0) without the long form: can't play as it is")
+            f["chroma"] = "4:2:0"
+        else:
+            raise ValueError("a VP9 chroma subsampling other than 00 to 03: can't play as it is")
+    elif codec == "aac":
+        m = _AAC.fullmatch(cs)
+        if not m:
+            raise ValueError("codecs isn't mp4a.40.<n> or an MPEG-2 AAC mp4a: can't play as it is")
+        f["mp4a"] = m.group(1)
+    elif codec == "dts":
+        if not _DTS.fullmatch(cs):
+            raise ValueError("codecs isn't dtsc, dtsh, dtsl or dtse: can't play as it is")
+    if own is not None:
+        f["bitDepth"] = own
+    dv = o.get("dv")
+    if isinstance(dv, dict) and four:
+        p, lv = int_in(dv.get("profile"), 0, 127), int_in(dv.get("level"), 0, 63)
+        if p is not None and lv is not None:
+            f["dolbyVision"] = "%s.%02d.%02d" % (DV_ENTRY[four], p, lv)
+    order = ("codec", "codecs", "profile", "tier", "level", "bitDepth", "chroma", "constraints", "mp4a", "dolbyVision")
+    return {k: f[k] for k in order if k in f}
+
+
+def codecs_problems(c, where):
+    """Video 3.5 in one copy as a caller keeps it: the streams and tracks
+    a viewer's server can't read (codecs missing or malformed where it is
+    required, or unreadable for its codec)."""
+    out = []
+    streams = ([("video", c["video"])] if c.get("video") else []) + [
+        ("audio %s" % t["id"], t) for t in c.get("audioTracks", [])]
+    for what, s in streams:
+        try:
+            read_codecs(s)
+        except ValueError as e:
+            out.append("%s: %s: %s (video 3.5)" % (where, what, e))
     return out
 
 
-# ---- fonts (video 5.3, 6.6) -----------------------------------------------------------
+# ---- play's video members (video 5.3, 5.4, 6.1) ----------------------------------------------
+
+# Video 5.4's table: the form (and ass) a track of a listed format is served in.
+SERVED_FORM = {"subrip": ("text", False), "webvtt": ("text", False), "mov_text": ("text", False),
+               "ttml": ("text", False), "ass": ("text", True), "ssa": ("text", True),
+               "hdmv_pgs_subtitle": ("picture", False), "dvd_subtitle": ("picture", False),
+               "dvb_subtitle": ("picture", False)}
+
+
+def keep_video_answer(o, cp, root):
+    """Video 5.3 and 6.1: the video members of play's answer as the
+    viewer's server keeps them for the copy cp (as kept), with urls, every
+    URL it may build from the stream root and the ticket; raises
+    ValueError when it refuses the answer."""
+    if not isinstance(o, dict):
+        raise ValueError("not an object")
+    tk = _form(o.get("ticket"), OPAQUE)
+    if tk is None:
+        raise ValueError("ticket missing or not 1 to 64 characters of A-Z a-z 0-9 _ -")
+    formats = {s["id"]: s.get("format", "") for s in cp.get("subtitleTracks", [])}
+    base = root + tk + "/"
+    subs, urls = [], []
+    for e in o.get("subtitles") if isinstance(o.get("subtitles"), list) else []:
+        if not isinstance(e, dict) or len(subs) == 64:
+            continue
+        sid, form = e.get("id"), e.get("form")
+        if not isinstance(sid, str) or sid not in formats or any(x["id"] == sid for x in subs) \
+                or form not in ("text", "picture"):
+            continue
+        ass = e.get("ass") is True and form == "text"
+        want = SERVED_FORM.get(formats[sid])
+        if want and (want[0] != form or want[1] != ass):
+            continue
+        x = {"id": sid, "form": form}
+        if ass:
+            x["ass"] = True
+        subs.append(x)
+        urls.append(base + ("subtitles/" if form == "text" else "pictures/") + sid)
+        if ass:
+            urls.append(base + "ass/" + sid)
+    n = int_in(o.get("fontCount"), 0, MAX_FONTS)
+    fonts = n or 0
+    urls += [base + "fonts/%d" % i for i in range(fonts)]
+    if cp.get("previewLayout"):
+        urls += [base + "trickplay/%d" % i for i in range(sheet_count(cp["previewLayout"]))]
+    out = {}
+    if subs:
+        out["subtitles"] = subs
+    out["fontCount"], out["urls"] = fonts, urls
+    return out
+
+
+# ---- fonts (video 6.6) -----------------------------------------------------------
 
 MAX_FONTS, MAX_FONT, MAX_FONT_SET = 64, 10 * 1024 * 1024, 64 * 1024 * 1024
-
-
-def keep_fonts(v, root):
-    """Video 5.3's reading of play's fonts: the URLs kept; raises
-    ValueError when the member is dropped (each entry exactly
-    <stream root><ticket>/fonts/<index>, one ticket, at most 64)."""
-    if not isinstance(v, list):
-        raise ValueError("fonts isn't an array")
-    if len(v) > MAX_FONTS:
-        raise ValueError("%d fonts, more than 64" % len(v))
-    ticket = ""
-    for i, u in enumerate(v):
-        if not isinstance(u, str):
-            raise ValueError("fonts[%d] isn't a string" % i)
-        rest = u[len(root):] if u.startswith(root) else None
-        tk, _, tail = (rest or "").partition("/")
-        if rest is None or "/" not in rest or not OPAQUE.fullmatch(tk) or tail != "fonts/%d" % i:
-            raise ValueError("fonts[%d] isn't <stream root><ticket>/fonts/%d" % (i, i))
-        if ticket and tk != ticket:
-            raise ValueError("fonts[%d] names another ticket" % i)
-        ticket = tk
-    return list(v)
 
 
 def check_font_set(sizes):
@@ -723,16 +826,17 @@ def check_font_set(sizes):
 
 # ---- What an owning server got wrong -------------------------------------------------
 
-_COPY_FIELDS = {"id", "name", "edition", "durationMs", "startMs", "container", "size", "etag", "parts", "bitrateKbps",
-                "video", "audioTracks", "subtitleTracks", "chapters", "segments", "previews", "added", "threeD"}
+_COPY_FIELDS = {"id", "edition", "durationMs", "startMs", "endMs", "mediaType", "size", "etag", "parts", "video",
+                "audioTracks", "subtitleTracks", "chapters", "segments", "previewLayout", "threeD"}
 _FIELDS = {
-    "video": {"codec", "codecTag", "codecs", "profile", "level", "width", "height", "sampleAspect", "rotation",
-              "bitDepth", "hdr", "dv", "fps", "interlaced", "colour"},
-    "audioTracks": {"id", "language", "channels", "role", "default", "forced", "fileIndex", "codec", "codecs", "profile",
-                    "layout", "sampleRate", "bitDepth", "title", "original"},
-    "subtitleTracks": {"id", "language", "default", "forced", "hearingImpaired", "format", "external", "fileIndex", "title"},
-    "chapters": {"startMs", "name"}, "segments": {"kind", "startMs", "endMs", "final"}, "parts": {"size", "durationMs"},
-    "dv": {"profile", "level", "compatibility", "el", "bl", "rpu"}, "colour": {"primaries", "transfer", "matrix", "range"},
+    "video": {"codec", "codecs", "width", "height", "sampleAspect", "rotation", "bitDepth", "colour", "hdr", "dv", "fps",
+              "refFrames", "interlaced"},
+    "audioTracks": {"id", "language", "channels", "role", "default", "forced", "codec", "codecs", "objects",
+                    "sampleRate", "bitDepth", "original"},
+    "subtitleTracks": {"id", "language", "role", "default", "forced", "hearingImpaired", "format", "external"},
+    "chapters": {"startMs", "name"}, "segments": {"kind", "startMs", "endMs"},
+    "dv": {"profile", "level", "compatibility", "el"}, "colour": {"primaries", "transfer", "matrix", "fullRange"},
+    "previewLayout": {"tileWidth", "tileHeight", "columns", "rows", "intervalMs", "tileCount"},
 }
 
 
@@ -794,36 +898,42 @@ def _show(v):
     return s if len(s) <= 80 else s[:77] + "..."
 
 
-# MSFP's own names before proposal 17 that aren't ffmpeg's (video 3.5).
-OLD_NAMES = {"container": {"mkv": "matroska", "ts": "mpegts", "m2ts": "mpegts", "other": None},
-             "codec": {"other": None},
-             "format": {"pgs": "hdmv_pgs_subtitle", "vobsub": "dvd_subtitle", "dvb": "dvb_subtitle", "other": None}}
+# Members proposal 17 dropped from copies, streams and tracks (video 3.2,
+# 3.3; proposal 17 section 4): an owning server no longer sends them.
+DROPPED = {"copy": ("name", "container", "bitrateKbps", "added", "previews"),
+           "video": ("codecTag", "profile", "level"),
+           "audio": ("profile", "layout", "fileIndex", "title"),
+           "subtitle": ("fileIndex", "title", "kind")}
 
 
-def old_names(c, where):
-    """Names a copy gives in the closed lists video 0 had before proposal
-    17, which ffmpeg doesn't use (video 3.5: ffmpeg's muxer and codec names)."""
+def dropped_members(c, where):
+    """Members a copy still sends that proposal 17 dropped, and hdr values
+    colour or dv now say (video 3.3: hdr holds only enhancement layers and
+    dynamic metadata)."""
     out = []
 
-    def one(what, v, field):
-        new = OLD_NAMES[field].get(v) if isinstance(v, str) else None
-        if isinstance(v, str) and v in OLD_NAMES[field]:
-            out.append("%s: %s %r is MSFP's name before proposal 17, not ffmpeg's%s (video 3.5)" % (
-                where, what, v, " (%r)" % new if new else ""))
-    one("container", c.get("container"), "container")
+    def one(what, o, group):
+        if isinstance(o, dict):
+            for f in DROPPED[group]:
+                if f in o:
+                    out.append("%s: %s sends %s, dropped by proposal 17" % (where, what, f))
+    one("the copy", c, "copy")
     v = c.get("video") if isinstance(c.get("video"), dict) else {}
-    one("video codec", v.get("codec"), "codec")
+    one("its video", v, "video")
     for t in c.get("audioTracks") if isinstance(c.get("audioTracks"), list) else []:
-        if isinstance(t, dict):
-            one("audio %s codec" % t.get("id"), t.get("codec"), "codec")
+        one("audio %s" % (t.get("id") if isinstance(t, dict) else "?"), t, "audio")
     for t in c.get("subtitleTracks") if isinstance(c.get("subtitleTracks"), list) else []:
-        if isinstance(t, dict):
-            one("subtitle %s format" % t.get("id"), t.get("format"), "format")
+        one("subtitle %s" % (t.get("id") if isinstance(t, dict) else "?"), t, "subtitle")
+    if isinstance(c.get("parts"), list):
+        out.append("%s: parts is an array of sizes and lengths, not the count of files (video 3.2)" % where)
     hdr = v.get("hdr") if isinstance(v.get("hdr"), list) else []
-    for x in ("hdr10", "hlg"):
+    for x in ("hdr10", "hlg", "dv"):
         if x in hdr:
-            out.append("%s: hdr lists %s, which colour says (video 3.3: hdr holds only enhancement layers and "
-                       "dynamic metadata)" % (where, x))
+            out.append("%s: hdr lists %s, which colour or dv says (video 3.3)" % (where, x))
+    if isinstance(v.get("dv"), dict):
+        for f in ("bl", "rpu"):
+            if f in v["dv"]:
+                out.append("%s: dv sends %s, dropped by proposal 17" % (where, f))
     return out
 
 
@@ -837,12 +947,15 @@ def copy_problems(c, where="copy"):
         return ["%s: a caller skips it: %s" % (where, e)]
     where = "%s %s" % (where, kept["id"])
     bad = diff(c, kept, where, _COPY_FIELDS)
-    bad += old_names(c, where)
-    for f in ("subtitleTracks", "chapters", "segments", "parts"):
+    bad += dropped_members(c, where)
+    bad += codecs_problems(kept, where)
+    for f in ("subtitleTracks", "chapters", "segments"):
         if f in c and not isinstance(c[f], list):
             bad.append("%s: %s isn't an array" % (where, f))
     if "video" in c and "video" not in kept:
         bad.append("%s: video counts as absent for a caller (codec, width or height out of form)" % where)
-    if "parts" in c and "parts" not in kept:
-        bad.append("%s: parts count as absent for a caller (at most 16, sizes adding up to size)" % where)
+    if "parts" in c and "parts" not in kept and not isinstance(c["parts"], list):
+        bad.append("%s: parts counts as absent for a caller (a count of 2 to 16 files)" % where)
+    if "previewLayout" in c and "previewLayout" not in kept:
+        bad.append("%s: previewLayout is dropped by a caller (video 5.5's bounds)" % where)
     return bad

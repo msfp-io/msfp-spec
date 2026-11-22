@@ -1,5 +1,5 @@
 """What a caller keeps of a music title and its copies (spec/v0/music.md
-sections 2, 3, 3.1 to 3.3, as revised by proposal 16), music title keys
+sections 2, 3, 3.1 to 3.3, as revised by proposals 16 and 17), music title keys
 of the mb and local schemes, the queue of a play (music 5.2) and lyrics
 (music 6), with what an owning server got wrong in a music title, and
 the check against vectors/v0/music.json.
@@ -13,16 +13,19 @@ import json
 import math
 import re
 
-from .copies import OPAQUE, diff, dumps, int_in, loads, number, plain, real_day, token, valid_tag
+from .copies import OPAQUE, diff, dumps, int_in, loads, media_type, number, plain, real_day, token, valid_tag
 
 MBID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-ISRC = re.compile(r"[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
 KINDS = ("artist", "album", "track")
 # MusicBrainz release-group types as music 3 sends them (proposal 17): open.
 TYPE = re.compile(r"[a-z0-9._/-](?:[a-z0-9 ._/-]{0,30}[a-z0-9._/-])?")
 CODECS = re.compile(r"[A-Za-z0-9.+-]{1,64}")
-IDS = {"mbreleasegroup": ("album", MBID), "mbrecording": ("track", MBID), "isrc": ("track", ISRC),
-       "acoustid": ("track", MBID)}
+# ids on mb titles only (music 3.1, proposal 17): the scheme and the kind it is for.
+IDS = {"mbreleasegroup": "album", "mbrecording": "track"}
+MAX_COPIES = 16
+DELIVERIES = ("file", "remux", "transcode")
+# A track's remux: MPEG-TS or fragmented MP4 segments, audio only (playback 2.7).
+REMUX_TYPES = ("audio/mp2t", "audio/mp4")
 MAX_TRACK_MS = 86400000
 _DATE = re.compile(r"([0-9]{4})(?:-([0-9]{2})(?:-([0-9]{2}))?)?")
 _TICKET = re.compile(r"[A-Za-z0-9_-]{1,64}")
@@ -83,7 +86,10 @@ def _keep_gain(o):
 
 def keep_track_copy(o):
     """Music 3.3 for one entry of a track's copies: what the caller keeps
-    (a dict in the vectors' order); raises ValueError with why it skips it."""
+    (a dict in the vectors' order); raises ValueError with why it skips it.
+    codecs, required for aac and dts, counts as absent when missing or
+    malformed: the copy stays, one the viewer's server doesn't play as it
+    is (core 8.5)."""
     if not isinstance(o, dict):
         raise ValueError("not an object")
     cid = o.get("id")
@@ -92,28 +98,19 @@ def keep_track_copy(o):
     d = int_in(o.get("durationMs"), 1, MAX_TRACK_MS)
     if d is None:
         raise ValueError("durationMs isn't an integer from 1 to 86,400,000")
-    container, codec = token(o.get("container")), token(o.get("codec"))
-    if container is None or codec is None:
-        raise ValueError("container or codec isn't a token (core 8.5)")
+    mt, codec = media_type(o.get("mediaType")), token(o.get("codec"))
+    if mt is None or codec is None:
+        raise ValueError("mediaType isn't a media type or codec isn't a token (core 8.5)")
     size = int_in(o.get("size"), 1, 999999999999999)
     if size is None:
         raise ValueError("size isn't an integer from 1 to 999,999,999,999,999")
     etag = o.get("etag")
     if not isinstance(etag, str) or not OPAQUE.fullmatch(etag):
         raise ValueError("etag isn't 1 to 64 characters of A-Z a-z 0-9 _ -")
-    c = {"id": cid}
-    name = plain(o.get("name"), 64)
-    if name:
-        c["name"] = name
-    c["durationMs"], c["container"], c["codec"] = d, container, codec
+    c = {"id": cid, "durationMs": d, "mediaType": mt, "codec": codec}
     if isinstance(o.get("codecs"), str) and CODECS.fullmatch(o["codecs"]):
         c["codecs"] = o["codecs"]
     c["size"], c["etag"] = size, etag
-    if real_day(o.get("added")):
-        c["added"] = o["added"]
-    b = int_in(o.get("bitrateKbps"), 1, 100000)
-    if b is not None:
-        c["bitrateKbps"] = b
     for f, lo, hi in (("sampleRate", 8000, 768000), ("bitDepth", 8, 32), ("channels", 1, 64)):
         v = int_in(o.get(f), lo, hi)
         if v is not None:
@@ -150,26 +147,22 @@ def keep_music_title(o, libraries):
     skips the title."""
     if not isinstance(o, dict):
         raise ValueError("not an object")
-    key, kind, lib = o.get("key"), o.get("kind"), o.get("library")
-    if not all(isinstance(x, str) for x in (key, kind, lib)):
-        raise ValueError("key, kind or library isn't a string")
+    # A title carries no kind (catalog 3): its key names it, and a kind
+    # member is unknown, ignored.
+    key, lib = o.get("key"), o.get("library")
+    if not all(isinstance(x, str) for x in (key, lib)):
+        raise ValueError("key or library isn't a string")
     try:
-        kk, scheme = parse_music_key(key)
+        kind, scheme = parse_music_key(key)
     except ValueError as e:
         raise ValueError("key: %s" % e)
-    if kind != kk:
-        raise ValueError("kind %r, but the key names a %s" % (kind, kk))
     if lib not in libraries:
         raise ValueError("library %r wasn't asked for" % lib)
-    t = {"key": key, "kind": kind, "library": lib}
+    t = {"key": key, "library": lib}
     name = plain(o.get("name"), 256)
     if not name:
         raise ValueError("no name, once cleaned")
     t["name"] = name
-    if kind == "album":
-        sn = plain(o.get("sortName"), 256)
-        if sn:
-            t["sortName"] = sn
     if kind in ("album", "track"):
         arts = []
         for a in o.get("artists") if isinstance(o.get("artists"), list) else []:
@@ -219,11 +212,11 @@ def keep_music_title(o, libraries):
             v = int_in(o.get(f), 1, 999)
             if v is not None:
                 t[f] = v
-        if "copies" in o and not isinstance(o["copies"], list):
+        if not isinstance(o.get("copies"), list):
             raise ValueError("copies isn't an array")
         cs = []
-        for e in o.get("copies") or []:
-            if len(cs) == 8:
+        for e in o["copies"]:
+            if len(cs) == MAX_COPIES:
                 break
             try:
                 c = keep_track_copy(e)
@@ -237,17 +230,17 @@ def keep_music_title(o, libraries):
     if scheme == "local" and kind in ("artist", "album") and isinstance(o.get("image"), bool):
         t["image"] = o["image"]
     ids = o.get("ids")
-    if isinstance(ids, dict):
+    if isinstance(ids, dict) and scheme == "mb":   # none on local titles
         kept = {}
         for s, v in ids.items():
-            if s in IDS and IDS[s][0] == kind and isinstance(v, str) and IDS[s][1].fullmatch(v):
+            if IDS.get(s) == kind and isinstance(v, str) and MBID.fullmatch(v):
                 kept[s] = v
         if kept:
             t["ids"] = dict(sorted(kept.items()))
     return t
 
 
-_TITLE_FIELDS = {"key", "kind", "library", "name", "sortName", "artists", "artistNames", "primaryType", "secondaryTypes",
+_TITLE_FIELDS = {"key", "library", "name", "artists", "artistNames", "primaryType", "secondaryTypes",
                  "compilation",
                  "date", "originalDate", "genres", "album", "disc", "number", "copies", "image", "ids"}
 
@@ -276,92 +269,132 @@ def music_problems(t, libraries=None):
 
 # ---- The queue (music 5.2) ----------------------------------------------------------------
 
-def check_queue_request(o):
+class QueueRefused(ValueError):
+    """A queue the owning server refuses: .status 400, or 409 delivery-refused."""
+
+    def __init__(self, status, why):
+        ValueError.__init__(self, "%d%s: %s" % (status, " delivery-refused" if status == 409 else "", why))
+        self.status = status
+
+
+def queue_asked(o):
     """A play request's title and queue as the owning server reads them:
-    None, or why it answers 400."""
+    the entries asked, each (title, versionId or None, the delivery it
+    takes: its own, else the request's); raises QueueRefused (400 for a
+    malformed one first, then 409 delivery-refused for a delivery or a
+    remux's media type it doesn't make). The request's own delivery
+    members and an entry's transcode targets are playback's."""
     if not isinstance(o, dict):
-        return "not an object"
+        raise QueueRefused(400, "not an object")
     title = o.get("title")
     if music_key(title) != "track":
-        return "title isn't a track key"
+        raise QueueRefused(400, "title isn't a track key")
+    own = o.get("delivery") if isinstance(o.get("delivery"), str) else ""
     if "queue" not in o:
-        return None
+        return []
     q = o["queue"]
     if not isinstance(q, list):
-        return "queue isn't an array"
+        raise QueueRefused(400, "queue isn't an array")
     if len(q) > 5:
-        return "a queue of %d entries, more than 5" % len(q)
-    seen = set()
-    for x in q:
+        raise QueueRefused(400, "a queue of %d entries, more than 5" % len(q))
+    asked, seen, refused = [], set(), None
+    for i, e in enumerate(q):
+        if not isinstance(e, dict):
+            raise QueueRefused(400, "queue entry %d isn't an object" % i)
+        x = e.get("title")
         if not isinstance(x, str):
-            return "a queue entry that isn't a string"
+            raise QueueRefused(400, "queue entry %d: title isn't a string" % i)
         if music_key(x) != "track":
-            return "a queue entry that isn't a track key in canonical form"
+            raise QueueRefused(400, "queue entry %d: title isn't a track key in canonical form" % i)
         if x == title:
-            return "the title itself in the queue"
+            raise QueueRefused(400, "queue entry %d is title itself" % i)
         if x in seen:
-            return "a queue entry twice"
+            raise QueueRefused(400, "queue entry %d is a repeat" % i)
         seen.add(x)
+        vid = None
+        if "versionId" in e:
+            vid = e["versionId"]
+            if not isinstance(vid, str) or not OPAQUE.fullmatch(vid):
+                raise QueueRefused(400, "queue entry %d: versionId isn't a version ID" % i)
+        d, mine = own, ""
+        if "delivery" in e:
+            d = mine = e["delivery"]
+            if token(d) is None:
+                raise QueueRefused(400, "queue entry %d: delivery isn't a token (core 8.5)" % i)
+            if d not in DELIVERIES and refused is None:
+                refused = QueueRefused(409, "queue entry %d: a delivery the owning server doesn't make" % i)
+        if "mediaType" in e:
+            mt = e["mediaType"]
+            if mine != "remux":
+                raise QueueRefused(400, "queue entry %d: mediaType without its own delivery remux" % i)
+            if media_type(mt) is None:
+                raise QueueRefused(400, "queue entry %d: mediaType isn't a media type (core 8.5)" % i)
+            if mt not in REMUX_TYPES and refused is None:
+                refused = QueueRefused(409, "queue entry %d: a remux into %s, not audio/mp2t or audio/mp4" % (i, mt))
+        elif mine == "remux":
+            raise QueueRefused(400, "queue entry %d: delivery remux without mediaType" % i)
+        if "transcode" in e:
+            if mine != "transcode":
+                raise QueueRefused(400, "queue entry %d: a transcode object without its own delivery transcode" % i)
+            if not isinstance(e["transcode"], dict):
+                raise QueueRefused(400, "queue entry %d: transcode isn't an object" % i)
+        asked.append((x, vid, d))
+    if refused is not None:
+        raise refused
+    return asked
+
+
+def check_queue_request(o):
+    """None when the owning server accepts a play request's title and
+    queue, else why it refuses them (starting 400, or 409 delivery-refused)."""
+    try:
+        queue_asked(o)
+    except QueueRefused as e:
+        return str(e)
     return None
 
 
-def _ticket(url, root):
-    if not isinstance(url, str) or not url.startswith(root):
-        return None
-    tk, _, rest = url[len(root):].partition("/")
-    return tk if _TICKET.fullmatch(tk) and rest else None
-
-
-def keep_queue(request, answer, root):
+def keep_queue(request, answer):
     """Music 5.2: the queue the viewer's server keeps of a play answer (a
-    list, possibly empty), the request being the play it sent."""
-    want = request.get("queue") if isinstance(request, dict) and isinstance(request.get("queue"), list) else []
-    if not isinstance(answer, dict) or not isinstance(answer.get("queue"), list):
-        return []
-    s = answer.get("stream")
-    ticket = _ticket(s.get("url"), root) if isinstance(s, dict) else None
-    if ticket is None:
-        return []
-    asked = {"file": "direct", "remux": "remux", "transcode": "transcode"}.get(
-        request.get("delivery") if isinstance(request, dict) else None)
-    out, last = [], -1
-    for e in answer["queue"]:
+    list, possibly empty, of title, versionId, method, protocol), the
+    request being the play it sent. Entries carry no URL: queue_urls
+    builds them from the ticket."""
+    try:
+        asked = queue_asked(request)
+    except QueueRefused as e:
+        raise ValueError("the request: %s" % e)
+    if not isinstance(answer, dict):
+        raise ValueError("the answer isn't an object")
+    out, nxt = [], 0
+    for e in answer.get("queue") if isinstance(answer.get("queue"), list) else []:
         if len(out) == 5:
             break
         if not isinstance(e, dict):
             continue
         title = e.get("title")
-        if not isinstance(title, str) or title not in want:
+        at = next((i for i in range(nxt, len(asked)) if asked[i][0] == title), -1)
+        if at < 0:
             continue
-        n = want.index(title)
-        if n <= last:
+        vid, method, proto = e.get("versionId"), e.get("method"), e.get("protocol")
+        _, want_vid, d = asked[at]
+        want = DELIVERY_METHOD.get(d)
+        if not isinstance(vid, str) or not OPAQUE.fullmatch(vid) or (want_vid and vid != want_vid) \
+                or method not in ("direct", "remux", "transcode") or (want and method != want) \
+                or proto != ("file" if d == "file" else "hls"):
             continue
-        vid, method, st = e.get("versionId"), e.get("method"), e.get("stream")
-        if not isinstance(vid, str) or not OPAQUE.fullmatch(vid) or method not in ("direct", "remux", "transcode"):
-            continue
-        if not isinstance(st, dict):
-            continue
-        proto, url = st.get("protocol"), st.get("url")
-        name = {"file": "file", "hls": "master.m3u8"}.get(proto)
-        if (proto == "file") != (method == "direct") or (asked and method != asked):
-            continue
-        if name is None or url != "%s%s/queue/%d/%s" % (root, ticket, n, name):
-            continue
-        stream = {"url": url, "protocol": proto}
-        if "mimeType" in st:
-            mt = st["mimeType"]
-            if not isinstance(mt, str) or (proto == "hls" and mt != "application/vnd.apple.mpegurl"):
-                continue
-            stream["mimeType"] = mt
-        k = {"title": title, "versionId": vid, "method": method, "stream": stream}
-        if "durationMs" in e:
-            d = e["durationMs"]
-            i = int_in(d, -2**53 + 1, 2**53 - 1)
-            if i is not None:
-                k["durationMs"] = i if 0 <= i <= MAX_TRACK_MS else 0
-        out.append(k)
-        last = n
+        out.append({"title": title, "versionId": vid, "method": method, "protocol": proto, "place": at})
+        nxt = at + 1
     return out
+
+
+DELIVERY_METHOD = {"file": "direct", "remux": "remux", "transcode": "transcode"}
+
+
+def queue_urls(root, ticket, kept):
+    """The URL of each kept queue entry (media 1): <stream root><ticket>/
+    queue/<n>/file or /master.m3u8, n its place in the request's queue."""
+    return ["%s%s/queue/%d/%s" % (root, ticket, e["place"], "file" if e["protocol"] == "file" else "master.m3u8")
+            for e in kept]
 
 
 # ---- Lyrics (music 6) ---------------------------------------------------------------------
@@ -382,8 +415,9 @@ def check_lyrics_request(o):
 def keep_lyrics(answer):
     """Music 6: what the viewer's server keeps of a lyrics answer (bytes,
     text or parsed JSON): {"structuredLyrics": [sets]}, each set in the
-    vectors' order; raises
-    ValueError when the fetch fails."""
+    vectors' order (lang, kind, line); raises ValueError when the fetch
+    fails. A set is synced when every line left carries start, plain when
+    none does, skipped when they mix."""
     if isinstance(answer, (bytes, bytearray)):
         if len(answer) > 1024 * 1024:
             raise ValueError("over 1 MiB")
@@ -396,27 +430,24 @@ def keep_lyrics(answer):
     for s in answer["structuredLyrics"]:
         if len(out) == 8:
             break
-        if not isinstance(s, dict) or not isinstance(s.get("synced"), bool):
+        if not isinstance(s, dict):
             continue
         k = {}
         if valid_tag(s.get("lang")):
             k["lang"] = s["lang"]
         k["kind"] = s["kind"] if token(s.get("kind")) else "main"
-        k["synced"] = s["synced"]
-        off = int_in(s.get("offset"), -600000, 600000)
-        k["offset"] = off if off is not None else 0
-        for f, n in (("displayArtist", 512), ("displayTitle", 256)):
-            v = plain(s.get(f), n)
-            if v:
-                k[f] = v
-        lines, last = [], -1
-        for ln in s.get("line") if isinstance(s.get("line"), list) else []:
+        left = [ln for ln in (s.get("line") if isinstance(s.get("line"), list) else [])
+                if isinstance(ln, dict) and isinstance(ln.get("value"), str)]
+        starts = sum(1 for ln in left if "start" in ln)
+        if starts not in (0, len(left)):
+            continue
+        synced = starts > 0
+        lines, last = [], 0
+        for ln in left:
             if len(lines) == 2000:
                 break
-            if not isinstance(ln, dict) or not isinstance(ln.get("value"), str):
-                continue
             e = {}
-            if s["synced"]:
+            if synced:
                 st = int_in(ln.get("start"), 0, MAX_TRACK_MS)
                 if st is None or st < last:
                     continue
@@ -458,12 +489,14 @@ def music_vectors_ok(path):
                 o = loads(c["text"])
             except ValueError:
                 o = None
-            ok = check_queue_request(o) is None
-            if ok != c["valid"]:
+            why = check_queue_request(o)
+            ok = why is None
+            if ok != c["valid"] or (not ok and not why.startswith(c.get("reason", "")[:3])):
                 bad.append("music queue request %s: %s" % (c["name"], check_queue_request(o)))
         else:
             try:
-                out, ok = dumps(keep_queue(loads(c["request"]), loads(c["text"]), v.get("streamRoot", ""))), True  # no streamRoot since proposal 17: mismatches until the update
+                kept = keep_queue(loads(c["request"]), loads(c["text"]))
+                out, ok = dumps([{f: e[f] for f in ("title", "versionId", "method", "protocol")} for e in kept]), True
             except ValueError as e:
                 out, ok = str(e), False
             if ok != c["valid"] or (ok and out != c["output"]):

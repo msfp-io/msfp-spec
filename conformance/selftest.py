@@ -136,8 +136,12 @@ def vectors():
 
     for c in st["openTokens"]:
         expect("openTokens", c.get("text", ""), c["valid"], copies.token(c.get("text")) is not None)
-    # libraryKinds left the vectors with proposal 17 (a library has no
-    # kind); the suite's library_kind stays until the conformance update.
+    for c in st["languageCodes"]:
+        expect("languageCodes", c["text"], c.get("output") if c["valid"] else None, copies.sent_tag(c["text"]))
+    for c in st["opaqueKeyParts"]:
+        expect("opaqueKeyParts", c.get("text", ""), c["valid"], copies.OPAQUE.fullmatch(c.get("text", "")) is not None)
+    for c in st["openMediaTypes"]:
+        expect("openMediaTypes", c.get("text", ""), c["valid"], copies.media_type(c.get("text")) is not None)
 
     keys = load("v0", "keys.json")
     K = {}
@@ -231,6 +235,24 @@ def vectors():
         why = mediarules.check_file_answer(c.get("range"), c["size"], c["etag"], c["status"], c.get("etagHeader"),
                                            c.get("contentRange"), c.get("contentLength"))
         expect("fileAnswers", c["name"], c["valid"], why is None)
+    for c in media["names"]:
+        expect("names", c["name"], c["valid"], mediarules.serves(c["ticket"], c["text"]) is None)
+    for c in media["relayTypes"]:
+        expect("relayTypes", c["name"], c["output"], mediarules.relay_type(c["what"], c["value"]))
+    for c in st["localImages"]:
+        if c["side"] == "answer":
+            try:
+                t = mediarules.image_answer(parse_ijson(c["body"].encode()))
+                got = (True, t, mediarules.image_url(c["streamRoot"], t))
+            except (Refused, ValueError, NotIJSON):
+                got = (False, None, None)
+            expect("localImages", c["name"], (c["valid"], c.get("ticket"), c.get("url")), got)
+        elif c["side"] == "image":
+            try:
+                got = mediarules.image_kind(bytes.fromhex(c.get("hex", "")), c.get("size", 0))[0]
+            except Refused:
+                got = None
+            expect("localImages", c["name"], c.get("format") if c["valid"] else None, got)
     for c in media["scans"]:
         expect("scans", c["name"], (c["status"], c["contentRange"]), mediarules.scan_answer(c["sent"], c.get("range"), c["size"],
                                                                                         c.get("scanBytes")))
@@ -262,16 +284,23 @@ def vectors():
             expect("video previews", c["name"], c["valid"], copies.check_previews_request(o) is None)
             continue
         try:
-            out, ok = copies.dumps(copies.keep_previews_answer(copies.loads(c["text"]), video["streamRoot"])), True
+            out, ok = copies.dumps(copies.keep_previews_answer(copies.loads(c["text"]))), True
         except ValueError:
             out, ok = None, False
         expect("video previews", c["name"], (c["valid"], c.get("output")), (ok, out))
-    for c in video.get("fontURLs", []):  # gone with proposal 17 (URLs built from the ticket): skipped until the update
+    for c in video["codecs"]:
         try:
-            out, ok = copies.dumps(copies.keep_fonts(copies.loads(c["text"]), video["streamRoot"])), True
+            out, ok = copies.dumps(copies.read_codecs(copies.loads(c["text"]))), True
         except ValueError:
             out, ok = None, False
-        expect("video fontURLs", c["name"], (c["valid"], c.get("output")), (ok, out))
+        expect("video codecs", c["name"], (c["valid"], c.get("output")), (ok, out))
+    answer_copy = copies.keep_video_copy(copies.loads(video["answerCopy"]))
+    for c in video["answers"]:
+        try:
+            out, ok = copies.dumps(copies.keep_video_answer(copies.loads(c["text"]), answer_copy, video["streamRoot"])), True
+        except ValueError:
+            out, ok = None, False
+        expect("video answers", c["name"], (c["valid"], c.get("output")), (ok, out))
     for c in video["fontSets"]:
         try:
             n, total = copies.check_font_set(copies.loads(c["text"]))
