@@ -7,7 +7,7 @@ playback of a title a peer holds, within limits the owning server sets:
 to watch it, to download it, or to let a media server read the start of
 its file to list it. Which titles it plays, and what their playbacks
 carry besides, is said by the content parts,
-[video](video.md#5-playing-a-film-or-an-episode) and
+[video](video.md#5-playing-a-film-an-episode-or-an-extra) and
 [music](music.md#5-playing-a-track) (section 2.4). It needs the
 [core](core.md), [catalog](catalog.md) (it plays title keys from
 `titles`) and [media](media.md) (its answers point at media URLs). If either is off between two servers, `playback` is off
@@ -47,7 +47,8 @@ specifications.
   have several copies (versions). Positions, `durationMs` and the
   content parts' markers are in the whole copy. The catalog describes
   each copy before any playback: its version ID, length, container,
-  exact size, `etag` and tracks (the video part's copies). A copy's
+  exact size, `etag` and tracks ([video section 3.2](video.md#32-copies),
+  [music section 3.3](music.md#33-a-tracks-copies)). A copy's
   `etag` changes whenever its bytes change.
 - **Playback**: one stream the owning server runs for the viewer's
   server. It has a playback ID and a ticket.
@@ -75,7 +76,7 @@ server to start a playback of a title for one viewer session.
 | `delivery` | string | no | `file`, `remux` or `transcode` (section 2.7); absent: the owning server decides from the capabilities |
 | `container` | string | with `delivery` `remux` only, and then required | the container to remux into, one value of `containers` (below) |
 | `transcode` | transcode object | no; with `delivery` `transcode` only | the targets of the transcode (section 2.7) |
-| `audioRenditions` | boolean | no | `true`: when served as HLS, every audio track of the copy as a rendition ([media](media.md), several audio tracks in HLS), so that switching tracks needs no new playback |
+| `audioRenditions` | boolean | no | `true`: when served as HLS, every audio track of the copy as a rendition ([media section 3.1](media.md#31-hls-playlists)), so that switching tracks needs no new playback |
 | `capabilities` | capabilities object | no | what the viewer's device plays, coarsened (below) |
 | `startPositionMs` | integer | no | where to start, in milliseconds; 0 to 8,640,000,000 (100 days) |
 | `maxBitrateKbps` | integer | no | the viewer's bitrate cap, kbit/s; 0 to 10,000,000; 0 means none |
@@ -94,7 +95,7 @@ video codecs, HDR and Dolby Vision, height and subtitles):
 
 | Field | Type | Values |
 |-------|------|--------|
-| `containers` | array of string | `mp4`, `m4v`, `mov`, `webm`, `mkv`, `ts`, `mp3`, `aac`, `m4a`, `flac`, `ogg`, `opus`, `wav`, `avi`, `m2ts`, `mpegts`, `wmv`, `flv`, `3gp` |
+| `containers` | array of string | `mp4`, `m4v`, `mov`, `webm`, `mkv`, `ts`, `mp3`, `aac`, `m4a`, `flac`, `ogg`, `opus`, `wav`, `avi`, `m2ts`, `wmv`, `flv`, `3gp` |
 | `audioCodecs` | array of string | `aac`, `mp3`, `opus`, `vorbis`, `flac`, `ac3`, `eac3`, `alac`, `pcm_s16le`, `dts`, `truehd`, `mp2`, `wmav2`, `pcm_s24le`, `pcm_bluray` |
 | `audioProfiles` | array of string | `atmos`, `dtsx`, `dts-hd-ma`, `dts-hd-hra`, `dts-es`, `he-aac`, `lc` |
 | `maxAudioChannels` | integer | 0 to 64; 0 means not said |
@@ -103,8 +104,8 @@ video codecs, HDR and Dolby Vision, height and subtitles):
 | `maxBitrateKbps` | integer | 0 to 10,000,000; 0 means not said |
 
 These lists, with the content parts' own, are the names a copy's
-`container` and codecs take in the catalog (the names list of the video
-part's copies); a copy's name outside them is `other`, which the owning
+`container` and codecs take in the catalog
+([video section 3.5](video.md#35-names)); a copy's name outside them is `other`, which the owning
 server converts. An audio profile listed means the device plays that
 profile of its codec (`atmos` in `eac3` or `truehd`, `dts-hd-ma` in
 `dts`); a profile not listed means the device plays only the codec's
@@ -207,7 +208,7 @@ every field, as listed.
 | `etag` | string | the `etag` of the copy playing, as the catalog gives it | must be 1 to 64 characters of `A–Z a–z 0–9 - _` |
 | `positionMs` | integer | where the playback starts, in the copy | |
 | `durationMs` | integer, optional | the copy's length | outside 0 to 100 days: set to 0 |
-| `versions` | array, optional | `{id, name}` of the title's versions | IDs as below; names as a copy's `name` (the video part's copies): made plain text, at most 32 characters |
+| `versions` | array, optional | `{id, name}` of the title's versions | IDs as below; names as a copy's `name` ([video section 3.6](video.md#36-what-names-and-titles-may-say)): made plain text, at most 32 characters |
 | `versionId` | string, optional | the version playing | IDs as below |
 | `audioTracks` | array of track, optional | the audio tracks | IDs as below |
 | `audioTrack` | string, optional | the one playing, `a<n>` | |
@@ -234,7 +235,7 @@ Track:
 
 A track carries no label: a viewer's server names languages in its own
 people's words, from `language`. The content parts may add members to a
-track: the video part's copies describe a track in full (codec, profile,
+track: [video section 3.3](video.md#33-streams-and-tracks) describes a track in full (codec, profile,
 title and so on), with the same IDs, and a track of an answer may carry
 those members, cleaned as the catalog's are.
 
@@ -282,7 +283,7 @@ adds to the request and the answer:
 
 | Content part | `play` takes | Nothing said | Adds |
 |--------------|--------------|--------------|------|
-| `video` | films, episodes and extras | H.264 and AAC in HLS | subtitles and forced subtitles, seek-bar previews, video capabilities, a subtitle burned in as a transcode target ([video section 5](video.md#5-playing-a-film-or-an-episode)) |
+| `video` | films, episodes and extras | H.264 and AAC in HLS | subtitles and forced subtitles, seek-bar previews, video capabilities, a subtitle burned in as a transcode target ([video section 5](video.md#5-playing-a-film-an-episode-or-an-extra)) |
 | `music` | tracks | AAC in HLS, audio only | the next tracks of a queue; audio limits in `limits` ([music section 5](music.md#5-playing-a-track)) |
 
 A viewer's server ignores the members a content part adds when the title
@@ -381,16 +382,19 @@ echoed). The rest is as above.
 
 | `delivery` | What is served | `method` in the answer | How it is fetched |
 |------------|----------------|------------------------|-------------------|
-| `file` | the copy as it is, all its tracks | `direct` | by byte ranges ([media](media.md), files by byte ranges) |
-| `remux` | the copy's streams, unchanged, in the `container` the request names | `remux` | as [media](media.md) says for a remux (complete HLS) |
-| `transcode` | the copy converted to the targets of `transcode` | `transcode` | as [media](media.md) says for a conversion (complete HLS) |
+| `file` | the copy as it is, all its tracks | `direct` | by byte ranges ([media section 3.2](media.md#32-the-file)) |
+| `remux` | the copy's streams, unchanged, in the `container` the request names | `remux` | as complete HLS ([media section 3.1](media.md#31-hls-playlists)) |
+| `transcode` | the copy converted to the targets of `transcode` | `transcode` | as complete HLS ([media section 3.1](media.md#31-hls-playlists)) |
 | absent | what the owning server decides from the capabilities (section 2.6) | any | as the answer's `stream` says |
 
-A copy of several files is delivered as `file` only as
-[media](media.md) allows for a copy in parts; an owning server that
-can't refuses with `delivery-refused`. The size the viewer's server
-presents for a `file` is the copy's exact `size` in the catalog (the
-video part's copies).
+**A copy made of several parts** (section 1) is never delivered as
+`file`: a `play` with `delivery` `file` of such a copy, whatever its
+`purpose`, is refused with `409` `delivery-refused`; it may be asked for
+as `remux` or `transcode`, and without `delivery` it is served as HLS
+([media section 1](media.md#1-the-urls)). So it is neither presented as
+a plain file, nor downloaded as it is, nor scanned. The size the
+viewer's server presents for a `file` is the copy's exact `size` in the
+catalog ([video section 3.2](video.md#32-copies)).
 
 **Purpose and delivery.** Combinations not in this table are refused
 (`400`):
@@ -486,7 +490,9 @@ have been during a playback. The viewer's server sends reports with `at`
 in the order of their `at`; the owning server keeps, for a playback, the
 report with the latest `at`, and ignores one older than a report it
 already has. A `progress` of a scan (section 8) is answered `200` and
-changes nothing.
+changes nothing. The content parts may add members:
+[music section 5.2](music.md#52-the-queue) adds the queued track
+playing.
 
 Test cases: `reports` in
 [vectors/v0/playback.json](../../vectors/v0/playback.json) (`at` bounds).
@@ -713,7 +719,8 @@ Downloads are the owning server's choice, off by default
   downloads never take all its bandwidth. It paces the bytes; it never
   refuses a read for its speed. A viewer's server must not count a slow
   download read as a failed fetch while bytes keep arriving; the time
-  bounds of [media](media.md) to the status line and headers still hold.
+  bounds of [media section 2.4](media.md#24-bounds) to the status line
+  and headers still hold.
 - **Late reports.** `progress` and `stop` carry `at` (sections 3 and 4)
   for what the viewer watched offline. For a download, the owning server
   accepts them for 30 days after its `play`, even once the playback has
@@ -732,7 +739,7 @@ Test cases: `downloads` in
 
 Some media servers, without plugins, can only show real files: they list
 a file by reading its start (Plex, through a file system, reads 1 to
-4 MB of a file to list it). Scan access lets a viewer's server serve them
+4 MiB of a file to list it). Scan access lets a viewer's server serve them
 those reads, outside any playback of a viewer. It is off by default
 (`scansPerDay` 0, section 5); the owning server's operator allows it per
 pairing and per group, with a number of scans a day.
@@ -745,10 +752,12 @@ pairing and per group, with a number of scans a day.
   Scan `play`s count against the `play` limit of
   [core section 8.3](core.md#83-limits-and-overload) like any `play`.
 - **The cap.** The owning server serves a scan's reads up to 32 MiB
-  (33,554,432 bytes) of its copy in all, counting every byte it sends
-  under that ticket, a byte read twice counted twice. A read that would
-  go past the cap is served up to it and then ends; any later read is
-  refused (`416`).
+  (33,554,432 bytes) per scan ticket in all (one scan, one copy),
+  counting every byte it sends under that ticket, a byte read twice
+  counted twice; `scansPerDay` bounds the total. A read that would go
+  past the cap is cut at the cap (a `206` ending there); any later read
+  is refused (`416`), as
+  [media section 4.2](media.md#42-scans) says.
 - **Rate-limited.** The owning server serves a scan's reads at most 2 at
   once (more: `503`), and may pace them as it paces downloads.
 - **The ticket** lasts 10 minutes from the answer, and the 2-minute idle
@@ -822,8 +831,8 @@ Choices of the review round of 2026-11-16, confirmed on 2026-11-17:
 out of this part on 2026-11-17):
 
 6. **The track object stays here** (section 2.3), with its `forced` and
-   `hearingImpaired` flags and the `s<n>` IDs; only the subtitle members
-   `pictures` and `url` moved to [video](video.md#53-the-answer).
+   `hearingImpaired` flags and the `s<n>` IDs; the subtitle members
+   (`format`, `url`, `assUrl`) are [video](video.md#53-the-answer)'s.
 7. **Section 2.4 keeps its number** for what the content parts add, so
    that sections 2.5 and 2.6 keep theirs.
 8. **Members of another content part** in an answer are ignored
@@ -859,6 +868,6 @@ confirmed:
 16. **The speed cap** is per download, over any 10 seconds, paced, never
     refused (section 7).
 17. **Scans** (section 8): `scansPerDay` up to 1,000,000, 0 meaning off;
-    tickets of 10 minutes; 2 reads at once; 32 MB read as 32 MiB.
+    tickets of 10 minutes; 2 reads at once; 32 MiB per scan ticket.
 18. **One refusal type for every limit** (`stream-limit-reached`), for
     downloads and scans as for streams; `delivery-refused` is new.

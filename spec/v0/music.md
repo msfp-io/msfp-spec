@@ -6,8 +6,10 @@ The `music` part shares artists, albums and tracks, as music servers
 hold them: albums by edition, tracks by their place on an album. It is a
 content part: it says what the shared parts carry for music: the title
 kinds, keys and descriptions in [catalog](catalog.md), and what
-[playback](playback.md)'s `play` takes and answers for a track. Its one
-fetch of its own, lyrics, goes as [media](media.md) says. It needs the
+[playback](playback.md)'s `play` takes and answers for a track. It has
+one call of its own, `lyrics` (section 6), and uses the `previews` call
+of [video section 5.6](video.md#56-previews) for the images of `local`
+artists and albums (section 4). It needs the
 [core](core.md), `catalog`, `playback` and `media`; if any of them is
 off between two servers, `music` is off too
 ([core section 10](core.md#10-versions-and-parts)). A server lists
@@ -124,8 +126,8 @@ downloads, rips without a tagger, self-released or home recordings.
   from. `isrc` and `acoustid` in `ids` (section 3.1), where known, let a
   viewer's server find the same song elsewhere.
 - **The owning server chooses** whether to share `local` titles at all,
-  off by default, per pairing and per group, as catalog's rules for the
-  `local` scheme say.
+  off by default, per pairing and per group, as
+  [catalog section 5](catalog.md#5-what-is-shared) says.
 - A `local` title carries the same description as an `mb` one
   (section 3), and may carry `image`, a picture of its own (section 4).
 - Titles of both schemes mix freely: a `local` track may be on an `mb`
@@ -255,8 +257,8 @@ caller keeps.
 
 ### 3.3 A track's copies
 
-A track's `copies` follow the common rules of [video](video.md)'s
-copies section: one entry per copy, best first, in the order `play`
+A track's `copies` follow the common rules of video's copies
+([video section 3.2](video.md#32-copies)): one entry per copy, best first, in the order `play`
 would choose them, at most 8; the `id` `play` takes as `versionId`; an
 exact `size`; an `etag` that changes whenever the copy's bytes change;
 `container` and `codec` from its names list, anything else `other`; a
@@ -280,7 +282,7 @@ one audio stream, so it carries these:
 | `replayGain` | object | no | its loudness values (below) |
 | `lyrics` | string | no | `plain` or `synced`: the owning server has lyrics for it (section 6), synced ones among them for `synced` |
 
-The members video's copies section gives for video only (`edition`,
+The members [video section 3.2](video.md#32-copies) gives for video only (`edition`,
 `startMs`, `parts`, `video`, `audioTracks`, `subtitleTracks`,
 `chapters`, `segments`, `previews`, `threeD`) are not sent for a track,
 and the caller ignores them.
@@ -304,7 +306,7 @@ from the files' tags, to the ReplayGain 2.0 reference (−18 LUFS):
 
 **What the caller keeps** of `copies`, copy by copy:
 
-- the common rules of video's copies section: a copy missing a required
+- the common rules of [video section 3.8](video.md#38-what-the-caller-keeps-of-copies): a copy missing a required
   member, or whose `id`, `size` or `etag` breaks its form, is skipped
   alone; at most 8 kept, the first; a repeated `id` skipped;
 - `durationMs` from 1 to 86,400,000, else the copy is skipped;
@@ -338,9 +340,13 @@ knows artists by MBID (TheAudioDB, fanart.tv…), fetched by the viewer's
 server itself and cached. Nothing in the protocol carries them.
 
 **A `local` artist or album** has no public picture. When its `image` is
-`true`, the viewer's server fetches it from the owning server as
-[media](media.md)'s image fetch says (JPEG or PNG, at most 1 MB, under a
-short ticket of its own), and shows it as the owner's.
+`true`, the viewer's server asks for it with a `previews` call without
+`versionId` ([video section 5.6](video.md#56-previews)), fetches it
+under that answer's ticket as
+[media section 3.4](media.md#34-subtitles-fonts-sheets-and-images) says
+(JPEG or PNG, at most 1 MiB), checks and re-encodes it as
+[video section 6.7](video.md#67-the-image-of-a-local-title) says, and
+shows it as the owner's.
 
 A track, of either scheme, shows its album's art.
 
@@ -352,8 +358,9 @@ A track, of either scheme, shows its album's art.
   `progress`, `stop`, restarts on an unchanged `etag`, downloads and
   scan access where the owner allows them.
 - **Audio only.** The answer has no subtitle tracks, no forced tracks,
-  no skip markers and no previews; a viewer's server drops any it gets
-  for a track. `audioTracks` lists the stream's one audio track.
+  no fonts and no previews, and a track's copies no chapters or skip
+  markers (section 3.3); a viewer's server drops any it gets for a
+  track. `audioTracks` lists the stream's one audio track.
 - **Nothing said** about `containers` or `audioCodecs`, and no
   `delivery`: the owning server serves AAC in HLS, audio only, which
   every viewer's server must play. With `delivery: file` it serves the
@@ -385,8 +392,8 @@ Absent: audio counts in `streams` and `transcodes`.
 
 ### 5.2 The queue
 
-A `play` of a track may name the tracks that follow it, as playback's
-queue rules say. The owning server prepares them under the same
+A `play` of a track may name the tracks that follow it
+([playback section 2.1](playback.md#21-the-request)). The owning server prepares them under the same
 playback, so the viewer's server can go from one to the next with no
 gap and no new `play`. Request member:
 
@@ -407,7 +414,8 @@ gap and no new `play`. Request member:
 - **Counting.** The playback, queue included, counts once against
   `streams` (and `audioStreams`), and once against `transcodes` (and
   `audioTranscodes`) when any of its tracks is converted. It stays live
-  while any of its tracks is read ([media](media.md)'s ticket rules);
+  while any of its tracks is read
+  ([media section 4](media.md#4-how-long-a-ticket-works));
   `stop` ends it whole.
 - **Prepared** means that the owning server has each entry's first bytes
   ready before the one before it ends: a converted entry starts
@@ -429,7 +437,11 @@ Entry:
 | `stream` | object | `url`, `protocol`, `mimeType` (optional), under the playback's ticket | checked as [media](media.md#1-the-urls) says |
 | `durationMs` | integer, optional | the copy's length | outside 0 to 86,400,000: set to 0 |
 
-- `progress` names the track playing as playback's queue rules say.
+- **The track playing.** `progress` and `stop` of a playback with a
+  queue may carry `title`: the key of the track playing, the request's
+  `title` or one of the answer's `queue` entries; `positionMs` is then a
+  position in that track. Absent, it is the request's `title`. Any other
+  `title` is refused (`400`).
 - **Past the queue.** Before the last entry ends, the viewer's server
   may send a new `play` for the track after it, with its own `queue`,
   and stops the old playback once the new one's first track plays. The
@@ -447,8 +459,10 @@ server keeps.
 ## 6. Lyrics
 
 A copy whose `lyrics` is `plain` or `synced` (section 3.3) has lyrics
-the viewer's server may fetch, as [media](media.md)'s lyrics fetch says
-(where, and under which ticket). The fetch names a track and a copy, and
+the viewer's server may fetch with `lyrics`, under the peer's base path,
+signed as every call is
+([core section 8](core.md#8-common-rules-for-every-call)); it needs no
+ticket and is no playback. The request names a track and a copy, and
 is answered with lyrics shaped as OpenSubsonic's `structuredLyrics`, so
 that music servers built on that API pass them on as they are, with
 times in milliseconds.
@@ -505,8 +519,13 @@ shape, in milliseconds; word timing is not sent.
   failed fetch;
 - lines are text, never markup.
 
-Refusals are media's. A copy with no lyrics is answered as a missing
-item.
+Refusals: `400` `invalid-request` for a malformed request; `404`
+`not-found` for a track or a copy it doesn't offer the caller, or a copy
+with no lyrics; `404` `not-supported` when `music` is off; `429`
+`rate-limited` when asked too often
+([core section 8.3](core.md#83-limits-and-overload)). A viewer's server
+asks for a copy's lyrics when a viewer wants them, and keeps them while
+the copy's `etag` holds.
 
 Test cases: `lyrics` in
 [vectors/v0/music.json](../../vectors/v0/music.json), each with what
@@ -531,8 +550,9 @@ the same paging and the same changes.
   User-Agent and keeps to MusicBrainz's rate of one request a second
   when it asks MusicBrainz anything.
 - **Pictures of `local` titles are images from another server**: a
-  viewer's server checks and re-encodes them as [media](media.md)'s
-  image fetch says, so that only pixels reach the viewer.
+  viewer's server checks and re-encodes them as
+  [video section 6.7](video.md#67-the-image-of-a-local-title) says, so
+  that only pixels reach the viewer.
 - **ReplayGain from a peer** sets a volume: a viewer's player applies
   a gain within the ranges of section 3.3 only, and should not amplify
   past full scale (it lowers the gain to fit the peak).
@@ -607,7 +627,8 @@ for them):
     to 64, two decimals; peaks linear from 0 to 10, six decimals; R128
     gains converted with 5 dB added; the owning server never applies
     the gain.
-18. **Lyrics**: the request names a track and a copy; at most 1 MiB,
+18. **Lyrics**: a signed call of its own, `lyrics`, with no ticket (the
+    proposal says only "a call"); the request names a track and a copy; at most 1 MiB,
     8 sets, 2,000 lines of 512 characters; `offset` within ±10 minutes;
     `kind` from OpenSubsonic's three; empty lines kept; no word timing.
 19. **The queue**: the member is `queue` in request and answer; a
@@ -616,5 +637,8 @@ for them):
     any entry is converted; past the queue, a new `play` before the
     last entry ends.
 20. **`image`** on `local` artists and albums only; tracks show their
-    album's.
+    album's. It is fetched with video's `previews` call without
+    `versionId`, which a server answers for music too.
+22. **The track playing in a queue**: `progress` and `stop` carry
+    `title`, the queue entry playing (section 5.2).
 21. **`acoustid`** in the lowercase UUID form of MBIDs, on tracks.

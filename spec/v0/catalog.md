@@ -48,7 +48,7 @@ specifications.
 - **Scheme**: the source of the identifier in a title key. Each content
   part defines its own: `tmdb` (The Movie Database) and `tvdb`
   (TheTVDB) for [video](video.md#4-title-keys), `mb` (MusicBrainz) for
-  [music](music.md), and `local`, the owning server's own, for both
+  [music](music.md#2-title-keys), and `local`, the owning server's own, for both
   (section 4.3).
 - **Content part**: a part that names one kind of content's titles and
   says how they play: `video` and `music` in version 0
@@ -80,7 +80,7 @@ Library:
 `mixed` is for a library that holds several kinds; `""` is for kinds
 outside the list. Which titles a kind holds is said by the content parts:
 `movies` and `tvshows` by [video](video.md#2-libraries), `music` by
-[music](music.md#6-libraries), `mixed` by both. The other kinds are
+[music](music.md#7-libraries), `mixed` by both. The other kinds are
 labels only.
 
 ### 2.1 Library IDs
@@ -285,8 +285,9 @@ signed `404` `not-supported` when `catalog` is off; `500`.
 
 A film, an episode, an extra (section 3.5) or a music track describes its
 copies in `titles`: their length, container, streams and tracks, as its
-content part defines them ([video](video.md#3-titles) for films,
-episodes and extras, [music](music.md) for tracks). A viewer's server
+content part defines them ([video section 3.2](video.md#32-copies) for
+films, episodes and extras, [music section 3.3](music.md#33-a-tracks-copies)
+for tracks). A viewer's server
 builds its library from them before anyone plays.
 
 - **Media info comes from the catalog only.** A viewer's server must not
@@ -299,7 +300,7 @@ builds its library from them before anyone plays.
   the title again, whole (section 3.2).
 - **`play`'s answer and the catalog disagreeing** (the copy changed
   since the last reading): the answer wins for that playback
-  ([playback](playback.md)), and the viewer's server reads the peer's
+  ([playback section 2.3](playback.md#23-the-answer)), and the viewer's server reads the peer's
   titles again, with `since`, as soon as the spacing of section 3.2
   allows.
 
@@ -307,8 +308,9 @@ builds its library from them before anyone plays.
 
 Trailers, featurettes and the like are titles of their own in `titles`,
 of kind `extra`, each keyed under the title it belongs to (a film, a
-series or a season): `movie/tmdb/348/x/<opaque>`. [video](video.md#3-titles)
-defines them, their types and their keys.
+series or a season): `movie/tmdb/348/x/<opaque>`.
+[Video sections 3.9](video.md#39-extras) and [4.6](video.md#46-extras-keys)
+define them, their types and their keys.
 
 - An extra is listed, ordered and paged like any title (section 3.1): its
   key's byte order puts it after the title it is under, and not
@@ -333,7 +335,7 @@ The content parts define the kinds and the schemes:
 | Content part | Kinds | Schemes, in order of preference | Example | Defined in |
 |--------------|-------|---------------------------------|---------|------------|
 | `video` | `movie`, `series`, `season`, `episode`, `extra` | `tmdb`, `tvdb`, `local` | `movie/tmdb/949`, `series/tvdb/81189/a12` | [video section 4](video.md#4-title-keys) |
-| `music` | `artist`, `album`, `track` | `mb`, `local` | `album/mb/<mbid>` | [music](music.md) |
+| `music` | `artist`, `album`, `track` | `mb`, `local` | `album/mb/<mbid>` | [music section 2](music.md#2-title-keys) |
 
 - **`tmdb`**: The Movie Database, for films and series.
 - **`tvdb`**: TheTVDB, for series and episodes TMDB has no match for,
@@ -367,7 +369,8 @@ has, or to carry watched state across.
   its `ids` (other identifiers, as its content part defines them): a
   series one server keys under `tvdb` and another under `tmdb` with the
   same TVDB ID in `ids` is the same show. The content parts say which
-  identifiers match ([video](video.md#4-title-keys), [music](music.md)).
+  identifiers match ([video section 4.3](video.md#43-other-identifiers),
+  [music section 3.1](music.md#31-other-identifiers)).
 - **A `local` key never matches** another server's title, even an equal
   key: it is equal only to the same key from the same owning server. A
   viewer's server never matches a `local` title through `ids` either,
@@ -397,7 +400,7 @@ server, beside the members of section 3:
 | Field | Type | Content |
 |-------|------|---------|
 | `name` | string | its name, text, at most 128 characters |
-| `year` | integer, optional | its year, 1000 to 9999 |
+| `year` | integer, optional | its year, 1800 to 9999 |
 | `image` | boolean, optional | `true`: the owning server has one image of the title to give |
 
 - `name` is required, except for the kinds a content part names by
@@ -409,10 +412,13 @@ server, beside the members of section 3:
   cleans a server's name (with 128 instead of 80), never markup. It is
   never a file name: an owning server that has no other name for the
   title doesn't send it.
-- `image` is fetched like a seek-bar preview sheet: under a short ticket
-  of its own, no playback, as [media](media.md) says. It is JPEG or PNG,
-  at most 1 MiB (1,048,576 bytes); the viewer's server refuses anything
-  else.
+- `image` is asked for with a `previews` call without `versionId`
+  ([video section 5.6](video.md#56-previews)), and fetched under that
+  answer's short ticket, no playback, as
+  [media section 3.4](media.md#34-subtitles-fonts-sheets-and-images)
+  says. It is JPEG or PNG, at most 1 MiB (1,048,576 bytes); the viewer's
+  server refuses anything else
+  ([video section 6.7](video.md#67-the-image-of-a-local-title)).
 - A viewer's server shows the description as the owning server's, never
   as data from a public source, and never sends it on to another peer.
 - `year` that isn't an integer in range, or `image` that isn't a
@@ -453,7 +459,7 @@ anything.
   server's item IDs, not even inside library IDs (section 2.1), version
   IDs ([playback section 2.3](playback.md#23-the-answer)), the opaque
   parts of keys (section 4.2), or the names of copies and tracks
-  ([video](video.md#3-titles)).
+  ([video section 3.6](video.md#36-what-names-and-titles-may-say)).
 
 ## 6. Security considerations
 
@@ -517,8 +523,9 @@ gave no bound for them):
    3 MiB is not sent.
 7. **The opaque parts of keys** (section 4.2) take the form of library
    IDs: 1 to 64 characters of `A–Z a–z 0–9 _ -`.
-8. **The description's `year`** is 1000 to 9999, as music's; its image
-   bound is 1 MiB.
+8. **The description's `year`** is 1800 to 9999, as video's (music's
+   titles carry dates, not `year`); its image bound is 1 MiB, and the
+   image is fetched with video's `previews` call.
 9. **`local` sharing on a link** follows the union of its relations, as
    offers do (section 5).
 10. **Extras** are sent only with their title, in its library, and go

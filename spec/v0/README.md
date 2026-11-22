@@ -20,12 +20,12 @@ media formats more often.
 | Document | Version | What it holds |
 |----------|---------|---------------|
 | [core.md](core.md) | core 0 | encodings and canonical forms, HTTPS, keys and fingerprints, the pairing code, signed requests and answers, pairing and its states, pairing through a group, relations, `pair`, `hello`, key rotation and revocation (`rotate`, `revoke`), address changes, versions and parts, the discovery document |
-| [catalog.md](catalog.md) | `catalog` 0 | `libraries` and `titles`, opaque library IDs, the general rules of title keys |
-| [playback.md](playback.md) | `playback` 0 | `play`, `progress`, `stop`, limits, what the owning server enforces |
-| [media.md](media.md) | `media` 0 | what the stream URLs serve: HLS, the file; how long a ticket works |
+| [catalog.md](catalog.md) | `catalog` 0 | `libraries` and `titles`, pages bounded by size, opaque library IDs, the general rules of title keys and their schemes, copies and extras in `titles`, the description of `local` titles, what is shared |
+| [playback.md](playback.md) | `playback` 0 | `play` (purpose, delivery, transcode targets, restarts), `progress`, `stop`, limits, downloads, scan access, what the owning server enforces |
+| [media.md](media.md) | `media` 0 | what the stream URLs serve: complete HLS, the file by byte ranges, subtitles, fonts, sheets and images, and their sizes; the kinds of ticket and how long each works |
 | [groups.md](groups.md) | `groups` 0 | groups of servers: owner, admins and members, the signed list every member keeps, codes for a group, requests and answers encrypted for each member, pairing through a group, offers and limits per group |
-| [video.md](video.md) | `video` 0 | films and series by TMDB: title keys and their identity rules (TMDB's numbering, several episodes in one copy, other identifiers), subtitles, PGS, WebVTT, skip markers, seek-bar previews |
-| [music.md](music.md) | `music` 0 | artists, albums and tracks by MusicBrainz: keys, descriptions, cover art, audio-only playback |
+| [video.md](video.md) | `video` 0 | films, series and extras by TMDB, TheTVDB or the owner's own keys: title keys and their identity rules (TMDB's numbering, several episodes in one copy, other identifiers), copies (streams, tracks, chapters, skip markers), the description of `local` titles, `previews`, subtitles (WebVTT, ASS, PGS), fonts, seek-bar previews |
+| [music.md](music.md) | `music` 0 | artists, albums (by release) and tracks (by release track) by MusicBrainz or the owner's own keys: descriptions, copies, cover art, `lyrics`, audio-only playback, queues |
 
 Read the core first. Each part says what it needs from the core, and
 refers to it by section.
@@ -64,14 +64,15 @@ one place, with where each is defined.
 | Problem document | the JSON body of a refusal (RFC 9457), with `type`, `title`, `status` | [core 8.2](core.md#82-refusals) |
 | Library | a set of titles a server may offer a peer, by an opaque ID | [catalog 2](catalog.md#2-libraries) |
 | Offer, want | what one side shares; what the other takes of it | [catalog 1](catalog.md#1-terms) |
-| Title key | the identity of a title: a film, series, season or episode from TMDB's IDs; an artist, album or track from MusicBrainz's | [catalog 4](catalog.md#4-title-keys), [video 4](video.md#4-title-keys), [music 2](music.md#2-title-keys) |
+| Title key | the identity of a title: a film, series, season, episode or extra from TMDB's or TheTVDB's IDs; an artist, album or track from MusicBrainz's; or, for titles no public source knows, the owner's own (`local`) | [catalog 4](catalog.md#4-title-keys), [video 4](video.md#4-title-keys), [music 2](music.md#2-title-keys) |
 | Owning server | the server that holds a copy and streams it | [playback 1](playback.md#1-terms) |
 | Viewer's server | the server whose person watches; the only one the person's browser talks to | [playback 1](playback.md#1-terms) |
-| Copy, version | one file of a title; the ID the owning server gives it | [playback 1](playback.md#1-terms) |
+| Copy, version | one version of a title, one file or several parts, described in the catalog with its length, size, `etag` and tracks; the ID the owning server gives it | [playback 1](playback.md#1-terms), [video 3.2](video.md#32-copies) |
+| Delivery, purpose | what a `play` asks to be served (`file`, `remux`, `transcode`); why it is started (`play`, `download`, `scan`) | [playback 2.7](playback.md#27-delivery) |
 | Playback | one stream the owning server runs for the viewer's server, with an ID and a ticket | [playback 6.1](playback.md#61-a-playbacks-states) |
 | Ticket | the opaque credential in the media URLs, the only one | [media 1](media.md#1-the-urls) |
 | Stream root | `<address><prefix>/api/v1/stream/`, under which a server's media is | [media 1](media.md#1-the-urls) |
-| Stretch, part | 120 seconds of a subtitle track, fetched on its own | [video 6.2](video.md#62-what-is-fetched) |
+| Stretch, part | 120 seconds of a subtitle track, fetched on its own | [media 3.4](media.md#34-subtitles-fonts-sheets-and-images) |
 | Sheet | a JPEG of seek-bar preview tiles | [video 5.5](video.md#55-seek-bar-previews) |
 
 ## Errors
@@ -195,6 +196,16 @@ stable.
 - **Relations** (proposal 14, 2026-11-21), in the core: a link lasts
   while one relation holds, `individual` in `hello` (core sections 7.7
   and 9.2).
+- **The revision of version 0** (proposal 16, 2026-11-22, absorbing
+  proposal 15): copies in the catalog, pages bounded by size, the `tvdb`
+  and `local` schemes, extras ([catalog](catalog.md), [video](video.md)
+  sections 3 and 4); delivery, restarts, downloads and scan access
+  ([playback](playback.md) sections 2.7, 7 and 8); the file by byte
+  ranges, complete HLS, audio renditions ([media](media.md) section 3);
+  ASS, fonts, whole text tracks and `previews` (video sections 5.6 and
+  6); music by release and release track, with copies, lyrics and a
+  queue ([music](music.md)). Servers on version 0 before it and after it
+  don't pair.
 - **The clarifications** (all 34), as in the test draft's corrections.
 - The seek-bar previews already in the test draft, in `video`.
 - **The review round of 2026-11-16**: which addresses a server connects

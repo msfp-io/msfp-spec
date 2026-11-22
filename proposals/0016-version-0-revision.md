@@ -44,7 +44,7 @@ falls short of that in three ways.
   file**, with its details known before play.
 - **A test phase** (2026-11-21 and 22) checked it:
   - **Plex** (a throwaway server, through a logging file system) lists a
-    file from 1 to 4 MB of reads, but its nightly "extensive media
+    file from 1 to 4 MiB of reads, but its nightly "extensive media
     analysis" reads every file whole, and corrupts the length when a
     read is refused.
   - **A Jellyfin spike** serving a federated title as a plain file, with
@@ -217,7 +217,7 @@ with no label, and track titles often carry a release group. So:
   title never matches another server's.
   - It carries a **small owner-sent description**: `name` (at most 128
     characters), `year`, and one image (`image`: fetched like a preview
-    sheet, under a short ticket, JPEG or PNG, at most 1 MB), marked as
+    sheet, under a short ticket, JPEG or PNG, at most 1 MiB), marked as
     the owner's. Metadata beyond keys stays out everywhere else.
   - **The owner chooses** whether to share `local` titles at all (off by
     default), per pairing and per group.
@@ -322,7 +322,7 @@ subtitles fetched apart.
   today: known sections and known styling tags only, anything else
   dropped, sizes capped.
 - **Fonts** a copy's ASS tracks use are served as standard TrueType or
-  OpenType files only, at most 8 per copy and 10 MB each; a viewer's
+  OpenType files only, at most 8 per copy and 10 MiB each; a viewer's
   server may refuse fonts entirely.
 - **VobSub and DVB** are served as pictures, as PGS is today.
 - **Plain WebVTT** keeps italics, bold, colours and positions.
@@ -364,7 +364,7 @@ for media servers without plugins that can only show real files (Plex,
 through a file system).
 
 - A `play` with `purpose: scan` and `delivery: file`: no stream used, no
-  conversion, reads capped at **32 MB per copy** and rate-limited by the
+  conversion, reads capped at **32 MiB per copy** and rate-limited by the
   owner; past the cap, reads are refused (`416`).
 - Off by default; the owner allows it per pairing and per group, with a
   limit of scans a day.
@@ -425,7 +425,7 @@ pair with each other.
 1. ~~**The exact size**~~ Decided 2026-11-22: **exact `size` in the
    catalog.** A file address needs it before play, and anyone who plays
    the copy gets the exact file anyway. `bitrateKbps` stays rounded.
-2. ~~**Scan access's cap**~~ Decided 2026-11-22: **32 MB per copy**, kept.
+2. ~~**Scan access's cap**~~ Decided 2026-11-22: **32 MiB per copy**, kept.
 3. ~~**Music queue size**~~ Decided 2026-11-22: **5 next tracks**, kept.
 
 ## Recommendation
