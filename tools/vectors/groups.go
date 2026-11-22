@@ -678,7 +678,7 @@ func groupMail(group string) gMail {
 	g, _ := b64.DecodeString(group)
 	id := seq(0x30, 16)
 	from, to := keyGN.pub, keyGC.pub
-	opened := `{"address":"https://n.example.org","inbound":true,"name":"N","nextCommitment":"` + commitment(keyGN.pub) + `"}`
+	opened := `{"address":"https://n.example.org","inbound":true,"nextCommitment":"` + commitment(keyGN.pub) + `"}`
 	info := mailInfo(g, id)
 	aad := append(slices.Clone(from), to...)
 	enc, ct := seal(xEph, xC.PublicKey(), info, aad, []byte(opened))
@@ -735,7 +735,7 @@ func genV0Groups() []byte {
 			"state: what a copy computes once it kept the valid events and met the invalid ones (groups section 3.5): member IDs, sorted.",
 			"code: a pairing code for the group (core section 5.1, groups section 2), made by B, with the group's ID and name.",
 			"joinProof: group-join's proof of that code (groups section 8.4) by D, already paired with B: HMAC-SHA256 keyed with the code's secret over msfp-group-join-1 and a line feed, then D's 32 raw public-key bytes.",
-			"mail: N's request to C (groups section 5), sealed with HPKE base mode, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM, to C's encryption key; recipientX25519Private opens it. info and aad are hex. The generator seals with a fixed ephemeral key, and opens with Go's crypto/hpke.",
+			"mail: N's request to C (groups section 5), sealed with HPKE base mode, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM, to C's encryption key; recipientX25519Private opens it. Opened, it holds address, nextCommitment and inbound (certificates optional), no name: a member's name is its profile's. info and aad are hex. The generator seals with a fixed ephemeral key, and opens with Go's crypto/hpke.",
 		},
 		Keys: map[string]string{"a": keyA.text(), "b": keyB.text(), "c": keyGC.text(), "n": keyGN.text(), "d": keyGD.text()},
 		Now:  groupNow, Events: judged, State: state, Group: g, Name: "Family",

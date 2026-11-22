@@ -6,7 +6,7 @@
     "state: what a copy computes once it kept the valid events and met the invalid ones (groups section 3.5): member IDs, sorted.",
     "code: a pairing code for the group (core section 5.1, groups section 2), made by B, with the group's ID and name.",
     "joinProof: group-join's proof of that code (groups section 8.4) by D, already paired with B: HMAC-SHA256 keyed with the code's secret over msfp-group-join-1 and a line feed, then D's 32 raw public-key bytes.",
-    "mail: N's request to C (groups section 5), sealed with HPKE base mode, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM, to C's encryption key; recipientX25519Private opens it. info and aad are hex. The generator seals with a fixed ephemeral key, and opens with Go's crypto/hpke."
+    "mail: N's request to C (groups section 5), sealed with HPKE base mode, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM, to C's encryption key; recipientX25519Private opens it. Opened, it holds address, nextCommitment and inbound (certificates optional), no name: a member's name is its profile's. info and aad are hex. The generator seals with a fixed ephemeral key, and opens with Go's crypto/hpke."
   ],
   "keys": {
     "a": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
@@ -266,13 +266,13 @@
   "groupName": "Family",
   "mail": {
     "name": "N's request to C",
-    "payload": "{\"expires\":1802678400,\"from\":\"V0qem-okpXuOaVac-5C4B9tBMfdQPDsfhwRLH5vkz9E\",\"group\":\"n6R6P0raBMJtddE2Cj5nV5-zUntENOUckdWYfgiZMyQ\",\"id\":\"MDEyMzQ1Njc4OTo7PD0-Pw\",\"kind\":\"request\",\"sealed\":\"Zyc9jDKJc0GFBIPk4GL8AlAKGYgWQbNPe5Pt02si7k0wP7br1HkCasEnf5r9v0rjzUGlWdK9bVaRnT5qfL5cxiZrfR7N1G-LOkC1lssgogIRgIQG1jwy-Any3vqD0KWSK344EvvuZAwjNZ29v8QlTgtix5baePl7Niyt717XPICGlV3FvWN8Yk6CdHCny4R60ZxsV7-ci2nIHwcDcQFB_KEaGzov-cJLHfie3w\",\"to\":\"ob_WJZGnhjJwgHnKYlB4fQ5X0C05ozBUhULn4Aateik\"}",
-    "mail": "eyJleHBpcmVzIjoxODAyNjc4NDAwLCJmcm9tIjoiVjBxZW0tb2twWHVPYVZhYy01QzRCOXRCTWZkUVBEc2Zod1JMSDV2a3o5RSIsImdyb3VwIjoibjZSNlAwcmFCTUp0ZGRFMkNqNW5WNS16VW50RU5PVWNrZFdZZmdpWk15USIsImlkIjoiTURFeU16UTFOamM0T1RvN1BEMC1QdyIsImtpbmQiOiJyZXF1ZXN0Iiwic2VhbGVkIjoiWnljOWpES0pjMEdGQklQazRHTDhBbEFLR1lnV1FiTlBlNVB0MDJzaTdrMHdQN2JyMUhrQ2FzRW5mNXI5djByanpVR2xXZEs5YlZhUm5UNXFmTDVjeGlacmZSN04xRy1MT2tDMWxzc2dvZ0lSZ0lRRzFqd3ktQW55M3ZxRDBLV1NLMzQ0RXZ2dVpBd2pOWjI5djhRbFRndGl4NWJhZVBsN05peXQ3MTdYUElDR2xWM0Z2V044WWs2Q2RIQ255NFI2MFp4c1Y3LWNpMm5JSHdjRGNRRkJfS0VhR3pvdi1jSkxIZmllM3ciLCJ0byI6Im9iX1dKWkduaGpKd2dIbktZbEI0ZlE1WDBDMDVvekJVaFVMbjRBYXRlaWsifQ",
-    "signature": "Q_UKn9_5IlBOcd_kQ_btAcdCMa7n01vBTgPBjLj7wSiWX5K67nAhxd-rgOR5wSygOjkoKLFIwXshL8iCmBCpBQ",
+    "payload": "{\"expires\":1802678400,\"from\":\"V0qem-okpXuOaVac-5C4B9tBMfdQPDsfhwRLH5vkz9E\",\"group\":\"n6R6P0raBMJtddE2Cj5nV5-zUntENOUckdWYfgiZMyQ\",\"id\":\"MDEyMzQ1Njc4OTo7PD0-Pw\",\"kind\":\"request\",\"sealed\":\"Zyc9jDKJc0GFBIPk4GL8AlAKGYgWQbNPe5Pt02si7k0wP7br1HkCasEnf5r9v0rjzUGlWdK9bVaRnT5qfL5cxiZrfR7N1G-LOkC1lssgogIRgIQG0ikjmVy9_bHbn66ZJyhBX6PwZhw6FJb_q8tRMxlZ8LLsXosrSh6qymO3GKCsoQ38sE9ZO0upbFzhzbUxz5c_yNw_jT3g_Xc-DGIk3Dc\",\"to\":\"ob_WJZGnhjJwgHnKYlB4fQ5X0C05ozBUhULn4Aateik\"}",
+    "mail": "eyJleHBpcmVzIjoxODAyNjc4NDAwLCJmcm9tIjoiVjBxZW0tb2twWHVPYVZhYy01QzRCOXRCTWZkUVBEc2Zod1JMSDV2a3o5RSIsImdyb3VwIjoibjZSNlAwcmFCTUp0ZGRFMkNqNW5WNS16VW50RU5PVWNrZFdZZmdpWk15USIsImlkIjoiTURFeU16UTFOamM0T1RvN1BEMC1QdyIsImtpbmQiOiJyZXF1ZXN0Iiwic2VhbGVkIjoiWnljOWpES0pjMEdGQklQazRHTDhBbEFLR1lnV1FiTlBlNVB0MDJzaTdrMHdQN2JyMUhrQ2FzRW5mNXI5djByanpVR2xXZEs5YlZhUm5UNXFmTDVjeGlacmZSN04xRy1MT2tDMWxzc2dvZ0lSZ0lRRzBpa2ptVnk5X2JIYm42NlpKeWhCWDZQd1podzZGSmJfcTh0Uk14bFo4TExzWG9zclNoNnF5bU8zR0tDc29RMzhzRTlaTzB1cGJGemh6YlV4ejVjX3lOd19qVDNnX1hjLURHSWszRGMiLCJ0byI6Im9iX1dKWkduaGpKd2dIbktZbEI0ZlE1WDBDMDVvekJVaFVMbjRBYXRlaWsifQ",
+    "signature": "YcsVuNT4TWdXp4aPwwwYG9ZMBQ7xnnGbLs_vGYbpBLEbyuS78zE0RiFYupprwn6FODOKCOr8v_ZiyDDCd9aYCg",
     "recipientX25519Private": "2ec9380849c45360e8ca2bf4c9ad4da197edf7f5b399292da09668bc738385a1",
     "info": "6d7366702d67726f75702d6d61696c2d319fa47a3f4ada04c26d75d1360a3e67579fb3527b4434e51c91d5987e08993324303132333435363738393a3b3c3d3e3f",
     "aad": "574a9e9bea24a57b8e69569cfb90b807db4131f7503c3b1f87044b1f9be4cfd1a1bfd62591a78632708079ca6250787d0e57d02d39a330548542e7e006ad7a29",
-    "opened": "{\"address\":\"https://n.example.org\",\"inbound\":true,\"name\":\"N\",\"nextCommitment\":\"5skdtDe665VHaPSPrCDfIdODm3tRip6pica46_JE60A\"}"
+    "opened": "{\"address\":\"https://n.example.org\",\"inbound\":true,\"nextCommitment\":\"5skdtDe665VHaPSPrCDfIdODm3tRip6pica46_JE60A\"}"
   },
   "joinProof": {
     "redeemer": "d",

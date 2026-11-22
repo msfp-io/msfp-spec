@@ -374,6 +374,22 @@ func verifyAll(read func(string) []byte) []error {
 	if opened, err := openMail(mustX25519(priv), sealed, info, aad); err != nil || string(opened) != str(m, "opened") {
 		bad("v0/groups.json: the mail doesn't open to opened with crypto/hpke: %v", err)
 	}
+	// What a mail holds once opened (groups section 5): no name, which
+	// is the member's profile's.
+	var om map[string]json.RawMessage
+	if json.Unmarshal([]byte(str(m, "opened")), &om) != nil {
+		bad("v0/groups.json: opened isn't an object")
+	}
+	for k := range om {
+		if k != "address" && k != "nextCommitment" && k != "inbound" && k != "certificates" {
+			bad("v0/groups.json: opened holds %s", k)
+		}
+	}
+	for _, k := range []string{"address", "nextCommitment", "inbound"} {
+		if _, ok := om[k]; !ok {
+			bad("v0/groups.json: opened has no %s", k)
+		}
+	}
 	// The revision of version 0 (proposal 16): each part checks its own
 	// vectors in its own file (verify_rev_<part>.go).
 	errs = append(errs, verifyRevCatalog(read)...)

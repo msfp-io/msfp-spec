@@ -362,9 +362,11 @@ The payload:
 | `sealed` | string | base64url of the HPKE encapsulated key (32 bytes) followed by the ciphertext |
 
 Once opened, `sealed` holds a JSON object: `address` (core section 5.2),
-`name`, `nextCommitment`, `inbound` (core section 7.5) and
-`certificates`, the pins of the certificates the sender's address serves
-(core section 3.2; optional, as in `hello`).
+`nextCommitment`, `inbound` (core section 7.5) and `certificates`, the
+pins of the certificates the sender's address serves (core section 3.2;
+optional, as in `hello`). It carries no name: a member's name is its
+latest `profile`'s, or its `joined`'s until its `profile` arrives
+(section 3.3).
 
 **Encryption**: HPKE (RFC 9180), mode base, with the KEM
 DHKEM(X25519, HKDF-SHA256) (`0x0020`), the KDF HKDF-SHA256 (`0x0001`) and
@@ -491,7 +493,6 @@ Request:
 | `group` | string | yes | the group's ID |
 | `answers` | string | yes | the `id` of the request the caller accepted, or of the answer the caller received for its own request |
 | `address` | string | yes | the caller's address (core section 5.2) |
-| `name` | string | no | the caller's name |
 | `nextCommitment` | string | yes | as in `pair` (core section 9.1) |
 | `inbound` | boolean | no | as in `pair` |
 
@@ -504,8 +505,9 @@ The receiver checks that the caller's key is the current key of a member
 of the group, and that `answers` names a request it sent to that member,
 or an answer that member sent for one of its requests, not used before.
 Then it stores the caller as `paired` (or adds the group to an existing
-link's relations), and answers `200`, signed, with `name`,
-`nextCommitment` and `inbound`. Refusals: the `404` above; `409` when
+link's relations), and answers `200`, signed, with `nextCommitment` and
+`inbound`. Neither side sends a name: each knows the other's from its
+latest `profile`, or its `joined` (section 3.3). Refusals: the `404` above; `409` when
 that request or answer was already used.
 
 ### 8.4 group-join
@@ -561,8 +563,10 @@ newcomer that used `pair`.
     `downloads` at once, and the day's `downloadsPerDay` and
     `scansPerDay` (and the members a content part adds, such as music's
     `audioStreams` and `audioTranscodes`);
-  - caps, for each playback counted in the pool: `bitrateKbps`, and
-    `downloadKbps` for each download.
+  - caps, for each playback counted in the pool: `bitrateKbps`,
+    `downloadKbps` for each download, and its own scan cap for each scan
+    (4 MiB to 1 GiB), which the scan's answer states as `scanBytes`
+    ([playback section 8](playback.md#8-scan-access)).
 
   Downloads and scans are off for a group (0) unless the member allows
   them. A playback counts against the **first pool with room** for its
@@ -575,7 +579,8 @@ newcomer that used `pair`.
 
 ## 10. What members see
 
-Each member's name, fingerprint and role, whether they are linked, who
+Each member's name (its latest `profile`'s; before its first, the
+`joined` that invited it), fingerprint and role, whether they are linked, who
 invited it and when it joined. Whether this server has a way in (section 6). What a server offers stays between linked
 servers; addresses too.
 
@@ -623,3 +628,13 @@ sealed with HPKE); the codes' cases are in
 3. **Catching up after a long absence.** A member offline past a mail's
    30 days misses it; this draft lets the requester send an expired
    request again (section 5). Whether that is enough is open.
+
+**The whole of proposal 17, as frozen** (2026-11-22,
+[proposal 17](../../proposals/0017-neutrality.md)):
+
+4. **No name in `group-pair` nor in the mail** (sections 5 and 8.3): a
+   member's name is its `profile`'s; `joined` keeps its `name` until the
+   newcomer's `profile` arrives.
+5. **A pool's own scan cap** (section 9), stated as `scanBytes` in the
+   scan's answer, since only the owning server knows which pool counted
+   the scan.
