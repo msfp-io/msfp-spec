@@ -293,6 +293,12 @@ codecs string of RFC 6381 (`avc1.640028`, `hvc1.2.4.L153.B0`,
   accept the lowercase form of a 4CC (`opus`, `flac`).
 - **`codec` and `codecs` never disagree.** Decisions go by `codecs` when
   it is present.
+- **One place per fact.** The `codecs` string is a standard and is sent
+  whole, so some of its parts repeat other fields. Each fact has one
+  authoritative field: bit depth is `bitDepth`; colour is `colour`;
+  profile, level, tier and chroma are `codecs`. They must agree; when they
+  don't, the viewer's server decides by the authoritative field and still
+  hands `codecs` to players as it is.
 - **Missing or malformed where required**: the stream or track is kept,
   `codecs` counts as absent, and the viewer's server treats the copy as
   one it can't play as it is (section 1).
@@ -353,7 +359,7 @@ TrueHD major sync, DTS-HD MA's extension substream).
   show the picture upright; absent means 0. A display matrix that mirrors
   the picture, or turns it by another angle: left out.
 - **`bitDepth`**: 1 to 16 on video. Where `codecs` holds the bit depth
-  too (AV1, VP9), the two agree.
+  too (AV1, VP9), the two agree; see "One place per fact" (section 3.3).
 - **`refFrames`** (new): integer, optional, on an H.264 video stream
   only: the stream's declared maximum number of reference frames
   (`max_num_ref_frames`), 1 to 16. Out of range, or on another codec:
@@ -402,8 +408,10 @@ kept (section 1):
   `description`…); an unknown role is never taken for the title's own
   sound;
 - subtitle `role` (new, optional): from the same scheme (`subtitle`,
-  `caption`, `commentary`, `description`, `easyreader`…). `forced` stays
-  the only forced flag: `forced-subtitle` isn't sent as a `role`;
+  `commentary`, `description`, `easyreader`…). `forced` stays the only
+  forced flag and `hearingImpaired` the only one for subtitles with
+  sounds (SDH): `forced-subtitle` and `caption` aren't sent as a `role`
+  (the registry notes how they map);
 - segment `kind` (`intro`, `outro`, `recap`, `preview`, `commercial`); a
   viewer's server shows a kind it doesn't know as a plain "Skip";
 - `extraType`, with `themesong` and `themevideo`: an owning server may

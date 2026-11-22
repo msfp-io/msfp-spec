@@ -336,9 +336,10 @@ Jellyfin's `ExtraType`**, lowercased. Jellyfin's `sample` is left out
   `emergency`, `karaoke` (the last two UNVERIFIED as audio roles: the
   standard is paywalled; the list is from Shaka Packager and ExoPlayer).
 - Subtitle `role`: the same scheme. The values that concern subtitles:
-  `subtitle`, `caption`, `commentary`, `description`, `easyreader`,
-  `main`, `alternate` (from the same sources). `forced-subtitle` is never
-  sent: `forced` is the flag.
+  `subtitle`, `commentary`, `description`, `easyreader`, `main`,
+  `alternate` (from the same sources). `forced-subtitle` is never sent:
+  `forced` is the flag. `caption` is never sent: `hearingImpaired` is the
+  flag (subtitles with sounds, SDH).
 
 ## 10. `threeD` (copy)
 
