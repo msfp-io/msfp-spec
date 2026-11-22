@@ -50,24 +50,6 @@ func videoIn(s string, list []string) bool {
 	return false
 }
 
-// videoMediaType tells a media type (core section 8.5): lowercase,
-// exactly one /, no parameters, each half starting with a letter or a
-// digit, at most 127 characters of a-z 0-9 . + - _ /. It is to be
-// unified with the core's openMediaType.
-func videoMediaType(s string) bool {
-	if len(s) > 127 || strings.Count(s, "/") != 1 {
-		return false
-	}
-	for _, c := range []byte(s) {
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '+' || c == '-' || c == '_' || c == '/') {
-			return false
-		}
-	}
-	top, sub, _ := strings.Cut(s, "/")
-	alnum := func(h string) bool { return h != "" && (h[0] >= 'a' && h[0] <= 'z' || h[0] >= '0' && h[0] <= '9') }
-	return alnum(top) && alnum(sub)
-}
-
 // videoKeyInfo is what a video title key says (section 4).
 type videoKeyInfo struct {
 	Kind   string // movie, series, season, episode or extra
@@ -612,7 +594,7 @@ func keepCopy(v any) (*videoCopy, error) {
 		return nil, errors.New("durationMs isn't an integer from 0 to 8,640,000,000")
 	}
 	mt, _ := o["mediaType"].(string)
-	if !videoMediaType(mt) {
+	if !openMediaType(mt) {
 		return nil, errors.New("mediaType missing or not a media type")
 	}
 	size := videoInt(o["size"], 1, videoMaxSize)

@@ -629,7 +629,7 @@ func mediaServes(t mediaTicket, name string) error {
 func mediaRelayType(what, value string) string {
 	const other = "application/octet-stream"
 	if what == "file" {
-		if playbackMediaType(value) {
+		if openMediaType(value) {
 			return value
 		}
 		return other

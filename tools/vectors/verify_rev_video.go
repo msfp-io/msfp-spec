@@ -401,7 +401,7 @@ func videoCheckKeptCopy(c map[string]any) []error {
 	if s, _ := n(c, "size"); s < 1 || s > videoMaxSize {
 		bad("size %d", s)
 	}
-	if !videoMediaType(str(c, "mediaType")) {
+	if !openMediaType(str(c, "mediaType")) {
 		bad("mediaType %q isn't a media type", str(c, "mediaType"))
 	}
 	for _, k := range []string{"edition", "threeD"} {

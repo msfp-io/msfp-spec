@@ -166,23 +166,6 @@ func playbackEncode(v any) []byte {
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 }
 
-// playbackMediaType tells a media type (core section 8.5): lowercase,
-// exactly one /, no parameters, each half starting with a letter or a
-// digit, at most 127 characters of a-z 0-9 . + - _ /.
-func playbackMediaType(s string) bool {
-	if len(s) < 3 || len(s) > 127 || strings.Count(s, "/") != 1 {
-		return false
-	}
-	for _, c := range []byte(s) {
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '+' || c == '-' || c == '_' || c == '/') {
-			return false
-		}
-	}
-	top, sub, _ := strings.Cut(s, "/")
-	first := func(h string) bool { return h != "" && (h[0] >= 'a' && h[0] <= 'z' || h[0] >= '0' && h[0] <= '9') }
-	return first(top) && first(sub)
-}
-
 // The protocol's own steps of a transcode (playback section 2.7): copy
 // and the range are MSFP's, not registry tokens.
 const playbackCopyStep = "copy"
@@ -521,7 +504,7 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 		if s.Delivery != "remux" {
 			return s, pbBad("mediaType without delivery remux")
 		}
-		if !playbackMediaType(m) {
+		if !openMediaType(m) {
 			return s, pbBad("mediaType %q isn't a media type (core section 8.5)", m)
 		}
 		s.MediaType = m

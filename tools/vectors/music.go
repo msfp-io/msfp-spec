@@ -36,24 +36,6 @@ var (
 	musicRemuxTypes = []string{"audio/mp2t", "audio/mp4"}
 )
 
-// musicMediaType tells a media type as core section 8.5 defines it:
-// lowercase, exactly one /, no parameters, each half starting with a
-// letter or a digit, at most 127 characters of a-z 0-9 . + - _ /.
-// (Local to music until the parts' rules are merged.)
-func musicMediaType(s string) bool {
-	if len(s) < 3 || len(s) > 127 || strings.Count(s, "/") != 1 {
-		return false
-	}
-	for _, c := range []byte(s) {
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '+' || c == '-' || c == '_' || c == '/') {
-			return false
-		}
-	}
-	top, sub, _ := strings.Cut(s, "/")
-	alnum := func(h string) bool { return h != "" && (h[0] >= 'a' && h[0] <= 'z' || h[0] >= '0' && h[0] <= '9') }
-	return alnum(top) && alnum(sub)
-}
-
 // musicType: a MusicBrainz release-group type as music section 3 sends
 // it: lowercased, 1 to 32 characters of a-z 0-9 space . _ - /, no space
 // at either end.
@@ -423,7 +405,7 @@ func keepMusicCopies(list []any) []musicCopy {
 		// mediaType and codec are open (core section 8.5): an unknown
 		// value is kept; a malformed one is dropped, and the copy,
 		// missing a required member, skipped.
-		if !musicIDForm.MatchString(id) || seen[id] || dur == nil || !okT || !okK || !musicMediaType(mt) || !openToken(codec) || size == nil || !musicIDForm.MatchString(etag) {
+		if !musicIDForm.MatchString(id) || seen[id] || dur == nil || !okT || !okK || !openMediaType(mt) || !openToken(codec) || size == nil || !musicIDForm.MatchString(etag) {
 			continue
 		}
 		seen[id] = true
@@ -570,7 +552,7 @@ func musicQueueAsked(raw []byte) ([]musicAsked, error) {
 			switch {
 			case entryD != "remux":
 				return nil, fmt.Errorf("400: queue entry %d: mediaType without its own delivery remux", i)
-			case !ok || !musicMediaType(x):
+			case !ok || !openMediaType(x):
 				return nil, fmt.Errorf("400: queue entry %d: mediaType isn't a media type (core section 8.5)", i)
 			case !kindIn(x, musicRemuxTypes...) && refused == nil:
 				refused = fmt.Errorf("409 delivery-refused: queue entry %d: a remux into %s, not audio/mp2t or audio/mp4", i, x)

@@ -138,7 +138,7 @@ func verifyRevMusic(read func(string) []byte) []error {
 				}
 			}
 			for _, c := range t.Copies {
-				if !musicMediaType(c.MediaType) || !openToken(c.Codec) {
+				if !openMediaType(c.MediaType) || !openToken(c.Codec) {
 					bad("%s %q: a copy's mediaType or codec kept out of its form", arr, str(x, "name"))
 				}
 			}

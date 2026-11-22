@@ -151,7 +151,7 @@ func verifyRevMedia(read func(string) []byte) []error {
 		if got != str(x, "output") {
 			bad("relayTypes %q: the file says %q; the rules give %q", str(x, "name"), str(x, "output"), got)
 		}
-		if got != "application/octet-stream" && !playbackMediaType(got) {
+		if got != "application/octet-stream" && !openMediaType(got) {
 			bad("relayTypes %q: %q isn't a media type", str(x, "name"), got)
 		}
 	}
