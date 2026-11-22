@@ -194,10 +194,10 @@ func musicTitleCases() []titleCase {
 	}
 	in := []musicIn{
 		// Section 3's example, as it is.
-		{"music section 3's example album", `{"key":"album/mb/0b000000-0000-4000-8000-000000000002","kind":"album","library":"m1","name":"Bridge over Troubled Water","artists":["artist/mb/0a000000-0000-4000-8000-000000000001"],"artistNames":"Simon & Garfunkel","releaseType":"album","date":"2011-03-08","originalDate":"1970-01-26","genres":["Folk rock"],"ids":{"mbreleasegroup":"0d000000-0000-4000-8000-000000000005"}}`},
+		{"music section 3's example album", `{"key":"album/mb/0b000000-0000-4000-8000-000000000002","kind":"album","library":"m1","name":"Bridge over Troubled Water","artists":["artist/mb/0a000000-0000-4000-8000-000000000001"],"artistNames":"Simon & Garfunkel","primaryType":"album","date":"2011-03-08","originalDate":"1970-01-26","genres":["Folk rock"],"ids":{"mbreleasegroup":"0d000000-0000-4000-8000-000000000005"}}`},
 		{"music section 3's example track", `{"key":"track/mb/0c000000-0000-4000-8000-000000000003","kind":"track","library":"m1","name":"The Boxer","artists":["artist/mb/0a000000-0000-4000-8000-000000000001"],"artistNames":"Simon & Garfunkel","album":"album/mb/0b000000-0000-4000-8000-000000000002","disc":1,"number":2,"copies":[{"id":"Vq3kM0aZ7pXc","durationMs":308000,"container":"flac","codec":"flac","size":36214455,"etag":"7f3a9c21","bitrateKbps":936,"sampleRate":44100,"bitDepth":16,"channels":2,"replayGain":{"trackGain":-4.12,"trackPeak":0.988525,"albumGain":-5.3,"albumPeak":1.0},"lyrics":"synced"}],"ids":{"mbrecording":"0e000000-0000-4000-8000-000000000006","isrc":"USSM17000123"}}`},
 		{"an artist", `{` + mArtistHead + `,"name":"Simon & Garfunkel"}`},
-		{"an album with every member", mAlbum(`"sortName":"Bridge over Troubled Water, The","artists":[` + ak(mbArtist) + `,` + ak(mbArtist2) + `],"artistNames":"A & B","releaseType":"compilation","compilation":true,"date":"2011","originalDate":"1970-01","genres":["Folk rock","Pop"],"ids":{"mbreleasegroup":"` + mbGroup + `"}`)},
+		{"an album with every member", mAlbum(`"sortName":"Bridge over Troubled Water, The","artists":[` + ak(mbArtist) + `,` + ak(mbArtist2) + `],"artistNames":"A & B","primaryType":"album","secondaryTypes":["compilation","live"],"compilation":true,"date":"2011","originalDate":"1970-01","genres":["Folk rock","Pop"],"ids":{"mbreleasegroup":"` + mbGroup + `"}`)},
 
 		// Names.
 		{"names cleaned: white space runs, controls and format characters", `{` + mTrackHead + `,"name":"  The\t\tBoxer\n\u0007(live)‮ ","artistNames":" Simon &​Garfunkel ","copies":[` + mCopy + `]}`},
@@ -228,14 +228,24 @@ func musicTitleCases() []titleCase {
 		{"artists that isn't an array: absent", mTrack(`"artists":` + ak(mbArtist))},
 		{"artists empty once bad entries are skipped: absent", mAlbum(`"artists":["artist/mb/x",7]`)},
 
-		// releaseType and compilation.
-		{"releaseType soundtrack", mAlbum(`"releaseType":"soundtrack"`)},
-		{"releaseType remix", mAlbum(`"releaseType":"remix"`)},
-		{"releaseType other", mAlbum(`"releaseType":"other"`)},
-		{"releaseType in another case: other", mAlbum(`"releaseType":"Album"`)},
-		{"releaseType of MusicBrainz's that isn't one of the eight: other", mAlbum(`"releaseType":"broadcast"`)},
-		{"an empty releaseType: other", mAlbum(`"releaseType":""`)},
-		{"a releaseType that isn't a string: absent", mAlbum(`"releaseType":1`)},
+		// primaryType, secondaryTypes and compilation.
+		{"primaryType single, secondaryTypes soundtrack and remix", mAlbum(`"primaryType":"single","secondaryTypes":["soundtrack","remix"]`)},
+		{"MusicBrainz's other primary types kept: broadcast", mAlbum(`"primaryType":"broadcast"`)},
+		{"primaryType other is a MusicBrainz type, kept", mAlbum(`"primaryType":"other"`)},
+		{"an unknown primaryType kept as it is", mAlbum(`"primaryType":"box-set"`)},
+		{"types with a space and a slash kept", mAlbum(`"primaryType":"ep","secondaryTypes":["audio drama","mixtape/street","dj-mix","spokenword"]`)},
+		{"a type of 32 characters kept, of 33 absent", mAlbum(`"primaryType":"` + strings.Repeat("a", 32) + `","secondaryTypes":["` + strings.Repeat("b", 33) + `","live"]`)},
+		{"a primaryType in another case: absent, never lowercased by the caller", mAlbum(`"primaryType":"Album"`)},
+		{"an empty primaryType: absent", mAlbum(`"primaryType":""`)},
+		{"a primaryType with a space at an end: absent", mAlbum(`"primaryType":" album"`)},
+		{"a primaryType of a space only: absent", mAlbum(`"primaryType":" "`)},
+		{"a primaryType with other characters: absent", mAlbum(`"primaryType":"album+live"`)},
+		{"a primaryType that isn't a string: absent", mAlbum(`"primaryType":1`)},
+		{"secondaryTypes: bad, repeated and non-string entries skipped alone", mAlbum(`"secondaryTypes":["live","Live","live",7,"","remix "," remix","remix"]`)},
+		{"secondaryTypes: at most 8 kept, the first, skipped ones not counted", mAlbum(`"secondaryTypes":["a","B","b","c","d","e","f","g","h","i"]`)},
+		{"secondaryTypes empty once bad entries are skipped: absent", mAlbum(`"secondaryTypes":["Live",7]`)},
+		{"secondaryTypes that isn't an array: absent", mAlbum(`"secondaryTypes":"live"`)},
+		{"releaseType isn't a member any more: ignored", mAlbum(`"releaseType":"album"`)},
 		{"compilation false is kept", mAlbum(`"compilation":false`)},
 		{"compilation that isn't a boolean: absent", mAlbum(`"compilation":"true"`)},
 
@@ -275,8 +285,13 @@ func musicTitleCases() []titleCase {
 
 		// Members of other kinds.
 		{"an album ignores a track's members", mAlbum(`"album":"album/mb/` + mbAlbum2 + `","disc":1,"number":1,"copies":[` + mCopy + `],"image":true,"ids":{"mbrecording":"` + mbRec + `","isrc":"USSM17000123","acoustid":"` + acoustID + `"}`)},
-		{"a track ignores an album's members", mTrack(`"sortName":"y","releaseType":"album","compilation":true,"date":"1970","originalDate":"1970","genres":["Pop"],"image":true,"ids":{"mbreleasegroup":"` + mbGroup + `"}`)},
-		{"an artist carries no artists, artistNames, album members or image", `{` + mArtistHead + `,"name":"x","artists":[` + ak(mbArtist2) + `],"artistNames":"y","sortName":"z","genres":["Pop"],"date":"1970","image":true,"copies":[` + mCopy + `],"ids":{"mbreleasegroup":"` + mbGroup + `"}}`},
+		{"a track ignores an album's members", mTrack(`"sortName":"y","primaryType":"album","secondaryTypes":["live"],"compilation":true,"image":true,"ids":{"mbreleasegroup":"` + mbGroup + `"}`)},
+		{"a track's own dates and genres kept", mTrack(`"date":"1999-05","originalDate":"1968","genres":["Soul"," Funk ","soul"]`)},
+		{"a track's dates checked as an album's", mTrack(`"date":"2023-02-29","originalDate":"1970-13"`)},
+		{"a track's originalDate after its date: absent", mTrack(`"date":"1970","originalDate":"1971"`)},
+		{"a track's genres: at most 8 kept, the first", mTrack(`"genres":["a","b","c","d","e","f","g","h","i"]`)},
+		{"a track's dates and genres of the wrong type: absent", mTrack(`"date":1999,"originalDate":["1968"],"genres":"Soul"`)},
+		{"an artist carries no artists, artistNames, album members, dates, genres or image", `{` + mArtistHead + `,"name":"x","artists":[` + ak(mbArtist2) + `],"artistNames":"y","sortName":"z","primaryType":"album","genres":["Pop"],"date":"1970","image":true,"copies":[` + mCopy + `],"ids":{"mbreleasegroup":"` + mbGroup + `"}}`},
 
 		// ids.
 		{"ids of a track: mbrecording, isrc, acoustid", mTrack(`"ids":{"mbrecording":"` + mbRec + `","isrc":"GBAYE6300001","acoustid":"` + acoustID + `"}`)},
@@ -307,19 +322,26 @@ func musicTitleCases() []titleCase {
 		{"size at its bounds", mCopies(mCopyWith("c1", `"size":1`), mCopyWith("c2", `"size":999999999999999`))},
 		{"size out of range: the copy skipped", mCopies(mCopyWith("c1", `"size":0`), mCopyWith("c2", `"size":1000000000000000`), mCopyWith("c3", `"size":1e3`), mCopyWith("c4"))},
 		{"etags of 64 characters, 65, empty, with a dot", mCopies(mCopyWith("c1", `"etag":"`+strings.Repeat("e", 64)+`"`), mCopyWith("c2", `"etag":"`+strings.Repeat("e", 65)+`"`), mCopyWith("c3", `"etag":""`), mCopyWith("c4", `"etag":"7f.3"`), mCopyWith("c5", `"etag":7`))},
-		{"unknown container and codec strings kept as other", mCopies(mCopyWith("c1", `"container":"FLAC"`, `"codec":"wma"`), mCopyWith("c2", `"container":"mka"`, `"codec":"h264"`), mCopyWith("c3", `"container":"m4a"`, `"codec":"alac"`), mCopyWith("c4", `"container":"ogg"`, `"codec":"pcm_s24le"`))},
+		{"ffmpeg names of containers and codecs kept", mCopies(mCopyWith("c1", `"container":"mp3"`, `"codec":"mp3"`), mCopyWith("c2", `"container":"mp4"`, `"codec":"alac"`), mCopyWith("c3", `"container":"ogg"`, `"codec":"vorbis"`), mCopyWith("c4", `"container":"wav"`, `"codec":"pcm_s24le"`), mCopyWith("c5", `"container":"matroska"`, `"codec":"opus"`))},
+		{"container and codec tokens kept as they are, known or not, never turned into other", mCopies(mCopyWith("c1", `"container":"ipod"`, `"codec":"wmav2"`), mCopyWith("c2", `"container":"mka"`, `"codec":"h264"`), mCopyWith("c3", `"container":"x.new_1-2"`, `"codec":"iamf"`), mCopyWith("c4", `"container":"other"`, `"codec":"other"`))},
+		{"a container and a codec of 32 characters kept", mCopies(mCopyWith("c1", `"container":"`+strings.Repeat("c", 32)+`"`, `"codec":"`+strings.Repeat("k", 32)+`"`))},
+		{"a container or codec that isn't a token: the copy skipped", mCopies(mCopyWith("c1", `"container":"FLAC"`), mCopyWith("c2", `"codec":"pcm s16le"`), mCopyWith("c3", `"container":""`), mCopyWith("c4", `"codec":"`+strings.Repeat("k", 33)+`"`), mCopyWith("c5", `"container":"m4a,mp4"`), mCopyWith("c6"))},
 		{"a container or codec that isn't a string: the copy skipped", mCopies(mCopyWith("c1", `"container":7`), mCopyWith("c2", `"codec":["flac"]`), mCopyWith("c3"))},
+		{"codecs, RFC 6381 strings, kept", mCopies(mCopyWith("c1", `"codecs":"fLaC"`), mCopyWith("c2", `"container":"mp4"`, `"codec":"aac"`, `"codecs":"mp4a.40.2"`), mCopyWith("c3", `"container":"mp4"`, `"codec":"eac3"`, `"codecs":"ec-3"`))},
+		{"codecs of 64 characters kept, of 65 absent", mCopies(mCopyWith("c1", `"codecs":"`+strings.Repeat("a", 64)+`"`), mCopyWith("c2", `"codecs":"`+strings.Repeat("a", 65)+`"`))},
+		{"codecs empty, with a comma, a space or a plus, or not a string: absent", mCopies(mCopyWith("c1", `"codecs":""`), mCopyWith("c2", `"codecs":"mp4a.40.2,avc1"`), mCopyWith("c3", `"codecs":"mp4a 40"`), mCopyWith("c4", `"codecs":"a+b"`), mCopyWith("c5", `"codecs":7`))},
 		{"at most 8 copies kept, the first", mCopies(append([]string{`7`}, nine...)...)},
 		{"at most 8 copies kept, skipped ones not counted", mCopies(append([]string{mCopyWith("bad", `"etag":-`)}, nine[:8]...)...)},
 
 		// Copies: optional members.
-		{"a copy's name cleaned and cut to 32 code points", mCopies(mCopyWith("c1", `"name":" Hi-Res\t\t`+strings.Repeat("x", 30)+`"`), mCopyWith("c2", `"name":"Vinyl rip"`))},
+		{"a copy's name cleaned and cut to 64 code points", mCopies(mCopyWith("c1", `"name":" Hi-Res\t\t`+strings.Repeat("x", 62)+`"`), mCopyWith("c2", `"name":"Vinyl rip"`))},
 		{"a copy's name empty once cleaned or not a string: absent", mCopies(mCopyWith("c1", `"name":" ​ "`), mCopyWith("c2", `"name":7`))},
 		{"added: a valid date kept", mCopies(mCopyWith("c1", `"added":"2024-02-29"`))},
 		{"added out of form or not a real day: absent", mCopies(mCopyWith("c1", `"added":"2023-02-29"`), mCopyWith("c2", `"added":"2024-2-01"`), mCopyWith("c3", `"added":"2024-02"`), mCopyWith("c4", `"added":20240201`))},
-		{"bitrateKbps rounded down to a whole 8", mCopies(mCopyWith("c1", `"bitrateKbps":941`), mCopyWith("c2", `"bitrateKbps":15`), mCopyWith("c3", `"bitrateKbps":320`))},
-		{"bitrateKbps at its bounds", mCopies(mCopyWith("c1", `"bitrateKbps":8`), mCopyWith("c2", `"bitrateKbps":100000`))},
-		{"bitrateKbps out of range or not an integer: absent", mCopies(mCopyWith("c1", `"bitrateKbps":7`), mCopyWith("c2", `"bitrateKbps":100001`), mCopyWith("c3", `"bitrateKbps":0`), mCopyWith("c4", `"bitrateKbps":320.0`))},
+		{"bitrateKbps kept exact, never rounded", mCopies(mCopyWith("c1", `"bitrateKbps":941`), mCopyWith("c2", `"bitrateKbps":15`), mCopyWith("c3", `"bitrateKbps":321`))},
+		{"bitrateKbps at its bounds", mCopies(mCopyWith("c1", `"bitrateKbps":1`), mCopyWith("c2", `"bitrateKbps":100000`))},
+		{"bitrateKbps out of range or not an integer: absent", mCopies(mCopyWith("c1", `"bitrateKbps":0`), mCopyWith("c2", `"bitrateKbps":100001`), mCopyWith("c3", `"bitrateKbps":-8`), mCopyWith("c4", `"bitrateKbps":320.0`))},
+		{"durationMs kept exact, to the millisecond", mCopies(mCopyWith("c1", `"durationMs":308417`), mCopyWith("c2", `"durationMs":1001`))},
 		{"sampleRate, bitDepth and channels at their lower bounds", mCopies(mCopyWith("c1", `"sampleRate":8000`, `"bitDepth":8`, `"channels":1`))},
 		{"sampleRate, bitDepth and channels at their upper bounds", mCopies(mCopyWith("c1", `"sampleRate":768000`, `"bitDepth":32`, `"channels":64`))},
 		{"sampleRate, bitDepth and channels below their ranges: absent", mCopies(mCopyWith("c1", `"sampleRate":7999`, `"bitDepth":7`, `"channels":0`))},
@@ -344,7 +366,7 @@ func musicTitleCases() []titleCase {
 func musicLocalTitleCases() []titleCase {
 	in := []musicIn{
 		{"a local artist with an image", `{"key":"artist/local/Ar7","kind":"artist","library":"m1","name":"The Garage Band","image":true}`},
-		{"a local album without an image (false kept)", `{"key":"album/local/Al_1","kind":"album","library":"m1","name":"Demos","artists":["artist/local/Ar7"],"artistNames":"The Garage Band","releaseType":"other","date":"2019","genres":["Rock"],"image":false}`},
+		{"a local album without an image (false kept)", `{"key":"album/local/Al_1","kind":"album","library":"m1","name":"Demos","artists":["artist/local/Ar7"],"artistNames":"The Garage Band","primaryType":"album","secondaryTypes":["demo"],"date":"2019","genres":["Rock"],"image":false}`},
 		{"a local album may carry its release group", `{"key":"album/local/Al_2","kind":"album","library":"m1","name":"Bootleg","ids":{"mbreleasegroup":"` + mbGroup + `"}}`},
 		{"an image that isn't a boolean: absent", `{"key":"artist/local/Ar8","kind":"artist","library":"m1","name":"x","image":"true"}`},
 		{"a local track carries no image", `{"key":"track/local/T-1","kind":"track","library":"m1","name":"Song","image":true,"copies":[` + mCopy + `]}`},
@@ -498,7 +520,8 @@ func musicLyricsCases() []musicCallCase {
 		{"synced lyrics with every member", set(`{"lang":"en","kind":"main","synced":true,"offset":-250,"displayArtist":"Simon & Garfunkel","displayTitle":"The Boxer","line":[{"start":0,"value":"I am just a poor boy"},{"start":4210,"value":"Though my story's seldom told"}]}`)},
 		{"a translation and a pronunciation beside the main set", set(`{"lang":"en","synced":false,"line":[{"value":"a"}]},{"lang":"fr","kind":"translation","synced":false,"line":[{"value":"b"}]},{"lang":"ja-Latn","kind":"pronunciation","synced":false,"line":[{"value":"c"}]}`)},
 		{"lang kept only as a tag is sent", set(`{"lang":"fr-CA","synced":false,"line":[{"value":"a"}]},{"lang":"fre","synced":false,"line":[{"value":"b"}]},{"lang":"fr-ca","synced":false,"line":[{"value":"c"}]},{"lang":"und","synced":false,"line":[{"value":"d"}]},{"lang":7,"synced":false,"line":[{"value":"e"}]}`)},
-		{"an unknown kind, or one that isn't a string: main", set(`{"kind":"Translation","synced":false,"line":[{"value":"a"}]},{"kind":2,"synced":false,"line":[{"value":"b"}]}`)},
+		{"a kind that isn't a token, or isn't a string: main", set(`{"kind":"Translation","synced":false,"line":[{"value":"a"}]},{"kind":2,"synced":false,"line":[{"value":"b"}]},{"kind":"","synced":false,"line":[{"value":"c"}]}`)},
+		{"an unknown kind token kept as it is, never turned into main", set(`{"kind":"romanization","synced":false,"line":[{"value":"a"}]},{"kind":"other","synced":false,"line":[{"value":"b"}]}`)},
 		{"offset at its bounds", set(`{"synced":true,"offset":-600000,"line":[{"start":0,"value":"a"}]},{"synced":true,"offset":600000,"line":[{"start":0,"value":"b"}]}`)},
 		{"offset out of range or not an integer: 0", set(`{"synced":true,"offset":600001,"line":[{"start":0,"value":"a"}]},{"synced":true,"offset":-600001,"line":[{"start":0,"value":"b"}]},{"synced":true,"offset":1.5,"line":[{"start":0,"value":"c"}]},{"synced":true,"offset":"10","line":[{"start":0,"value":"d"}]}`)},
 		{"displayArtist and displayTitle cleaned and cut", set(`{"synced":false,"displayArtist":" A\t\tB ` + strings.Repeat("a", 520) + `","displayTitle":"` + strings.Repeat("t", 257) + `","line":[{"value":"a"}]}`)},
@@ -530,13 +553,14 @@ func musicLyricsCases() []musicCallCase {
 func genV0Music() []byte {
 	return encode(v1MusicFile{
 		About: []string{
-			"MSFP music part version 0, as revised by proposal 16 (spec/v0/music.md). Generated by tools/vectors; no implementation has produced them yet. The MBIDs are made up.",
+			"MSFP music part version 0, as revised by proposals 16 and 17 (spec/v0/music.md). Generated by tools/vectors; no implementation has produced them yet. The MBIDs are made up.",
 			"keys (music section 2): valid says whether the text is a music title key, under the mb or the local scheme; kind is the kind it names.",
-			"titles (music sections 3.2 and 3.3) and localTitles (catalog section 4.3, music section 2.2): text is one entry of a titles answer, as JSON; the caller asked for the libraries listed in libraries. valid false: the caller skips the title. valid true: output is what it keeps, members in this order: key, kind, library, name, sortName, artists, artistNames, releaseType, compilation, date, originalDate, genres, album, disc, number, copies, image, ids (its members sorted); absent members left out.",
-			"A kept copy's members, in this order: id, name, durationMs, container, codec, size, etag, added, bitrateKbps, sampleRate, bitDepth, channels, replayGain (trackGain, trackPeak, albumGain, albumPeak), lyrics. ReplayGain values are written as the shortest decimal of the rounded number (1.0 is written 1); no case holds an exact tie of rounding.",
+			"titles (music sections 3.2 and 3.3) and localTitles (catalog section 4.3, music section 2.2): text is one entry of a titles answer, as JSON; the caller asked for the libraries listed in libraries. valid false: the caller skips the title. valid true: output is what it keeps, members in this order: key, kind, library, name, sortName, artists, artistNames, primaryType, secondaryTypes, compilation, date, originalDate, genres, album, disc, number, copies, image, ids (its members sorted); absent members left out.",
+			"A kept copy's members, in this order: id, name, durationMs, container, codec, codecs, size, etag, added, bitrateKbps, sampleRate, bitDepth, channels, replayGain (trackGain, trackPeak, albumGain, albumPeak), lyrics. ReplayGain values are written as the shortest decimal of the rounded number (1.0 is written 1); no case holds an exact tie of rounding.",
 			"queue (music section 5.2): kind request: text is a play request, valid says whether the owning server accepts its title and queue (otherwise 400). kind answer: request is the play request, text the play answer from the owning server whose stream root is streamRoot; output is the queue the viewer's server keeps (an array, possibly empty), entries' members in this order: title, versionId, method, stream (url, protocol, mimeType), durationMs. Each entry's stream URL is <stream root><ticket>/queue/<n>/file or <stream root><ticket>/queue/<n>/master.m3u8, the ticket that of the answer's own stream URL, n the entry's place in the request's queue (0 to 4, decimal, no leading zeros). Only the queue member of the answer is judged here; playback's own members are playback.json's.",
 			"lyrics (music section 6): kind request: text is a lyrics request, valid says whether the owning server reads it (otherwise 400 invalid-request). kind answer: text is a lyrics answer; valid false: the fetch fails; valid true: output is what the viewer's server keeps, each set's members in this order: lang, kind, synced, offset, displayArtist, displayTitle, line (start, value); kind and offset always written.",
-			"Names are cleaned as spec/v0/core.md section 9.1 cleans a server's name, with 256 code points for name and sortName, 512 for artistNames, 64 for genres (a longer genre skipped, not cut), 32 for a copy's name, 512 and 256 for displayArtist and displayTitle, 512 for a lyrics line.",
+			"Open values (spec/v0/core.md section 8.5): a copy's container and codec are tokens (1 to 32 characters of a-z 0-9 . _ -), ffmpeg's names or any other, kept as they are; one that isn't a token is dropped, and the copy, missing a required member, skipped. primaryType and each of secondaryTypes are MusicBrainz release-group types, lowercased, 1 to 32 characters of a-z 0-9 space . _ - /, no space at either end, kept as they are; any other value counts as absent (an entry of secondaryTypes skipped alone). codecs is an RFC 6381 string of 1 to 64 characters of A-Z a-z 0-9 . -; any other counts as absent. durationMs and bitrateKbps are kept exact.",
+			"Names are cleaned as spec/v0/core.md section 9.1 cleans a server's name, with 256 code points for name and sortName, 512 for artistNames, 64 for genres (a longer genre skipped, not cut), 64 for a copy's name, 512 and 256 for displayArtist and displayTitle, 512 for a lyrics line.",
 		},
 		Libraries:   musicLibraries,
 		StreamRoot:  musicStreamRoot,

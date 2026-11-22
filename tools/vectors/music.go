@@ -1,6 +1,7 @@
 package main
 
-// The music part's rules (spec/v0/music.md, revised by proposal 16):
+// The music part's rules (spec/v0/music.md, revised by proposals 16
+// and 17):
 // title keys under the mb and local schemes (section 2), what a caller
 // keeps of a music title and of a track's copies (sections 3.2 and 3.3),
 // the queue of a play (section 5.2) and the lyrics call (section 6).
@@ -28,14 +29,21 @@ var (
 	musicDateForm   = regexp.MustCompile(`^([0-9]{4})(?:-([0-9]{2})(?:-([0-9]{2}))?)?$`)
 	musicDayForm    = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 	musicMediaName  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+	musicTokenForm  = regexp.MustCompile(`^[a-z0-9._-]{1,32}$`)                                // core section 8.5
+	musicTypeForm   = regexp.MustCompile(`^[a-z0-9._/-](?:[a-z0-9 ._/-]{0,30}[a-z0-9._/-])?$`) // music section 3
+	musicCodecsForm = regexp.MustCompile(`^[A-Za-z0-9.-]{1,64}$`)                              // RFC 6381, video section 3.3
 
-	musicReleaseTypes = []string{"album", "single", "ep", "compilation", "soundtrack", "live", "remix", "other"}
-	// video section 3.5's names list, both columns.
-	musicContainers  = []string{"mp4", "m4v", "mov", "webm", "mkv", "ts", "mp3", "aac", "m4a", "flac", "ogg", "opus", "wav", "avi", "m2ts", "wmv", "flv", "3gp"}
-	musicAudioCodecs = []string{"aac", "mp3", "opus", "vorbis", "flac", "ac3", "eac3", "alac", "pcm_s16le", "dts", "truehd", "mp2", "wmav2", "pcm_s24le", "pcm_bluray"}
-	musicMethods     = []string{"direct", "remux", "transcode"}
-	musicLyricKinds  = []string{"main", "translation", "pronunciation"}
+	musicMethods = []string{"direct", "remux", "transcode"}
 )
+
+// musicToken: a token of core section 8.5, 1 to 32 characters of
+// a-z 0-9 . _ - (to be unified with core's openToken).
+func musicToken(s string) bool { return musicTokenForm.MatchString(s) }
+
+// musicType: a MusicBrainz release-group type as music section 3 sends
+// it: lowercased, 1 to 32 characters of a-z 0-9 space . _ - /, no space
+// at either end.
+func musicType(s string) bool { return musicTypeForm.MatchString(s) }
 
 // checkMBID: 36 characters, lowercase hex in groups of 8-4-4-4-12.
 func checkMBID(s string) error {
@@ -203,24 +211,25 @@ func musicDay(s string) bool {
 // musicTitle is what a caller keeps of a music title, in the order the
 // vectors write it.
 type musicTitle struct {
-	Key          string            `json:"key"`
-	Kind         string            `json:"kind"`
-	Library      string            `json:"library"`
-	Name         string            `json:"name"`
-	SortName     string            `json:"sortName,omitempty"`
-	Artists      []string          `json:"artists,omitempty"`
-	ArtistNames  string            `json:"artistNames,omitempty"`
-	ReleaseType  string            `json:"releaseType,omitempty"`
-	Compilation  *bool             `json:"compilation,omitempty"`
-	Date         string            `json:"date,omitempty"`
-	OriginalDate string            `json:"originalDate,omitempty"`
-	Genres       []string          `json:"genres,omitempty"`
-	Album        string            `json:"album,omitempty"`
-	Disc         *int64            `json:"disc,omitempty"`
-	Number       *int64            `json:"number,omitempty"`
-	Copies       []musicCopy       `json:"copies,omitempty"`
-	Image        *bool             `json:"image,omitempty"`
-	IDs          map[string]string `json:"ids,omitempty"`
+	Key            string            `json:"key"`
+	Kind           string            `json:"kind"`
+	Library        string            `json:"library"`
+	Name           string            `json:"name"`
+	SortName       string            `json:"sortName,omitempty"`
+	Artists        []string          `json:"artists,omitempty"`
+	ArtistNames    string            `json:"artistNames,omitempty"`
+	PrimaryType    string            `json:"primaryType,omitempty"`
+	SecondaryTypes []string          `json:"secondaryTypes,omitempty"`
+	Compilation    *bool             `json:"compilation,omitempty"`
+	Date           string            `json:"date,omitempty"`
+	OriginalDate   string            `json:"originalDate,omitempty"`
+	Genres         []string          `json:"genres,omitempty"`
+	Album          string            `json:"album,omitempty"`
+	Disc           *int64            `json:"disc,omitempty"`
+	Number         *int64            `json:"number,omitempty"`
+	Copies         []musicCopy       `json:"copies,omitempty"`
+	Image          *bool             `json:"image,omitempty"`
+	IDs            map[string]string `json:"ids,omitempty"`
 }
 
 // musicCopy is what a caller keeps of a track's copy (music section 3.3).
@@ -230,6 +239,7 @@ type musicCopy struct {
 	DurationMs  int64            `json:"durationMs"`
 	Container   string           `json:"container"`
 	Codec       string           `json:"codec"`
+	Codecs      string           `json:"codecs,omitempty"`
 	Size        int64            `json:"size"`
 	Etag        string           `json:"etag"`
 	Added       string           `json:"added,omitempty"`
@@ -308,15 +318,23 @@ func keepMusicTitle(raw []byte, libraries []string) ([]byte, error) {
 	if kind == "album" {
 		sn, _ := text("sortName")
 		t.SortName = cleanName(sn, 256)
-		if rt, ok := text("releaseType"); ok {
-			t.ReleaseType = "other"
-			if kindIn(rt, musicReleaseTypes...) {
-				t.ReleaseType = rt
+		if pt, ok := text("primaryType"); ok && musicType(pt) {
+			t.PrimaryType = pt
+		}
+		if st, ok := o["secondaryTypes"].([]any); ok {
+			for _, e := range st {
+				s, ok := e.(string)
+				if !ok || len(t.SecondaryTypes) == 8 || !musicType(s) || kindIn(s, t.SecondaryTypes...) {
+					continue
+				}
+				t.SecondaryTypes = append(t.SecondaryTypes, s)
 			}
 		}
 		if c, ok := o["compilation"].(bool); ok {
 			t.Compilation = &c
 		}
+	}
+	if kind == "album" || kind == "track" {
 		dateYear := 0
 		if d, ok := text("date"); ok {
 			if y, ok := musicDate(d); ok {
@@ -406,27 +424,24 @@ func keepMusicCopies(list []any) []musicCopy {
 		etag, _ := o["etag"].(string)
 		dur := integerIn(o["durationMs"], 1, 86_400_000)
 		size := integerIn(o["size"], 1, 999_999_999_999_999)
-		if !musicIDForm.MatchString(id) || seen[id] || dur == nil || !okC || !okK || size == nil || !musicIDForm.MatchString(etag) {
+		// container and codec are open (core section 8.5): an unknown
+		// token is kept; a value that isn't a token is dropped, and the
+		// copy, missing a required member, skipped.
+		if !musicIDForm.MatchString(id) || seen[id] || dur == nil || !okC || !okK || !musicToken(container) || !musicToken(codec) || size == nil || !musicIDForm.MatchString(etag) {
 			continue
 		}
 		seen[id] = true
-		c := musicCopy{ID: id, DurationMs: *dur, Container: "other", Codec: "other", Size: *size, Etag: etag}
-		if kindIn(container, musicContainers...) {
-			c.Container = container
-		}
-		if kindIn(codec, musicAudioCodecs...) {
-			c.Codec = codec
+		c := musicCopy{ID: id, DurationMs: *dur, Container: container, Codec: codec, Size: *size, Etag: etag}
+		if cs, ok := o["codecs"].(string); ok && musicCodecsForm.MatchString(cs) {
+			c.Codecs = cs
 		}
 		if n, ok := o["name"].(string); ok {
-			c.Name = cleanName(n, 32)
+			c.Name = cleanName(n, 64)
 		}
 		if a, ok := o["added"].(string); ok && musicDay(a) {
 			c.Added = a
 		}
-		if b := integerIn(o["bitrateKbps"], 8, 100_000); b != nil {
-			r := *b / 8 * 8
-			c.BitrateKbps = &r
-		}
+		c.BitrateKbps = integerIn(o["bitrateKbps"], 1, 100_000) // exact
 		c.SampleRate = integerIn(o["sampleRate"], 8_000, 768_000)
 		c.BitDepth = integerIn(o["bitDepth"], 8, 32)
 		c.Channels = integerIn(o["channels"], 1, 64)
@@ -749,7 +764,7 @@ func musicKeepLyrics(raw []byte) ([]byte, error) {
 		if l, ok := so["lang"].(string); ok && validTag(l) {
 			s.Lang = l
 		}
-		if k, ok := so["kind"].(string); ok && kindIn(k, musicLyricKinds...) {
+		if k, ok := so["kind"].(string); ok && musicToken(k) { // open (core section 8.5)
 			s.Kind = k
 		}
 		if off := integerIn(so["offset"], -600_000, 600_000); off != nil {
