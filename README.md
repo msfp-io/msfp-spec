@@ -2,79 +2,50 @@
 
 # MSFP: Media Server Federation Protocol
 
-MSFP lets media servers share their libraries with each other: one
-server's people browse and play titles another server holds, through
-their own server.
+MSFP is a protocol between media servers. Two servers pair, then each
+reads the other's catalog and streams the titles it wants from it. Every
+call is an HTTPS `POST` with a JSON body, and every request and answer is
+signed with the server's Ed25519 key. Titles are named by public IDs
+(TMDB for films and series, MusicBrainz for music), so two servers agree
+on what a title is without sharing files or accounts. Servers pair by
+hand, from a one-line code, or through a group.
 
-Version 0 covers manual pairing only: two operators pair their servers
-by hand, and each trusts only the servers it paired with. Larger
-federations are planned, not specified.
+**Status: version 0, a draft.** Anything may change between drafts;
+version 1 will be the first stable version.
 
-## Version 0: a draft
+## Start here
 
-[spec/v0/](spec/v0/README.md) is a core plus five parts, each with its
-own version, agreed per peer in `hello`:
+Read [spec/v0/README.md](spec/v0/README.md): it lists the core and the
+parts, and has a glossary. Then read the core.
 
-- [core](spec/v0/core.md): the strict rules, HTTPS only, MSFP's own labels
-  and headers, signed answers that cover their media type, key rotation
-  and revocation, address changes, versions and parts, and an optional
-  discovery document (`/.well-known/msfp`, off by default);
-- [catalog](spec/v0/catalog.md): libraries and titles, opaque library
-  IDs, the general rules of title keys;
-- [playback](spec/v0/playback.md): starting, keeping and stopping a
-  playback, limits;
-- [media](spec/v0/media.md): what the stream URLs serve;
-- two content parts, each optional:
-  [video](spec/v0/video.md), films and series by TMDB (TMDB's
-  numbering, several episodes in one copy, IMDb and TVDB identifiers,
-  subtitles, skip markers, seek-bar previews), and
-  [music](spec/v0/music.md), artists, albums and tracks by MusicBrainz.
+## This repository
 
-It comes from proposals 1 to 8 and the clarifications in
-[proposals/](proposals/README.md), all adopted on 2026-11-16, proposal 9
-(option 1, servers that can't be called), and proposal 11 (music, every
-content type optional), adopted on 2026-11-17.
-
-## The test draft
-
-[spec/history/test-draft.md](spec/history/test-draft.md) was MSFP's
-test draft of November 2026. Version 0 supersedes it and doesn't work
-with it. The test draft is not to be implemented; it stays here as
-history, with its corrections of 2026-11-16 and 2026-11-17
-([section 17](spec/history/test-draft.md#17-changes)).
-
-## Test vectors
-
-[vectors/](vectors/README.md): signed sample requests and answers, and
-valid and invalid cases, for an implementation's tests.
-
-- [vectors/history/test-draft.json](vectors/history/test-draft.json), the
-  test draft's vectors from Overfin's code, stays as history and never
-  changes.
-- [vectors/history/test-draft-strict.json](vectors/history/test-draft-strict.json) and
-  [vectors/v0/](vectors/v0/) come from the generator in
-  [tools/vectors/](tools/vectors/), which also checks every file. No
-  implementation produced them. test-draft-strict.json is history too, but
-  its canonical-form cases hold for core 0.
-
-## Conformance suite
-
-[conformance/](conformance/README.md): a program that pairs with a server
-you run, as a peer, and checks it against version 0, over HTTPS both
-ways: pairing, `hello`, versions and parts, signatures, the strict
-rules, replay, the catalog, playback and media, rotation and revocation,
-address changes, servers that can't be called, and on request rate
-limits and ending. Python 3, standard library only, with a self-test
-against a fake server. Its code is under the MIT license. The test
-draft's suite is in git history.
+| Folder | What it holds |
+|--------|---------------|
+| [spec/](spec/v0/README.md) | the specification: version 0, and earlier drafts as history |
+| [proposals/](proposals/README.md) | changes to the specification, adopted or under discussion |
+| [vectors/](vectors/README.md) | signed sample requests and answers, valid and invalid, for an implementation's tests |
+| [conformance/](conformance/README.md) | a test suite that pairs with your server as a peer and checks it against version 0 (Python 3, standard library only) |
+| [api/](api/README.md) | the application-side API of the MSFP libraries (informative, not part of the protocol) |
+| [tools/](tools/vectors/) | the generator of the test vectors |
 
 ## Implementations
 
-- [Overfin](https://github.com/Overfin/server), the first one.
-- [jellyfin-plugin-msfp](https://github.com/C0PT3R/jellyfin-plugin-msfp),
-  a Jellyfin plugin in C#.
+Libraries, which do the protocol for a media server:
 
-Questions and gaps in the specification are welcome as issues.
+- [msfp-go](https://github.com/msfp-io/msfp-go), in Go;
+- [msfp-dotnet](https://github.com/msfp-io/msfp-dotnet), in C#.
+
+Servers:
+
+- [Overfin](https://github.com/Overfin/server), on msfp-go;
+- [jellyfin-plugin-msfp](https://github.com/C0PT3R/jellyfin-plugin-msfp),
+  a Jellyfin plugin on msfp-dotnet.
+
+## Questions and changes
+
+Questions and gaps in the specification are welcome as issues. A change
+to the protocol starts as a proposal in [proposals/](proposals/README.md).
 
 ## License
 
