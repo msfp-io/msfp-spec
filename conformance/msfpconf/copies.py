@@ -255,24 +255,19 @@ def extra_parent(k):
 
 # ---- Copies (video 3.2 to 3.8) ------------------------------------------------------
 
-CONTAINERS = ["mp4", "m4v", "mov", "webm", "mkv", "ts", "mp3", "aac", "m4a", "flac", "ogg", "opus", "wav", "avi", "m2ts",
-              "wmv", "flv", "3gp"]
-VIDEO_CODECS = ["h264", "hevc", "av1", "vp8", "vp9", "mpeg2video", "mpeg4", "vc1", "wmv3", "h263", "theora"]
-AUDIO_CODECS = ["aac", "mp3", "opus", "vorbis", "flac", "ac3", "eac3", "alac", "pcm_s16le", "dts", "truehd", "mp2", "wmav2",
-                "pcm_s24le", "pcm_bluray"]
-EDITIONS = ["theatrical", "directors", "extended", "unrated", "remastered", "special", "imax", "other"]
-HDR = ["hdr10", "hdr10plus", "hlg", "dv"]
+# Every list of video 3.2 to 3.9 is open (core 8.5, proposal 17): its
+# values are tokens, kept known or not. threeD is the one closed list left.
 THREE_D = ["sbs", "tab", "mvc"]
-ROLES = ["commentary", "description"]
-AUDIO_PROFILES = ["atmos", "dtsx", "dts-hd-ma", "dts-hd-hra", "dts-es", "he-aac", "lc"]
-SUBTITLE_FORMATS = ["subrip", "ass", "ssa", "webvtt", "mov_text", "ttml", "pgs", "vobsub", "dvb", "other"]
-SEGMENT_KINDS = ["intro", "outro", "recap", "preview", "commercial"]
-EXTRA_TYPES = ["trailer", "featurette", "behindthescenes", "deletedscene", "interview", "scene", "short", "clip"]
+_TOKEN = re.compile(r"[a-z0-9._-]{1,32}")
 MAX_DURATION = 8640000000
 MAX_SIZE = 999999999999999
 _CODEC_TAG = re.compile(r"[A-Za-z0-9]{1,8}")
 _LAYOUT = re.compile(r"[A-Za-z0-9()._-]{1,32}")
-_COLOUR = re.compile(r"[a-z0-9_-]{1,32}")
+_CODECS = re.compile(r"[A-Za-z0-9.-]{1,64}")
+_FPS = re.compile(r"([1-9][0-9]{0,6})/([1-9][0-9]{0,6})")
+_ASPECT = re.compile(r"([1-9][0-9]{0,4}):([1-9][0-9]{0,4})")
+MAX_COPIES = 16
+MAX_HDR = 8
 _DATE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
 
 
@@ -284,8 +279,34 @@ def _one_of(v, lst):
     return v if isinstance(v, str) and v in lst else None
 
 
-def _named(s, lst):
-    return s if s in lst else "other"
+def token(v):
+    """v when it is a string and a token (core 8.5: 1 to 32 characters of
+    a-z 0-9 . _ -), else None: an open field keeps any token, known or not."""
+    return v if isinstance(v, str) and _TOKEN.fullmatch(v) else None
+
+
+def text_fact(v, n):
+    """A fact given as plain text (a profile, video 3.3): cleaned, None when
+    empty or longer than n code points, never cut."""
+    if not isinstance(v, str):
+        return None
+    t = clean_name(v, n + 1)
+    return t if t and len(t) <= n else None
+
+
+def fps(v):
+    """A frame rate "<num>/<den>", each 1 to 1,000,000, reduced, else None."""
+    m = _FPS.fullmatch(v) if isinstance(v, str) else None
+    if not m:
+        return None
+    a, b = int(m.group(1)), int(m.group(2))
+    return v if a <= 1000000 and b <= 1000000 and math.gcd(a, b) == 1 else None
+
+
+def aspect(v):
+    """A sample aspect ratio "<w>:<h>", each 1 to 65,535, else None."""
+    m = _ASPECT.fullmatch(v) if isinstance(v, str) else None
+    return v if m and int(m.group(1)) <= 65535 and int(m.group(2)) <= 65535 else None
 
 
 def real_day(s):
@@ -309,44 +330,46 @@ def _put(d, k, v):
 def _keep_stream(o):
     if not isinstance(o, dict):
         return None
-    codec = o.get("codec")
+    codec = token(o.get("codec"))
     w, h = int_in(o.get("width"), 1, 100000), int_in(o.get("height"), 1, 100000)
-    if not isinstance(codec, str) or w is None or h is None:
+    if codec is None or w is None or h is None:
         return None
-    s = {"codec": _named(codec, VIDEO_CODECS)}
+    s = {"codec": codec}
     _put(s, "codecTag", _form(o.get("codecTag"), _CODEC_TAG))
-    p = o.get("profile")
-    if isinstance(p, str) and p and len(p) <= 32:
-        s["profile"] = p
+    _put(s, "codecs", _form(o.get("codecs"), _CODECS))
+    _put(s, "profile", text_fact(o.get("profile"), 64))
     lv = number(o.get("level"))
     if lv is not None and 0 <= lv <= 1000:
         s["level"] = lv
     s["width"], s["height"] = w, h
-    b = int_in(o.get("bitDepth"), 8, 12)
-    if b is not None and b % 2 == 0:
-        s["bitDepth"] = b
-    if isinstance(o.get("hdr"), list):
-        have = {x for x in o["hdr"] if isinstance(x, str)}
-        _put(s, "hdr", [f for f in HDR if f in have])
-    dv = o.get("dv")
-    if isinstance(dv, dict) and "dv" in s.get("hdr", []):
-        p, lv2, c = int_in(dv.get("profile"), 0, 10), int_in(dv.get("level"), 0, 13), int_in(dv.get("compatibility"), 0, 15)
-        if None not in (p, lv2, c):
-            s["dv"] = {"profile": p, "level": lv2, "compatibility": c}
-    f = number(o.get("fps"))
-    if f is not None:
-        r = math.floor(f * 100 + 0.5) / 100 if f >= 0 else -math.floor(-f * 100 + 0.5) / 100
-        if 0 < r <= 1000:
-            s["fps"] = r
-    _put(s, "interlaced", boolean(o.get("interlaced")))
+    _put(s, "sampleAspect", aspect(o.get("sampleAspect")))
+    r = int_in(o.get("rotation"), 0, 270)
+    if r is not None and r % 90 == 0:
+        s["rotation"] = r
+    _put(s, "bitDepth", int_in(o.get("bitDepth"), 1, 16))
     c = o.get("colour")
     if isinstance(c, dict):
         col = {}
-        for k in ("primaries", "transfer", "matrix"):
-            _put(col, k, _form(c.get(k), _COLOUR))
-        _put(col, "range", _one_of(c.get("range"), ["tv", "pc"]))
+        for k in ("primaries", "transfer", "matrix", "range"):
+            _put(col, k, token(c.get(k)))
         if col:
             s["colour"] = col
+    if isinstance(o.get("hdr"), list):
+        hdr = []
+        for x in o["hdr"]:
+            t = token(x)
+            if t is not None and t not in hdr:
+                hdr.append(t)
+        _put(s, "hdr", sorted(hdr)[:MAX_HDR])
+    dv = o.get("dv")
+    if isinstance(dv, dict) and "dv" in s.get("hdr", []):
+        p, lv2, c = int_in(dv.get("profile"), 0, 127), int_in(dv.get("level"), 0, 63), int_in(dv.get("compatibility"), 0, 15)
+        if None not in (p, lv2, c):
+            s["dv"] = {"profile": p, "level": lv2, "compatibility": c}
+            for f in ("el", "bl", "rpu"):
+                _put(s["dv"], f, boolean(dv.get(f)))
+    _put(s, "fps", fps(o.get("fps")))
+    _put(s, "interlaced", boolean(o.get("interlaced")))
     return s
 
 
@@ -370,23 +393,24 @@ def _keep_audio(lst):
     for o in lst:
         if not isinstance(o, dict) or len(out) == 32:
             continue
-        tid, codec = _form(o.get("id"), AUDIO_ID), o.get("codec")
-        if tid is None or tid in seen or not isinstance(codec, str):
+        tid, codec = _form(o.get("id"), AUDIO_ID), token(o.get("codec"))
+        if tid is None or tid in seen or codec is None:
             continue
         seen.add(tid)
         t = {"id": tid}
         _put(t, "language", o["language"] if valid_tag(o.get("language")) else None)
         _put(t, "channels", int_in(o.get("channels"), 1, 64))
-        _put(t, "role", _one_of(o.get("role"), ROLES))
+        _put(t, "role", token(o.get("role")))
         _put(t, "default", boolean(o.get("default")))
         _put(t, "forced", boolean(o.get("forced")))
         _put(t, "fileIndex", int_in(o.get("fileIndex"), 0, 999))
-        t["codec"] = _named(codec, AUDIO_CODECS)
-        _put(t, "profile", _one_of(o.get("profile"), AUDIO_PROFILES))
+        t["codec"] = codec
+        _put(t, "codecs", _form(o.get("codecs"), _CODECS))
+        _put(t, "profile", text_fact(o.get("profile"), 64))
         _put(t, "layout", _form(o.get("layout"), _LAYOUT))
         _put(t, "sampleRate", int_in(o.get("sampleRate"), 8000, 768000))
         _put(t, "bitDepth", int_in(o.get("bitDepth"), 8, 32))
-        _put(t, "title", plain(o.get("title"), 32))
+        _put(t, "title", plain(o.get("title"), 64))
         _put(t, "original", boolean(o.get("original")))
         out.append(t)
     return out
@@ -405,11 +429,10 @@ def _keep_subtitles(lst):
         _put(t, "language", o["language"] if valid_tag(o.get("language")) else None)
         for f in ("default", "forced", "hearingImpaired"):
             _put(t, f, boolean(o.get(f)))
-        fmt = o.get("format")
-        t["format"] = _named(fmt if isinstance(fmt, str) else "", SUBTITLE_FORMATS)
+        _put(t, "format", token(o.get("format")))
         _put(t, "external", boolean(o.get("external")))
         _put(t, "fileIndex", int_in(o.get("fileIndex"), 0, 999))
-        _put(t, "title", plain(o.get("title"), 32))
+        _put(t, "title", plain(o.get("title"), 64))
         out.append(t)
     return out
 
@@ -433,7 +456,7 @@ def _keep_segments(v, duration):
     for o in v if isinstance(v, list) else []:
         if not isinstance(o, dict) or len(out) == 32:
             continue
-        kind = _one_of(o.get("kind"), SEGMENT_KINDS)
+        kind = token(o.get("kind"))
         s, t = int_in(o.get("startMs"), 0, duration), int_in(o.get("endMs"), 0, duration)
         if kind is None or s is None or t is None or s >= t:
             continue
@@ -454,9 +477,9 @@ def keep_video_copy(o):
     d = int_in(o.get("durationMs"), 0, MAX_DURATION)
     if d is None:
         raise ValueError("durationMs isn't an integer from 0 to 8,640,000,000")
-    container = o.get("container")
-    if not isinstance(container, str):
-        raise ValueError("container isn't a string")
+    container = token(o.get("container"))
+    if container is None:
+        raise ValueError("container isn't a token (core 8.5)")
     size = int_in(o.get("size"), 1, MAX_SIZE)
     if size is None:
         raise ValueError("size isn't an integer from 1 to 999,999,999,999,999")
@@ -467,16 +490,13 @@ def keep_video_copy(o):
     if not isinstance(audio, list):
         raise ValueError("audioTracks isn't an array")
     c = {"id": cid}
-    _put(c, "name", plain(o.get("name"), 32))
-    if isinstance(o.get("edition"), str):
-        c["edition"] = _named(o["edition"], EDITIONS)
+    _put(c, "name", plain(o.get("name"), 64))
+    _put(c, "edition", token(o.get("edition")))
     c["durationMs"] = d
     _put(c, "startMs", int_in(o.get("startMs"), 0, d))
-    c["container"], c["size"], c["etag"] = _named(container, CONTAINERS), size, etag
+    c["container"], c["size"], c["etag"] = container, size, etag
     _put(c, "parts", _keep_parts(o.get("parts"), size))
-    b = int_in(o.get("bitrateKbps"), 500, 10000000)
-    if b is not None:
-        c["bitrateKbps"] = b // 500 * 500
+    _put(c, "bitrateKbps", int_in(o.get("bitrateKbps"), 1, 10000000))
     _put(c, "video", _keep_stream(o.get("video")))
     c["audioTracks"] = _keep_audio(audio)
     if isinstance(o.get("subtitleTracks"), list):
@@ -511,8 +531,10 @@ def keep_video_title(o, libraries):
         raise ValueError("library %r wasn't asked for" % lib)
     t = {"key": key, "kind": kind, "library": lib}
     if kind == "extra":
-        et = o.get("extraType")
-        t["extraType"] = et if isinstance(et, str) and et in EXTRA_TYPES else "clip"
+        et = token(o.get("extraType"))
+        if et is None:
+            raise ValueError("an extra whose extraType is missing or isn't a token")
+        t["extraType"] = et
         _put(t, "name", plain(o.get("name"), 64))
     if k.scheme == "local" and kind in ("movie", "series"):
         name = plain(o.get("name"), 128)
@@ -543,7 +565,8 @@ def keep_video_title(o, libraries):
         kept = {}
         for scheme, val in ids.items():
             if isinstance(val, str) and ((scheme == "imdb" and _IMDB.fullmatch(val))
-                                         or (scheme == "tvdb" and _ID.fullmatch(val))):
+                                         or (scheme == "tvdb" and _ID.fullmatch(val))
+                                         or (scheme == "tmdb" and k.scheme == "tvdb" and _ID.fullmatch(val))):
                 kept[scheme] = val
         _put(t, "ids", dict(sorted(kept.items())) or None)
     if kind in ("movie", "episode", "extra"):
@@ -551,7 +574,7 @@ def keep_video_title(o, libraries):
             raise ValueError("copies isn't an array")
         copies = []
         for e in o.get("copies") or []:
-            if len(copies) == 8:
+            if len(copies) == MAX_COPIES:
                 break
             try:
                 c = keep_video_copy(e)
@@ -650,18 +673,66 @@ def keep_previews_answer(o, root):
     return out
 
 
+# ---- fonts (video 5.3, 6.6) -----------------------------------------------------------
+
+MAX_FONTS, MAX_FONT, MAX_FONT_SET = 64, 10 * 1024 * 1024, 64 * 1024 * 1024
+
+
+def keep_fonts(v, root):
+    """Video 5.3's reading of play's fonts: the URLs kept; raises
+    ValueError when the member is dropped (each entry exactly
+    <stream root><ticket>/fonts/<index>, one ticket, at most 64)."""
+    if not isinstance(v, list):
+        raise ValueError("fonts isn't an array")
+    if len(v) > MAX_FONTS:
+        raise ValueError("%d fonts, more than 64" % len(v))
+    ticket = ""
+    for i, u in enumerate(v):
+        if not isinstance(u, str):
+            raise ValueError("fonts[%d] isn't a string" % i)
+        rest = u[len(root):] if u.startswith(root) else None
+        tk, _, tail = (rest or "").partition("/")
+        if rest is None or "/" not in rest or not OPAQUE.fullmatch(tk) or tail != "fonts/%d" % i:
+            raise ValueError("fonts[%d] isn't <stream root><ticket>/fonts/%d" % (i, i))
+        if ticket and tk != ticket:
+            raise ValueError("fonts[%d] names another ticket" % i)
+        ticket = tk
+    return list(v)
+
+
+def check_font_set(sizes):
+    """Video 6.6's bounds on one copy's fonts, by their sizes in order:
+    (count, bytes); raises ValueError at the first bound broken (at most
+    64 fonts, each 1 byte to 10 MiB, 64 MiB in all)."""
+    if not isinstance(sizes, list):
+        raise ValueError("not an array of sizes")
+    total = 0
+    for i, e in enumerate(sizes):
+        n = int_in(e, 1, 2**53 - 1)
+        if n is None:
+            raise ValueError("font %d: a size that isn't an integer from 1" % i)
+        if i >= MAX_FONTS:
+            raise ValueError("font %d: more than 64 fonts" % i)
+        if n > MAX_FONT:
+            raise ValueError("font %d: over 10 MiB" % i)
+        if total + n > MAX_FONT_SET:
+            raise ValueError("font %d: the copy's fonts over 64 MiB in all" % i)
+        total += n
+    return len(sizes), total
+
+
 # ---- What an owning server got wrong -------------------------------------------------
 
 _COPY_FIELDS = {"id", "name", "edition", "durationMs", "startMs", "container", "size", "etag", "parts", "bitrateKbps",
                 "video", "audioTracks", "subtitleTracks", "chapters", "segments", "previews", "added", "threeD"}
 _FIELDS = {
-    "video": {"codec", "codecTag", "profile", "level", "width", "height", "bitDepth", "hdr", "dv", "fps", "interlaced",
-              "colour"},
-    "audioTracks": {"id", "language", "channels", "role", "default", "forced", "fileIndex", "codec", "profile", "layout",
-                    "sampleRate", "bitDepth", "title", "original"},
+    "video": {"codec", "codecTag", "codecs", "profile", "level", "width", "height", "sampleAspect", "rotation",
+              "bitDepth", "hdr", "dv", "fps", "interlaced", "colour"},
+    "audioTracks": {"id", "language", "channels", "role", "default", "forced", "fileIndex", "codec", "codecs", "profile",
+                    "layout", "sampleRate", "bitDepth", "title", "original"},
     "subtitleTracks": {"id", "language", "default", "forced", "hearingImpaired", "format", "external", "fileIndex", "title"},
     "chapters": {"startMs", "name"}, "segments": {"kind", "startMs", "endMs", "final"}, "parts": {"size", "durationMs"},
-    "dv": {"profile", "level", "compatibility"}, "colour": {"primaries", "transfer", "matrix", "range"},
+    "dv": {"profile", "level", "compatibility", "el", "bl", "rpu"}, "colour": {"primaries", "transfer", "matrix", "range"},
 }
 
 
@@ -723,18 +794,50 @@ def _show(v):
     return s if len(s) <= 80 else s[:77] + "..."
 
 
+# MSFP's own names before proposal 17 that aren't ffmpeg's (video 3.5).
+OLD_NAMES = {"container": {"mkv": "matroska", "ts": "mpegts", "m2ts": "mpegts", "other": None},
+             "codec": {"other": None},
+             "format": {"pgs": "hdmv_pgs_subtitle", "vobsub": "dvd_subtitle", "dvb": "dvb_subtitle", "other": None}}
+
+
+def old_names(c, where):
+    """Names a copy gives in the closed lists video 0 had before proposal
+    17, which ffmpeg doesn't use (video 3.5: ffmpeg's muxer and codec names)."""
+    out = []
+
+    def one(what, v, field):
+        new = OLD_NAMES[field].get(v) if isinstance(v, str) else None
+        if isinstance(v, str) and v in OLD_NAMES[field]:
+            out.append("%s: %s %r is MSFP's name before proposal 17, not ffmpeg's%s (video 3.5)" % (
+                where, what, v, " (%r)" % new if new else ""))
+    one("container", c.get("container"), "container")
+    v = c.get("video") if isinstance(c.get("video"), dict) else {}
+    one("video codec", v.get("codec"), "codec")
+    for t in c.get("audioTracks") if isinstance(c.get("audioTracks"), list) else []:
+        if isinstance(t, dict):
+            one("audio %s codec" % t.get("id"), t.get("codec"), "codec")
+    for t in c.get("subtitleTracks") if isinstance(c.get("subtitleTracks"), list) else []:
+        if isinstance(t, dict):
+            one("subtitle %s format" % t.get("id"), t.get("format"), "format")
+    hdr = v.get("hdr") if isinstance(v.get("hdr"), list) else []
+    for x in ("hdr10", "hlg"):
+        if x in hdr:
+            out.append("%s: hdr lists %s, which colour says (video 3.3: hdr holds only enhancement layers and "
+                       "dynamic metadata)" % (where, x))
+    return out
+
+
 def copy_problems(c, where="copy"):
     """What an owning server got wrong in one copy it sent (video 3.2 to
     3.8): anything a caller would skip, drop, cut, round or change, and
-    the owning server's own rules (a length to the whole second)."""
+    the owning server's own rules."""
     try:
         kept = keep_video_copy(c)
     except ValueError as e:
         return ["%s: a caller skips it: %s" % (where, e)]
     where = "%s %s" % (where, kept["id"])
     bad = diff(c, kept, where, _COPY_FIELDS)
-    if kept["durationMs"] % 1000:
-        bad.append("%s: durationMs %d isn't rounded down to a whole second (video 3.2)" % (where, kept["durationMs"]))
+    bad += old_names(c, where)
     for f in ("subtitleTracks", "chapters", "segments", "parts"):
         if f in c and not isinstance(c[f], list):
             bad.append("%s: %s isn't an array" % (where, f))

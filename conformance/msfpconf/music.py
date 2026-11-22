@@ -13,12 +13,14 @@ import json
 import math
 import re
 
-from .copies import AUDIO_CODECS, CONTAINERS, OPAQUE, diff, dumps, int_in, loads, number, plain, real_day, valid_tag
+from .copies import OPAQUE, diff, dumps, int_in, loads, number, plain, real_day, token, valid_tag
 
 MBID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 ISRC = re.compile(r"[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
 KINDS = ("artist", "album", "track")
-RELEASE_TYPES = ["album", "single", "ep", "compilation", "soundtrack", "live", "remix", "other"]
+# MusicBrainz release-group types as music 3 sends them (proposal 17): open.
+TYPE = re.compile(r"[a-z0-9._/-](?:[a-z0-9 ._/-]{0,30}[a-z0-9._/-])?")
+CODECS = re.compile(r"[A-Za-z0-9.-]{1,64}")
 IDS = {"mbreleasegroup": ("album", MBID), "mbrecording": ("track", MBID), "isrc": ("track", ISRC),
        "acoustid": ("track", MBID)}
 MAX_TRACK_MS = 86400000
@@ -59,10 +61,6 @@ def music_key(k):
 
 # ---- A track's copies (music 3.3) -----------------------------------------------------
 
-def _named(s, lst):
-    return s if s in lst else "other"
-
-
 def _round(f, digits):
     """f rounded to digits decimals, to the nearest."""
     s = 10 ** digits
@@ -94,9 +92,9 @@ def keep_track_copy(o):
     d = int_in(o.get("durationMs"), 1, MAX_TRACK_MS)
     if d is None:
         raise ValueError("durationMs isn't an integer from 1 to 86,400,000")
-    container, codec = o.get("container"), o.get("codec")
-    if not isinstance(container, str) or not isinstance(codec, str):
-        raise ValueError("container or codec isn't a string")
+    container, codec = token(o.get("container")), token(o.get("codec"))
+    if container is None or codec is None:
+        raise ValueError("container or codec isn't a token (core 8.5)")
     size = int_in(o.get("size"), 1, 999999999999999)
     if size is None:
         raise ValueError("size isn't an integer from 1 to 999,999,999,999,999")
@@ -104,16 +102,18 @@ def keep_track_copy(o):
     if not isinstance(etag, str) or not OPAQUE.fullmatch(etag):
         raise ValueError("etag isn't 1 to 64 characters of A-Z a-z 0-9 _ -")
     c = {"id": cid}
-    name = plain(o.get("name"), 32)
+    name = plain(o.get("name"), 64)
     if name:
         c["name"] = name
-    c["durationMs"], c["container"], c["codec"] = d, _named(container, CONTAINERS), _named(codec, AUDIO_CODECS)
+    c["durationMs"], c["container"], c["codec"] = d, container, codec
+    if isinstance(o.get("codecs"), str) and CODECS.fullmatch(o["codecs"]):
+        c["codecs"] = o["codecs"]
     c["size"], c["etag"] = size, etag
     if real_day(o.get("added")):
         c["added"] = o["added"]
-    b = int_in(o.get("bitrateKbps"), 8, 100000)
+    b = int_in(o.get("bitrateKbps"), 1, 100000)
     if b is not None:
-        c["bitrateKbps"] = b // 8 * 8
+        c["bitrateKbps"] = b
     for f, lo, hi in (("sampleRate", 8000, 768000), ("bitDepth", 8, 32), ("channels", 1, 64)):
         v = int_in(o.get(f), lo, hi)
         if v is not None:
@@ -181,11 +181,18 @@ def keep_music_title(o, libraries):
         if an:
             t["artistNames"] = an
     if kind == "album":
-        rt = o.get("releaseType")
-        if isinstance(rt, str):
-            t["releaseType"] = _named(rt, RELEASE_TYPES)
+        pt = o.get("primaryType")
+        if isinstance(pt, str) and TYPE.fullmatch(pt):
+            t["primaryType"] = pt
+        st = []
+        for x in o.get("secondaryTypes") if isinstance(o.get("secondaryTypes"), list) else []:
+            if isinstance(x, str) and len(st) < 8 and TYPE.fullmatch(x) and x not in st:
+                st.append(x)
+        if st:
+            t["secondaryTypes"] = st
         if isinstance(o.get("compilation"), bool):
             t["compilation"] = o["compilation"]
+    if kind in ("album", "track"):
         dy, oy = _date(o.get("date")), _date(o.get("originalDate"))
         if dy is not None:
             t["date"] = o["date"]
@@ -240,7 +247,8 @@ def keep_music_title(o, libraries):
     return t
 
 
-_TITLE_FIELDS = {"key", "kind", "library", "name", "sortName", "artists", "artistNames", "releaseType", "compilation",
+_TITLE_FIELDS = {"key", "kind", "library", "name", "sortName", "artists", "artistNames", "primaryType", "secondaryTypes",
+                 "compilation",
                  "date", "originalDate", "genres", "album", "disc", "number", "copies", "image", "ids"}
 
 
@@ -393,7 +401,7 @@ def keep_lyrics(answer):
         k = {}
         if valid_tag(s.get("lang")):
             k["lang"] = s["lang"]
-        k["kind"] = s["kind"] if s.get("kind") in ("main", "translation", "pronunciation") else "main"
+        k["kind"] = s["kind"] if token(s.get("kind")) else "main"
         k["synced"] = s["synced"]
         off = int_in(s.get("offset"), -600000, 600000)
         k["offset"] = off if off is not None else 0

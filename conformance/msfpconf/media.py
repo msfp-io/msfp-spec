@@ -271,7 +271,17 @@ def check_owner_playlist(b, master, audio_ids=None):
 
 _RANGE = re.compile(r"bytes=(?:([0-9]{1,15})-([0-9]{1,15})?|-([0-9]{1,15}))")
 _CONTENT_RANGE = re.compile(r"bytes ([0-9]+)-([0-9]+)/([0-9]+|\*)")
-SCAN_CAP = 32 * 1024 * 1024
+SCAN_FLOOR = 4 * 1024 * 1024        # scanBytes absent or out of range (playback 5)
+SCAN_TOP = 1024 * 1024 * 1024
+SCAN_DEFAULT = 32 * 1024 * 1024     # the recommended default for owners
+
+
+def scan_cap(scan_bytes):
+    """The bytes one scan ticket may read in all, for the scanBytes an owner
+    sends in limits (playback 5): it, within 4 MiB to 1 GiB, else the floor."""
+    if isinstance(scan_bytes, int) and not isinstance(scan_bytes, bool) and SCAN_FLOOR <= scan_bytes <= SCAN_TOP:
+        return scan_bytes
+    return SCAN_FLOOR
 
 
 def parse_range(h):
@@ -360,18 +370,19 @@ def check_file_answer(rng, size, etag, status, etag_header=None, content_range=N
     return None
 
 
-def scan_answer(sent, rng, size):
+def scan_answer(sent, rng, size, scan_bytes=None):
     """The owning server's answer to a fetch under a scan ticket that has
-    already sent sent bytes (media 4.2): (206, its Content-Range) cut at
-    the cap, or (416, "bytes */<size>")."""
+    already sent sent bytes (media 4.2), for the scanBytes it announced:
+    (206, its Content-Range) cut at the cap, or (416, "bytes */<size>")."""
+    cap = scan_cap(scan_bytes)
     unsatisfied = "bytes */%d" % size
-    if not rng or sent >= SCAN_CAP:
+    if not rng or sent >= cap:
         return 416, unsatisfied
     try:
         start, end = check_range(rng, size)
     except Refused:
         return 416, unsatisfied
-    end = min(end, start + (SCAN_CAP - sent) - 1)
+    end = min(end, start + (cap - sent) - 1)
     return 206, "bytes %d-%d/%d" % (start, end, size)
 
 

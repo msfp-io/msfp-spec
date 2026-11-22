@@ -8,9 +8,9 @@ restarts). The members video and music add to an answer are theirs
 import json
 import re
 
-from .copies import OPAQUE, boolean, dumps, int_in, loads, plain, valid_tag
+from .copies import OPAQUE, boolean, dumps, int_in, loads, token, valid_tag
 
-PLAY_ID = re.compile(r"play_[a-z2-7]{26}")
+PLAY_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")   # opaque (proposal 17), unguessable
 TRACK_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 MAX_POSITION = 8640000000
 METHODS = ("direct", "remux", "transcode")
@@ -73,7 +73,7 @@ def _keep_track(t):
     ch = int_in(t.get("channels"), 1, 64)
     if ch is not None:
         out["channels"] = ch
-    if t.get("role") in ("commentary", "description"):
+    if token(t.get("role")):
         out["role"] = t["role"]
     for f in ("default", "forced", "hearingImpaired"):
         if boolean(t.get(f)) is not None:
@@ -91,7 +91,7 @@ def keep_play_answer(o, root, delivery=None, catalog_etag=None):
     if "id" not in o:
         raise Refused("no id")
     if not isinstance(o["id"], str) or not PLAY_ID.fullmatch(o["id"]):
-        raise Refused("id doesn't match ^play_[a-z2-7]{26}$")
+        raise Refused("id doesn't match ^[A-Za-z0-9_-]{1,64}$")
     if "method" not in o:
         raise Refused("no method")
     m = o["method"]
@@ -104,6 +104,8 @@ def keep_play_answer(o, root, delivery=None, catalog_etag=None):
         raise Refused("protocol %s for delivery file" % stream["protocol"])
     if delivery in ("remux", "transcode") and stream["protocol"] != "hls":
         raise Refused("protocol %s for delivery %s" % (stream["protocol"], delivery))
+    if not delivery and stream["protocol"] != "hls":
+        raise Refused("without delivery, the baseline: hls only")
     if "etag" not in o:
         raise Refused("no etag")
     if not isinstance(o["etag"], str):
@@ -123,19 +125,6 @@ def keep_play_answer(o, root, delivery=None, catalog_etag=None):
             raise Refused("durationMs isn't an integer")
         d = int_in(o["durationMs"], 0, MAX_POSITION)
         out["durationMs"] = 0 if d is None else d
-    if "versions" in o:
-        if not isinstance(o["versions"], list):
-            raise Refused("versions isn't an array")
-        vs = []
-        for v in o["versions"]:
-            if not isinstance(v, dict) or not isinstance(v.get("id"), str) or not TRACK_ID.fullmatch(v["id"]):
-                continue
-            e = {"id": v["id"]}
-            name = plain(v.get("name"), 32)
-            if name:
-                e["name"] = name
-            vs.append(e)
-        out["versions"] = vs
     if "versionId" in o:
         if not isinstance(o["versionId"], str):
             raise Refused("versionId isn't a string")
@@ -150,6 +139,11 @@ def keep_play_answer(o, root, delivery=None, catalog_etag=None):
             raise Refused("audioTrack isn't a string")
         if o["audioTrack"] == "off" or TRACK_ID.fullmatch(o["audioTrack"]):
             out["audioTrack"] = o["audioTrack"]
+    if "audioRenditions" in o:
+        if not isinstance(o["audioRenditions"], bool):
+            raise Refused("audioRenditions isn't a boolean")
+        if o["audioRenditions"] and stream["protocol"] == "hls":
+            out["audioRenditions"] = True
     if "maxBitrateKbps" in o:
         if int_in(o["maxBitrateKbps"], -2**53, 2**53) is None:
             raise Refused("maxBitrateKbps isn't an integer")
@@ -163,35 +157,38 @@ def keep_play_answer(o, root, delivery=None, catalog_etag=None):
 
 # ---- limits (playback 5, music 5.1) ------------------------------------------------
 
-LIMITS = (("streams", 50), ("transcodes", None), ("bitrateKbps", 1000000), ("downloads", 50),
-          ("downloadsPerDay", 10000), ("downloadKbps", 1000000), ("scansPerDay", 1000000),
-          ("audioStreams", 50), ("audioTranscodes", None))
-_BOUNDED_BY = {"transcodes": "streams", "audioTranscodes": "audioStreams"}
+MAX_STREAMS = 1000
+SCAN_FLOOR, SCAN_TOP = 4 * 1024 * 1024, 1024 * 1024 * 1024
+LIMITS = (("streams", 0, MAX_STREAMS), ("transcodes", 0, MAX_STREAMS), ("bitrateKbps", 0, 1000000),
+          ("downloads", 0, MAX_STREAMS), ("downloadsPerDay", 0, 10000), ("downloadKbps", 0, 1000000),
+          ("scansPerDay", 0, 1000000), ("scanBytes", SCAN_FLOOR, SCAN_TOP), ("audioStreams", 0, MAX_STREAMS),
+          ("audioTranscodes", 0, MAX_STREAMS))
+_ALWAYS = ("downloads", "downloadsPerDay", "downloadKbps", "scansPerDay", "scanBytes")
 
 
 def keep_limits(o):
-    """Playback 5: what a caller keeps of limits (the four new members 0
-    when absent, then offersDownloads and offersScans), or None when it
-    ignores the whole object."""
+    """Playback 5: what a caller keeps of limits (downloads, its daily cap
+    and speed, scansPerDay 0 when absent, scanBytes its floor, 4 MiB, when
+    absent or out of range; then offersDownloads and offersScans), or None
+    when it ignores the whole object."""
     if not isinstance(o, dict):
         return None
-    for f, _ in LIMITS:
+    for f, _, _ in LIMITS:
         if f in o and int_in(o[f], -2**53, 2**53) is None:
             return None
     kept = {}
-    for f, hi in LIMITS:
-        if f not in o:
-            continue
-        top = 50 if hi is None else hi
-        if hi is None and _BOUNDED_BY[f] in kept:
-            top = kept[_BOUNDED_BY[f]]
-        v = int_in(o[f], 0, top)
-        if v is not None:
-            kept[f] = v
+    for f, lo, hi in LIMITS:
+        if f in o:
+            v = int_in(o[f], lo, hi)
+            if v is not None:
+                kept[f] = v
+    for f, top in (("transcodes", "streams"), ("audioTranscodes", "audioStreams")):
+        if f in kept and top in kept and kept[f] > kept[top]:
+            del kept[f]
     out = {}
-    for f, _ in LIMITS:
-        if f in ("downloads", "downloadsPerDay", "downloadKbps", "scansPerDay"):
-            out[f] = kept.get(f, 0)
+    for f, _, _ in LIMITS:
+        if f in _ALWAYS:
+            out[f] = kept.get(f, SCAN_FLOOR if f == "scanBytes" else 0)
         elif f in kept:
             out[f] = kept[f]
     out["offersDownloads"] = out["downloads"] > 0
