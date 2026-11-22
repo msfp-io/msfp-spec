@@ -1340,8 +1340,10 @@ the specification.
   of what plays): a token the receiver doesn't know is **kept** as it is.
   It is never turned into another value, and never dropped. A value that
   isn't a token (of another JSON type, empty, too long, with other
-  characters) is dropped alone, as any malformed member is: the entry
-  that holds it stays.
+  characters) is malformed, and handled as any malformed member is: an
+  optional member is dropped alone, and the entry that holds it stays; a
+  required member is dropped with the entry that holds it (a copy, a
+  track, an extra), as when it is missing.
 - **In a request**: a token the receiver doesn't know is ignored where
   the field is a hint, and refused with a signed `409`
   `delivery-refused` where it names what to serve (a remux's container,

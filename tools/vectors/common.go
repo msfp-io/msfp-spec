@@ -130,7 +130,8 @@ func encode(v any) []byte {
 
 // openToken tells a token (spec/v0/core.md section 8.5): 1 to 32
 // characters of a-z 0-9 . _ -. The value of an open field is kept when
-// it is a token, known or not, and dropped alone when it isn't. Every
+// it is a token, known or not; when it isn't, an optional member is
+// dropped alone and a required one takes its holder with it. Every
 // part's open fields check their values with it.
 func openToken(s string) bool {
 	if len(s) < 1 || len(s) > 32 {
