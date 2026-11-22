@@ -93,7 +93,7 @@ Copy:
 | `durationMs` | integer | yes | its length, all its parts; for an episode sharing a copy (`with`), the episode's own length when known, the copy's otherwise |
 | `startMs` | integer | no | for an episode sharing a copy: where it starts in the copy, when known |
 | `container` | string | yes | from the names list (section 1.3) |
-| `size` | integer | yes | its size in bytes (open point 1) |
+| `size` | integer | yes | its exact size in bytes (decided: exact, open point 1) |
 | `etag` | string | yes | its identity: changes whenever its bytes change; 1 to 64 characters of `A–Z a–z 0–9 - _` |
 | `parts` | array of part | no | for a copy made of several files: each part's `size` and `durationMs`, in order |
 | `bitrateKbps` | integer | no | its overall bitrate, rounded down to a whole 500 (below 500: absent) |
@@ -421,14 +421,9 @@ pair with each other.
 
 ## Open points
 
-1. **The exact size.** A file address needs the copy's exact size before
-   play (a client asks for byte ranges against it), but proposal 15
-   agreed to round what could identify a release. The exact size is the
-   most identifying number of all. Options: (a) exact `size` in the
-   catalog, accepting it (anyone who plays the copy gets the exact file
-   anyway); (b) the size only in `play`'s answer, the viewer's server
-   presenting the file address before play without a length (some
-   clients then can't seek before the first read).
+1. ~~**The exact size**~~ Decided 2026-11-22: **exact `size` in the
+   catalog.** A file address needs it before play, and anyone who plays
+   the copy gets the exact file anyway. `bitrateKbps` stays rounded.
 2. **Scan access's cap:** 32 MB per copy (Plex read 1 to 4 MB per file in
    the test; the margin covers larger headers). Enough, or another
    figure?
