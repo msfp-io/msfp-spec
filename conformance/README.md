@@ -141,7 +141,7 @@ its own test server this way.
 | Option | What it does |
 |--------|--------------|
 | `--code2 CODE` | P11: a second live code from the known key gets the signed `409` with no body; then UP1 to UP4: a second pairing, as a server that can't be called (`inbound: false`, an address `https://msfp-<26>.invalid`), accepted by the operator, ended with `hello` `ended` |
-| `--group-code CODE` | GR1 to GR17: a code of a group the server's operator made, of the same server as `--code`, with 2 uses or more (GR7 needs one left). The suite, already paired, joins through `group-join`; the operator accepts; then the list, `group-sync`, `group-push` and leaving are checked |
+| `--group-code CODE` | GR1 to GR17 and GM1 to GM8: a code of a group the server's operator made, of the same server as `--code`, with 2 uses or more (GR7 needs one left). The suite, already paired, joins through `group-join`; the operator accepts; then the list, `group-sync`, `group-push`, the mail and `group-pair` (GM), and leaving are checked |
 | `--load` | R1 and R2: a burst of `--load-count` (1,000) calls over 32 connections, expecting a signed `429` `rate-limited` (or `503` `server-busy`) with `retryAfter`, then calls passing again. A burst that meets no limit is a SKIP unless it was big and fast (1,000 calls at 300 a second or more) |
 | `--end` | E1 and E2: ends the pairing with `hello` `ended`. Without it, the pairing stays: remove the peer on the server afterwards |
 | `--skip IDS` | skips checks by ID or prefix: `--skip AD,X1,U` |
@@ -165,7 +165,7 @@ The run goes in this order; the counts are the checks in each group.
 | P | 11 | core 9.1, 2.1, 5.2, 6.5, 12.5 | `pair`: wrong proofs, forged and small-order keys, stale dates, bad addresses, bad members (`inbound`, `null`, wrong types), the pairing itself, the next key commitment, replay, the used code, the signed `409` |
 | W | 4 | core 7.1, 7.3 | waiting: `hello` `waiting`, no forcing `paired`, a signed `404` on `libraries`, the server's `hello` on acceptance |
 | H | 6 | core 9.2, 10, 3.2 | `hello`: its members, versions and parts (core 0; catalog, playback, media, video), its address, the pin of the certificate served, calls that need *trusted* or *named*, removing and naming pins |
-| V | 6 | core 10.2 to 10.4, catalog 5 | versions: bad `core` and `parts` refused, odd entries ignored, a part that is off answered `404` `not-supported` (`playback`, `catalog`, `media` as a dependency), no `limits` and no video titles when their parts are off |
+| V | 7 | core 10.2 to 10.4, catalog 5 | versions: bad `core` and `parts` refused, odd entries ignored, a part that is off answered `404` `not-supported` (`playback`, `catalog`, `media` as a dependency), no `limits` and no video titles when their parts are off, no common core (every call but `hello` gets the signed `404` `not-supported`) |
 | J | 2 | core 2.3 | I-JSON and types: twice-named members, surrogates, noncharacters, bad UTF-8, a byte order mark, `null`, wrong types refused; white space and unknown members accepted |
 | G | 10 | core 2.2, 2.4, 3, 6.2, 6.4 | signatures: dates, nonces, keys and signatures outside their one form, another host, path or key, duplicate headers, a query, percent-encoding, the media type, `Sec-Fetch-Site`, content codings, a body over 64 KiB |
 | N | 3 | core 6.5, 6.3 | replay, a nonce used again, the answer bound to the nonce and the media type |
@@ -174,8 +174,9 @@ The run goes in this order; the counts are the checks in each group.
 | PB | 11 | playback 2 to 6, video 5, music 5 | `play`: malformed requests (`400`), keys not offered (`404`), the playback object and its URLs, nothing said (HLS, not direct); `progress` and `stop` and the playback's states; the choice of audio, subtitles and copy; the streams limit and the race for the last stream |
 | M | 9 | media 1 to 4, video 5.5, 6 | the media: the HLS subset in master and media playlists, segments, ranges (`206` and `416`), refusals (a query, browser headers, an unknown ticket, other methods), WebVTT parts in their rebuilt form, PGS parts, preview sheets |
 | Q | 3 | catalog 2, 3; core 6.4 | the server as a reader of the suite's catalog: its calls well signed, its `titles` requests, following `next` |
+| VW | 4 | playback 2 to 4, 6.3; core 6.4 | (`--watch-pause`) the server as a viewer of the suite's films: its `play` well signed and formed, the playback kept while paused, the pause reported, `stop` at the end |
 | R | 2 | core 8.3 | (`--load`) a signed `429` or `503` with `retryAfter`, then calls passing again |
-| GR | 17 | groups 2, 3, 6 to 8 | (`--group-code`) groups: the group code; `group-sync` from a non-member and about an unknown group (a `404`, plain or signed: see the notes); `group-join` with a wrong proof, an unknown code (signed `404`s), the code (`200` `{}`), again (`409`); accepted, the list pushed (`founded`, the suite's `joined`, every envelope well signed); `group-sync` (every event, `seq` order, `have`; nothing more with a full `have`); the suite's `profile` and an unknown type kept; a forged signature, a date 10 minutes ahead, another group's event and a payload over 4,096 bytes not kept; `left`, then a `404` |
+| GR | 17 | groups 2, 3, 6 to 8 | (`--group-code`) groups: the group code; `group-sync` from a non-member and about an unknown group (a `404`, plain or signed: see the notes); `group-join` with a wrong proof, an unknown code (signed `404`s), the code (`200` `{}`), again (`409`); accepted, the list pushed (`founded`, the suite's `joined`, every envelope well signed); `group-sync` (every event, `seq` order, `have`; nothing more with a full `have`); the suite's `profile` and an unknown type kept; a forged signature, a date 10 minutes ahead, another group's event and a payload over 4,096 bytes not kept; `left`, then a `404` (GR17 runs after GM) |
 | GM | 8 | groups 4, 5, 8.3 | (`--group-code`) the mail: named admin, the suite signs `joined` for a second identity N of its own that can't be called, and N its `profile`; N's request, sealed with HPKE to the server's `encryptionKey`, kept; accepted, the server's answer, signed, sealed to N, opened, with its address; N's `group-pair` with it (signed `200`), the same again (`409`), N's `hello`; a mail with a forged signature and an expired one not kept |
 | UP | 4 | core 7.5, 9.1, 7.4 | (`--code2`) a pairing as a server that can't be called |
 | K | 11 | core 9.3, 9.4, 12 | the suite's own key: a rotation not matching the commitment (`409`), bad `rotate` and `revoke` bodies (`400`), revocation and suspension (only `rotate` and `revoke` answered), a rotation to the committed key lifting it, a statement with `-`, the previous key heard for 10 minutes, a repeated rotation, `202` `pending` without a commitment, the operator's confirmation |
@@ -186,8 +187,9 @@ The run goes in this order; the counts are the checks in each group.
 | E | 2 | core 7.4 | (`--end`) `hello` `ended`, then the unsigned `404` |
 | A | 2 | core 6.6, 8.2 | every answer that had to be signed was, and every signed refusal is a problem document |
 
-That is 146 checks in all, with `--code2`, `--group-code`, `--load` and
-`--end`.
+That is 147 checks in all, with `--code2`, `--group-code`, `--load` and
+`--end`, and 151 with `--watch-pause` too. A server that doesn't answer
+at its address at all gets one failed S0, and nothing else runs.
 
 Every signed answer is also read as I-JSON and checked for `null`; a
 signed `200` or `202` must be `application/json`, and the answer's media
@@ -227,7 +229,8 @@ itself breaks that rule there. It answers `play` with `409`
   the shortest-language-code rule (a list of common three-letter codes)
   can't be exact.
 - **Not tested**: what a receiver does after a `hello` with no common
-  core; a change of `base` (not announced, core open question 16);
+  core, beyond V7's signed `404`s; relations and `individual` in `hello`
+  (core 7.7), not covered yet; a change of `base` (not announced, core open question 16);
   several certificates; a peer that ends the pairing toward the server
   while it is suspended.
 
@@ -241,7 +244,9 @@ python3 conformance/selftest.py           # about 5 minutes
 python3 conformance/selftest.py --quick   # without the fault pass
 ```
 
-It checks the suite's readers against every case of `vectors/v0/` (and
+It checks the suite's readers against the cases of `vectors/v0/` but
+`video.json` (keys, code, exchanges, rotation, revocation, strict, media,
+music and groups; and
 those of `vectors/history/test-draft-strict.json` that core section 17 says hold for
 core 0), then runs the whole suite, over HTTPS both ways, against an
 in-process fake version 0 server (`msfpconf/fake.py`, built from the
@@ -249,8 +254,10 @@ specification and the vectors, with the self-test as its operator):
 every check must pass. Then it runs again with deliberate faults in the
 fake (replays accepted, `null` accepted, wrong changes, a bad `with`, no
 stream limit, a query served, several ranges served, WebVTT not
-rebuilt, loopback connected to, the old key kept after a rotation, a
-group event with a forged signature kept), and the checks aimed at each
+rebuilt, `progress` answered for a playback that isn't live, loopback
+connected to, the old key kept after a rotation, no `progress` while its
+viewer pauses, a `stop` with a negative position, a group event and a
+mail with a forged signature kept), and the checks aimed at each
 fault must fail. The fake founds a group and makes its code, for the
 group checks.
 

@@ -8,12 +8,13 @@ server sends or accepts. Two servers interoperate if they follow
 
 | Piece | State |
 |-------|-------|
-| Go engine | **built**: [msfp-io/msfp-go](https://github.com/msfp-io/msfp-go) (module `github.com/msfp-io/msfp-go`, v0.2.0), package `msfp` at its root, with the toolkit `wire`, two stores (`store/memory`, `store/jsonfile`) and an example host (`examples/share-folder`, about 400 lines) |
-| Overfin on the engine | **built**: [overfin.md](overfin.md) |
-| C# engine (`msfp-dotnet`) | **not built yet**. Its forms below are the design |
+| Go engine | **built**: [msfp-io/msfp-go](https://github.com/msfp-io/msfp-go) (module `github.com/msfp-io/msfp-go`, v0.7.1), package `msfp` at its root, with the toolkit `wire`, two stores (`store/memory`, `store/jsonfile`) and an example host (`examples/share-folder`) |
+| C# engine | **built**: [msfp-io/msfp-dotnet](https://github.com/msfp-io/msfp-dotnet), NuGet packages `Msfp.Protocol` (the toolkit) and `Msfp.Engine` (the engine, with `MemoryStore` and `JsonFileStore`), 0.7.1-preview, msfp-go v0.7.1 in .NET; an example host (`examples/ShareFolder`) |
+| Overfin on the Go engine | **built**: [overfin.md](overfin.md) |
+| The MSFP Jellyfin plugin on the C# engine | **built**: `Msfp.Engine` 0.7.1-preview |
 
-These documents describe the Go engine as built. Where they show a C#
-form, it is the plan.
+These documents describe the Go engine. The C# engine has the same
+methods in its own forms ([Go and C# forms](#go-and-c-forms)).
 
 ## What this is
 
@@ -23,12 +24,13 @@ the **host**, plugs in through a few interfaces.
 | The engine does | The host keeps |
 |-----------------|----------------|
 | keys, pairing codes, signing, nonces, limits | the user interface: panel and viewer pages (the engine gives actions, queries and events, never HTML) |
-| pairing and its states, `pair`, `hello`, `rotate`, `revoke` | accounts and people: who may see and play a peer's titles. The engine never sees a person |
+| pairing and its states, `pair`, `hello`, `rotate`, `revoke`; relations ([core 7.7](../spec/v0/core.md#77-relations)) | accounts and people: who may see and play a peer's titles. The engine never sees a person |
 | key rotation and revocation, address changes, servers that can't be called, the discovery document | what a title is inside the host: items, files, its database |
 | connections to peers (refused destinations, pins, no redirects, no proxy) | how media is made: direct play, remux, transcode, segments, subtitles, sheets |
 | `catalog`: offers, wants, library IDs, serving and reading titles | its own stream routes for its own people, and the viewer route that serves a peer's media to a browser |
 | `playback` and `media`, both sides: checks, copy and track choice, counts, tickets, expiry, the relay's checks | where data lives: it implements storage |
 | `video` and `music`: title keys, what a title carries | |
+| `groups`: events, rights, mail, `group-sync`, `group-push`, `group-pair`, `group-join` | |
 
 ## The documents
 
@@ -97,18 +99,18 @@ RedeemCode(text) -> PeerView
 
 ## Go and C# forms
 
-| Concept | Go (built) | C# (design) |
+| Concept | Go | C# |
 |---------|------------|-------------|
-| Package | `github.com/msfp-io/msfp-go` (package `msfp`); toolkit `…/wire` | assembly and namespace `Msfp`; toolkit `Msfp.Wire`; ASP.NET Core glue `Msfp.AspNetCore` |
-| Engine | `*msfp.Engine` | `Msfp.MsfpEngine` |
-| Host interfaces | `Store`, `Catalog`, `Playback`, `Media`, `Sealer`, `Clock`, `Dialer`, `Notifier`, `SheetEncoder` | `IStore`, `ICatalog`, … ; `TimeProvider` for the clock |
+| Package | `github.com/msfp-io/msfp-go` (package `msfp`); toolkit `…/wire` | package `Msfp.Engine`, namespace `Msfp` (stores in `Msfp.Stores`); toolkit package and namespace `Msfp.Protocol` |
+| Engine | `*msfp.Engine`, `msfp.Open(ctx, Config)` | `Msfp.MsfpEngine`, `MsfpEngine.OpenAsync(MsfpConfig, ct)` |
+| Host interfaces | `Store`, `Catalog`, `Playback`, `Media`, `Sealer`, `Clock`, `Dialer`, `Notifier`, `SheetEncoder` | `IStore` (its transactions `IStoreTx`), `ICatalog`, … ; `TimeProvider` for the clock |
 | Calls | `RedeemCode(ctx, text) (PeerView, error)` | `Task<PeerView> RedeemCodeAsync(string text, CancellationToken ct)` |
 | Host callbacks | plain methods taking `ctx` | `ValueTask<T>`, so synchronous data costs nothing |
 | Errors | `*msfp.Error{Code, Err}`, matched by `errors.Is(err, msfp.ErrNotFound)` | one `MsfpException` with `MsfpError Code` |
-| Events | `Event` interface (`PeerID() string`), events are structs, a type switch | abstract record, derived records |
+| Events | `Event` interface (`PeerID() string`), events are structs, a type switch | abstract record `MsfpEvent` (`PeerId`), derived records |
 | Time | `time.Time` (UTC), `time.Duration` | `DateTimeOffset`, `TimeSpan` |
 | Logging | `*slog.Logger` | `ILogger` |
-| HTTP | `http.Handler` | endpoints in `Msfp.AspNetCore` |
+| HTTP | `http.Handler`: `FederationHandler()`, `StreamHandler(fallback)`, `DiscoveryHandler()` | a neutral `MsfpRequest` (method, raw target, headers, body, `ClientAddress`) and `MsfpResponse`, for any router: `HandleFederationAsync`, `HandleStreamAsync` (a `StreamOutcome`; `Fallback` for a ticket the engine doesn't know), `HandleDiscovery`; the host writes the answer unchanged |
 | Background | `Run(ctx)` | `RunAsync(ct)` in a `BackgroundService` |
 
 C# raises exceptions because almost every call is async, and a
@@ -118,7 +120,7 @@ results in both languages, never errors.
 
 ## Decisions
 
-All decided by the owner on 2026-11-18 (17 on 2026-11-20).
+All decided by the owner on 2026-11-18 (17 on 2026-11-20, 18 on 2026-11-21).
 
 | # | Question | Decision | Built |
 |---|----------|----------|-------|
@@ -130,20 +132,20 @@ All decided by the owner on 2026-11-18 (17 on 2026-11-20).
 | 6 | Stream counts | the engine counts the pairing's; the host its own budget; one `Admit` step | yes (`Admit` optional) |
 | 7 | The host's playlists | checked by the engine before they leave | yes |
 | 8 | Re-encoding sheets | a `SheetEncoder` hook; Go's default `JPEGSheets` | yes |
-| 9 | C# errors | exceptions | C# not built |
+| 9 | C# errors | exceptions | yes |
 | 10 | Events | one callback, `Notify`, in order, outside locks | yes |
 | 11 | Discovery and base paths | the engine fetches peers' documents and serves its own when on | yes |
 | 12 | The next key's text | `msfp-next-key-1.<seed>` only ([core 12.5](../spec/v0/core.md#125-the-next-key-commitment)) | yes |
 | 13 | Nonces | in memory only; requests dated before the start refused | yes |
 | 14 | Content parts | built in; the host says which it speaks (`Config.Parts`) | yes |
-| 15 | Library versions | one number for both libraries | C# not built |
+| 15 | Library versions | one number for both libraries | yes (C# with `-preview`) |
 | 16 | An admin API | none: actions and queries only | yes |
-| 17 | Groups | the engine keeps the events, checks rights, seals the mail and pairs through the group; the store keeps records (`GroupsTx`) | Go |
+| 17 | Groups | the engine keeps the events, checks rights, seals the mail and pairs through the group; the store keeps records (`GroupsTx`) | yes |
+| 18 | Relations | the engine keeps each link's relations (the individual one, its groups) and ends a link when the last goes ([core 7.7](../spec/v0/core.md#77-relations), proposal 14); the panel manages relations, not links | yes |
 
 ## Not built yet
 
-- Groups in the C# engine (msfp-dotnet) and in the hosts on it.
-- A neutral request and response form (`MsfpRequest`, `MsfpResponse`)
-  for routers other than Go's `net/http`.
+- In Go, a neutral request and response form (C#'s `MsfpRequest`,
+  `MsfpResponse`) for routers other than `net/http`.
 - `SetPins`: pins are only set at `Open` (`Config.Pins`).
 - An event for this server's own pins changing, or failing to be read.

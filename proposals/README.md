@@ -28,7 +28,7 @@ read or assumed, it says so.
 | 6 | [Request signatures vs RFC 9421](0006-request-signatures-vs-rfc9421.md): a comparison; recommends keeping MSFP's scheme | Adopted: own scheme, plus Content-Type |
 | 7 | [HTTPS only](0007-https-only.md): drop plain `http`, now that pins allow self-signed certificates | Adopted |
 | 8 | [Changing a server's address](0008-address-changes.md): a signed, confirmed address change in `hello` | Adopted |
-| 9 | [Private servers](0009-private-servers.md): a server that can't be called says so in `hello` and pulls rotation and revocation (option 1); a reverse connection, the optional part `transport` (option 2) | Option 1 adopted, its open points settled 2026-11-17 (address `msfp-<26>.invalid` required), and written into spec/v1 (core sections 5.2, 7.5, 9, 12.4, 12.6, 13.2 and others; choices to confirm in core 18, items 29 to 35); option 2 set aside |
+| 9 | [Private servers](0009-private-servers.md): a server that can't be called says so in `hello` and pulls rotation and revocation (option 1); a reverse connection, the optional part `transport` (option 2) | Option 1 adopted, its open points settled 2026-11-17 (address `msfp-<26>.invalid` required), and written into spec/v1, now spec/v0 (core sections 5.2, 7.5, 9, 12.4, 12.6, 13.2 and others; choices to confirm in core 18, items 29 to 35); option 2 set aside |
 | 10 | [The mesh](0010-mesh.md): servers learn that others exist (signed, expiring announcements: key, name, address or "can't be called", versions), never catalogs; knowing is not trusting; spread through pairings (option a), open gossip (b) or a DHT (c); asks that end in an ordinary pairing; optional vouching; the optional part `mesh` | Replaced by proposal 12 (2026-11-20): global discoverability won't be added |
 | 11 | [Music](0011-music.md): the part `music`; artists, albums (release groups) and tracks (recordings) by MusicBrainz ID; titles carry their own names; art from the Cover Art Archive; one audio playback per track | Adopted; every type optional (`video`, `music`); open points still open |
 | 12 | [Groups](0012-groups.md): servers whose operators chose each other, as a list of signed events every member keeps; an owner, admins, members; one kind of code; requests encrypted for each member; offers and limits per group; the part `groups` | Adopted 2026-11-20, written into spec/v0 (groups.md, core, catalog, playback) |
@@ -50,3 +50,6 @@ Some proposals lean on others; each says how it reads without them:
   rotation and revocation statements, applies 8's address confirmation to
   addresses learnt from the mesh, and 9's `inbound` member when 9 is
   adopted.
+- 12 replaces 10; it uses the core's pairing, 3's rotation for members'
+  keys, and 9's `inbound` member. It shipped with 13.
+- 14 builds on 12: a group is one of a link's relations.

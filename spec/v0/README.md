@@ -19,7 +19,7 @@ media formats more often.
 
 | Document | Version | What it holds |
 |----------|---------|---------------|
-| [core.md](core.md) | core 0 | encodings and canonical forms, HTTPS, keys and fingerprints, the pairing code, signed requests and answers, pairing and its states, `pair`, `hello`, key rotation and revocation (`rotate`, `revoke`), address changes, versions and parts, the discovery document |
+| [core.md](core.md) | core 0 | encodings and canonical forms, HTTPS, keys and fingerprints, the pairing code, signed requests and answers, pairing and its states, pairing through a group, relations, `pair`, `hello`, key rotation and revocation (`rotate`, `revoke`), address changes, versions and parts, the discovery document |
 | [catalog.md](catalog.md) | `catalog` 0 | `libraries` and `titles`, opaque library IDs, the general rules of title keys |
 | [playback.md](playback.md) | `playback` 0 | `play`, `progress`, `stop`, limits, what the owning server enforces |
 | [media.md](media.md) | `media` 0 | what the stream URLs serve: HLS, the file; how long a ticket works |
@@ -40,10 +40,18 @@ one place, with where each is defined.
 | Server | one installation of an implementation, with one address and one current key | [core 0](core.md#1-overview-and-terms) |
 | Address | where a server's API answers: `https://host[:port]`, no path | [core 5.2](core.md#52-addresses) |
 | Base path | the path of the federation calls, `/api/v1/federation/` unless the discovery document says otherwise | [core 11](core.md#11-the-discovery-document) |
+| Prefix | the part of the base path before `/api/v1/federation/`; empty by default | [core 11](core.md#11-the-discovery-document) |
 | Peer | another server this one knows by its public key | [core 7.3](core.md#73-states) |
 | Pairing | two servers becoming peers: by hand, from a code, or through a group | [core 7](core.md#7-pairing-step-by-step) |
 | Pairing code | one line holding the maker's address, key, a secret, an expiry and, for a group, the group | [core 5](core.md#5-the-pairing-code) |
 | Group | servers whose operators chose each other, with an owner, admins and members, as a signed list each member keeps | [groups](groups.md#1-terms) |
+| Owner, admin, member | the one member that names admins, sets the group's name and settings and dissolves it; a member that may invite and ban; any server in the group | [groups 1](groups.md#1-terms) |
+| The list, event | a group's signed events, which each member keeps and passes on; its state (members, roles, settings, bans) is computed from them | [groups 1](groups.md#1-terms), [groups 3](groups.md#3-events) |
+| Member ID | the key a member joined with, by which events name it | [groups 3.4](groups.md#34-member-ids-and-keys) |
+| Mail | a message from one member to another, carried by the members between them and readable by its recipient only | [groups 5](groups.md#5-requests-and-answers-the-mail) |
+| Link | a pairing between two servers, whatever made it; two servers are linked once | [groups 1](groups.md#1-terms), [core 7.7](core.md#77-relations) |
+| Relation | why two servers are linked: the individual relation, or one group relation per group they share and are linked through; a link lasts while one holds | [core 7.7](core.md#77-relations) |
+| Individual relation | the relation both operators chose, which each side says it wants with `individual` in `hello` | [core 7.7](core.md#77-relations) |
 | Fingerprint | a short form of a public key, which operators compare when pairing | [core 4.2](core.md#42-the-fingerprint) |
 | Current key | the key a peer knows a server by now | [core 12](core.md#12-key-rotation-and-revocation) |
 | Next key commitment | SHA-256 of a key made for a later rotation | [core 12.5](core.md#125-the-next-key-commitment) |
@@ -51,7 +59,7 @@ one place, with where each is defined.
 | Nonce | 16 random bytes that make each signed request unique | [core 6.5](core.md#65-nonces-replay-and-restarts) |
 | Pin | SHA-256 of a certificate's public key, which a server names in `hello` | [core 3.2](core.md#32-https-certificates) |
 | *Trusted*, *named* | a certificate a public authority vouches for; one the peer named by its pin | [core 3.2](core.md#32-https-certificates) |
-| Part | a separately versioned set of calls and rules: `catalog`, `playback`, `media`, `video`, `music` | [core 10](core.md#10-versions-and-parts) |
+| Part | a separately versioned set of calls and rules: `catalog`, `playback`, `media`, `video`, `music`, `groups` | [core 10](core.md#10-versions-and-parts) |
 | Content part | a part that names one kind of content's titles and says how they play: `video`, `music` | [core 10.1](core.md#101-the-parts) |
 | Problem document | the JSON body of a refusal (RFC 9457), with `type`, `title`, `status` | [core 8.2](core.md#82-refusals) |
 | Library | a set of titles a server may offer a peer, by an opaque ID | [catalog 2](catalog.md#2-libraries) |
@@ -85,6 +93,9 @@ how a caller retries, are in
 - `video` and `music` each need `catalog`, `playback` and `media`.
   Every content part is optional: a server lists the ones it handles,
   and two servers share only titles of the content parts both list.
+- `groups` needs only the core. Its offers and limits per group change
+  what a server offers a peer and lets it use; the calls of `catalog`
+  and `playback` stay the same.
 
 A part whose dependency is off between two servers is off too. For
 example, a server that speaks `catalog` but not `media` can list its
@@ -178,6 +189,12 @@ stable.
   `inbound: false` in `pair` and `hello`, peers that stop calling, a
   `hello` on a schedule, rotation and revocation pulled in `hello`
   answers, and the address `https://msfp-<26>.invalid`.
+- **Groups** (proposal 12, 2026-11-20): the part `groups`, codes for a
+  group in the core (section 5.1), pairing through a group (core
+  section 7.6), offers and limits per group.
+- **Relations** (proposal 14, 2026-11-21), in the core: a link lasts
+  while one relation holds, `individual` in `hello` (core sections 7.7
+  and 9.2).
 - **The clarifications** (all 34), as in the test draft's corrections.
 - The seek-bar previews already in the test draft, in `video`.
 - **The review round of 2026-11-16**: which addresses a server connects
@@ -210,12 +227,17 @@ called, with a rotation and a revocation pulled in an answer
 ([core section 17](core.md#17-test-vectors)), the addresses of servers
 that can't be called (`uncallableAddresses` in `strict.json`), media
 servers' language codes and the tags sent (`languageCodes` in
-`strict.json`), the
+`strict.json`), file and track names in media URLs (`mediaNames`), the
+discovery document's `base` (`bases`), what a receiver keeps of a
+`hello`'s versions (`helloVersions`), the
 destinations a server
 refuses to connect to (`destinations` in `strict.json`), and WebVTT,
 HLS and PGS cases with their verdicts (`media.json`, media section 3 and
 video section 6), music keys and titles with what a caller keeps
 (`music.json`, music sections 2 and 3), and video titles with what a
-caller keeps (`video.json`, video section 3). They come from the
+caller keeps (`video.json`, video section 3), and a group's events and
+the state they give, a code with a group, `group-join`'s proof and a
+sealed request mail (`groups.json`, groups sections 2, 3, 5 and 8.4).
+They come from the
 generator in [tools/vectors/](../../tools/vectors/), not from an
 implementation.

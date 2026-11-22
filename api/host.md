@@ -20,7 +20,7 @@ Without Catalog, Playback and Media, the host offers nothing and every
 `play` is answered `404`. It can still read and play its peers' titles.
 
 The host may be a separate service beside its media server rather than
-inside it ([core 0](../spec/v0/core.md#1-overview-and-terms)): it then
+inside it ([core 1](../spec/v0/core.md#1-overview-and-terms)): it then
 relays the media, and holds the narrowest credential of the media server
 it can (a dedicated account limited to the offered libraries).
 
@@ -125,7 +125,7 @@ The engine fills every field. Go spells them in capitals
 | its keys | `commitment`, `commitmentFrom` (`pair`, `rotation`, or empty), `pending` (a rotation waiting for our operator), `rotations` (statements kept), `refused` (`{key, at}`) |
 | our keys toward it | `ourKey` (empty for current, `old`, `lost`), `rotationAnswer` (`pending`, `refused`, or empty), `rotateSent`, `commitmentTold` |
 | sharing | `offers` (host library IDs), `offersSeq`, `wants` (`WantedLibrary`), `limits` (ours to it), `theirLimits`, `catalogRead` (`seq`, `wants`) |
-| groups | `groups` (the groups the link was made or kept through), `notByHand` (made by `group-pair`, never paired by hand), `groupOffers` (host library IDs its groups offer, together), `pools` (`{group, limits}`, each group's pool), `joiningGroup` (a group whose code it redeemed, while it joins) |
+| relations ([core 7.7](../spec/v0/core.md#77-relations)) | `groups` (the group relations: the groups the link was made or kept through), `notByHand` (this side doesn't want the individual relation), `theirIndividual` (what the peer last said of it in `hello`; absent: never said, counted as ours), `keepChoice` (our operator is choosing whether to keep the link, after a dissolution with `keepPairings`), `individualRefused` (our operator refused the peer's ask, privately), `groupOffers` (host library IDs its groups offer, together), `pools` (`{group, limits}`, each group's pool), `joiningGroup` (a group whose code it redeemed, while it joins) |
 
 **`CodeRecord`**: `id`, `secret` (sealed, `msfp code secret`),
 `secretHash`, `note`, `created`, `expires`, `uses` (how many more
@@ -141,6 +141,7 @@ servers may use it), `group` (the group a group's code invites to).
 | `mail` | sealed requests and answers passed on, until they expire (`{id, mail, signature, expires}`) |
 | `mailKey` | this server's X25519 key for the group's mail, sealed (`msfp group mail key`) |
 | `accept`, `offers`, `pool` | how this server answers requests; host library IDs it offers the group; the pool it lends |
+| `hidden` | the members' libraries this server doesn't show from the group (`{member, library}`: a member ID, the library's public ID); it shows everything else they offer it |
 | `requests` | members' requests waiting for the operator: `{mail, from, name, address, nextCommitment, inbound, pins, received}` |
 | `refused`, `sent`, `used` | members whose requests were refused; requests and answers sent (`{id, to, kind, expires}`); mail IDs a `group-pair` used |
 | `synced` | the last sync with the members |
@@ -149,7 +150,9 @@ servers may use it), `group` (the group a group's code invites to).
 
 **`ForgottenKey`**: `keyHash`, `at`, `revoked` (the pairing ended with
 a revocation without next key: for 30 days its hellos get the
-revocation).
+revocation), `blocked` (the operator blocked it, `BlockPeer` or `Block`:
+kept away from every group; other ended keys only get the signed
+`404`).
 
 **`Leftover`**: `peer`, `playbackId` (the peer's).
 

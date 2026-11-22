@@ -14,8 +14,8 @@ need a real decision are in the numbered proposals instead:
 - episode order, double episodes, `e0`: proposal 5.
 
 Seek-bar previews (SPEC-GAPS.md, "9.5: no way to share seek-bar
-previews") are left out: `trickplay` in `play` answers is being added to
-the specification separately.
+previews") are left out: `trickplay` in `play` answers was added to
+the specification separately (now [video section 5.5](../spec/v0/video.md#55-seek-bar-previews)).
 
 ## Signing and replay (section 6)
 

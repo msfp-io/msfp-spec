@@ -66,7 +66,7 @@ trusts only the servers it paired with, by hand or through a group.
   expiry time (section 5).
 - **Core**: this document. **Part**: a separately versioned set of calls
   and rules built on the core: `catalog`, `playback`, `media`, `video`,
-  `music` (section 10). **Content part**: a part that names one kind of
+  `music`, `groups` (section 10). **Content part**: a part that names one kind of
   content's titles and says how they play: `video` and `music`.
 - **Current key**: the key a peer knows a server by now. It may change by
   a rotation (section 12).

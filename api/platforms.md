@@ -452,8 +452,8 @@ public.
 ## 4. Jellyfin, for comparison
 
 What the two Jellyfin implementations met (Overfin as a separate service,
-[overfin.md](overfin.md); the Jellyfin plugin in progress, its notes
-`SPEC-GAPS.md`), and Jellyfin's API ([api.jellyfin.org](https://api.jellyfin.org/)):
+[overfin.md](overfin.md); the MSFP Jellyfin plugin, `jellyfin-plugin-msfp`, in
+progress then and built since, its notes `SPEC-GAPS.md`), and Jellyfin's API ([api.jellyfin.org](https://api.jellyfin.org/)):
 
 - Several parts of the specification are Jellyfin's shapes: the library
   kinds ([catalog section 2](../spec/v0/catalog.md#2-libraries)) are
@@ -466,7 +466,9 @@ What the two Jellyfin implementations met (Overfin as a separate service,
 - Episode numbers are the files' numbers, whatever display order is
   chosen; they are TMDB's when the files follow TMDB's aired order.
   Episodes keep one TMDB ID each, so a file's second episode needs a TMDB
-  lookup (decided for the plugin, not built).
+  lookup (decided for the plugin then; built since: the plugin maps each
+file's episode numbers to a TMDB episode ID and place, and keys each
+episode of a file by it).
 - Text subtitles come by time range, but Jellyfin reads a whole MKV to
   extract one (16.8 s against 0.45 s with a seek, measured for Overfin's
   companion plugin). PGS comes out as `.sup`, whole; cutting it into
