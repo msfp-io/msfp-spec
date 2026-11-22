@@ -9,8 +9,10 @@ import (
 	"crypto/ed25519"
 	"encoding/base32"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -506,4 +508,391 @@ func checkUncallableAddress(addr string) error {
 		return errors.New("unused bits are not zero")
 	}
 	return nil
+}
+
+// ---- The catalog part of the revision of version 0 (proposal 16) ----
+
+// catalogPageTitles and catalogPageBytes are a page's two bounds
+// (spec/v0/catalog.md section 3.1); catalogAnswerBytes is the core's
+// bound on any answer a caller reads (spec/v0/core.md section 3).
+const (
+	catalogPageTitles  = 5000
+	catalogPageBytes   = 3 << 20
+	catalogAnswerBytes = 4 << 20
+)
+
+// catalogPage is one answer of titles, as the vectors give it: what the
+// page holds, and, for a whole-list answer, whether titles remain after
+// it on the owning server.
+type catalogPage struct {
+	Changes bool    `json:"changes"`
+	Titles  int     `json:"titles"`
+	Gone    int     `json:"gone"`
+	Bytes   int     `json:"bytes"`
+	Remain  *bool   `json:"remain,omitempty"`
+	After   string  `json:"after"`
+	LastKey string  `json:"lastKey,omitempty"`
+	Next    *string `json:"next,omitempty"`
+}
+
+// catalogPageCase is a case of titlePages: a page, whether the owning
+// server may send it, and what the caller does with it.
+type catalogPageCase struct {
+	Name string `json:"name"`
+	catalogPage
+	Valid  bool   `json:"valid"`
+	Reason string `json:"reason,omitempty"`
+	Caller string `json:"caller"`
+}
+
+// catalogImageCase is a case of localImages, of one of three sides:
+// "request" (the owning server's answer to an image request: status and
+// type), "answer" (the viewer's server's check of the answer's url:
+// valid and the ticket), "image" (its checks of the image's bytes: valid
+// and the format).
+type catalogImageCase struct {
+	Name       string           `json:"name"`
+	Side       string           `json:"side"`
+	Parts      []string         `json:"parts,omitempty"`
+	Offered    []catalogOffered `json:"offered,omitempty"`
+	Body       string           `json:"body,omitempty"`
+	StreamRoot string           `json:"streamRoot,omitempty"`
+	Hex        string           `json:"hex,omitempty"`
+	Size       int              `json:"size,omitempty"`
+	Status     int              `json:"status,omitempty"`
+	Type       string           `json:"type,omitempty"`
+	Valid      *bool            `json:"valid,omitempty"`
+	Ticket     string           `json:"ticket,omitempty"`
+	Format     string           `json:"format,omitempty"`
+	Reason     string           `json:"reason,omitempty"`
+}
+
+// catalogCheckPage applies the owning server's rules for a page
+// (catalog section 3.1): at most 5,000 titles (titles and gone together
+// in a changes answer), at most 3 MiB of JSON, and in a whole-list
+// answer a next that is the page's last key exactly when titles remain.
+func catalogCheckPage(p catalogPage) error {
+	if p.Titles < 0 || p.Gone < 0 || p.Bytes < 0 {
+		return errors.New("a negative count")
+	}
+	if !p.Changes && p.Gone != 0 {
+		return errors.New("gone in a whole-list answer")
+	}
+	if p.Titles+p.Gone > catalogPageTitles {
+		if p.Changes {
+			return errors.New("titles and gone together over 5,000 keys")
+		}
+		return errors.New("over 5,000 titles")
+	}
+	if p.Bytes > catalogPageBytes {
+		return errors.New("an answer body over 3 MiB (3,145,728 bytes)")
+	}
+	if p.Changes {
+		// next is set when there may be more changes: the owning
+		// server's call, whatever the page's size.
+		return nil
+	}
+	if p.Remain == nil {
+		return errors.New("a whole-list case without remain")
+	}
+	if p.Titles > 0 && p.LastKey <= p.After {
+		return errors.New("the page's last key isn't after after")
+	}
+	switch {
+	case *p.Remain && p.Titles == 0:
+		return errors.New("an empty page while titles remain")
+	case *p.Remain && p.Next == nil:
+		return errors.New("next absent while titles remain")
+	case *p.Remain && *p.Next != p.LastKey:
+		return errors.New("next isn't the page's last key")
+	case !*p.Remain && p.Next != nil:
+		return errors.New("next set after the last title")
+	}
+	return nil
+}
+
+// catalogCallerStep is what a caller does with a page it got (catalog
+// section 3.1): "fail" for an answer past the core's 4 MiB, else "stop"
+// when next is absent, empty, or not greater than its after in byte
+// order, else "ask on". The caller accepts what the owning server
+// shouldn't have sent, within the core's bound.
+func catalogCallerStep(p catalogPage) string {
+	switch {
+	case p.Bytes > catalogAnswerBytes:
+		return "fail"
+	case p.Next == nil || *p.Next == "" || *p.Next <= p.After:
+		return "stop"
+	}
+	return "ask on"
+}
+
+// catalogCheckOpaque applies the rule for the opaque parts of keys
+// (catalog section 4.2): the form of a library ID, 1 to 64 characters
+// of A-Z a-z 0-9 _ -.
+func catalogCheckOpaque(s string) error {
+	if len(s) < 1 || len(s) > 64 {
+		return fmt.Errorf("%d bytes, not 1 to 64", len(s))
+	}
+	for _, c := range []byte(s) {
+		if !catalogTicketByte(c) {
+			return fmt.Errorf("byte %q outside A-Z a-z 0-9 _ -", c)
+		}
+	}
+	return nil
+}
+
+// catalogTicketByte: A-Z a-z 0-9 _ -, the bytes of library IDs, the
+// opaque parts of keys and tickets.
+func catalogTicketByte(c byte) bool {
+	return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_' || c == '-'
+}
+
+// catalogDesc is what a caller keeps of a local title's description
+// (catalog section 4.3).
+type catalogDesc struct {
+	Name  string `json:"name,omitempty"`
+	Year  *int64 `json:"year,omitempty"`
+	Image bool   `json:"image,omitempty"`
+}
+
+// catalogDescription reads a local title's description from the title's
+// JSON object (catalog section 4.3). nameRequired is the content part's
+// say for the title's kind. name is cleaned as core section 9.1 cleans a
+// server's name, with 128 code points instead of 80; a name that isn't a
+// string counts as absent (core section 2.3). year that isn't an
+// integer from 1800 to 9999, and image that isn't a boolean, count as
+// absent. An error means the title is skipped. The vectors of the
+// description are the content parts' (localTitles in video.json and
+// music.json); this is the catalog's rule they share.
+func catalogDescription(title []byte, nameRequired bool) (catalogDesc, error) {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(title, &m); err != nil || m == nil {
+		return catalogDesc{}, errors.New("not a JSON object")
+	}
+	var d catalogDesc
+	hasName := false
+	if raw, ok := m["name"]; ok && len(raw) > 0 && raw[0] == '"' {
+		var name string
+		if json.Unmarshal(raw, &name) == nil {
+			hasName = true
+			d.Name = cleanName(name, 128)
+		}
+	}
+	if nameRequired {
+		if !hasName {
+			return catalogDesc{}, errors.New("no name, where one is required")
+		}
+		if d.Name == "" {
+			return catalogDesc{}, errors.New("a name empty once cleaned")
+		}
+	}
+	if raw, ok := m["year"]; ok {
+		t := string(raw)
+		if checkInteger(t) == nil {
+			if n, err := strconv.ParseInt(t, 10, 64); err == nil && n >= 1800 && n <= 9999 {
+				d.Year = &n
+			}
+		}
+	}
+	if raw, ok := m["image"]; ok && string(raw) == "true" {
+		d.Image = true
+	}
+	return d, nil
+}
+
+// catalogOffered is a title the owning server offers the caller, with
+// whether its description says image true.
+type catalogOffered struct {
+	Key   string `json:"key"`
+	Image bool   `json:"image"`
+}
+
+// catalogImageKinds: the kinds that have an image call, and the content
+// part each belongs to (catalog section 4.4).
+var catalogImageKinds = map[string]string{"movie": "video", "series": "video", "artist": "music", "album": "music"}
+
+// catalogImageRequest is the owning server's answer to an image request
+// (catalog section 4.4): its status and problem type. parts are the
+// content parts on between the two servers.
+func catalogImageRequest(parts []string, offered []catalogOffered, body []byte) (int, string) {
+	on := map[string]bool{}
+	for _, p := range parts {
+		on[p] = true
+	}
+	if !on["video"] && !on["music"] {
+		return 404, "not-supported"
+	}
+	if checkIJSON(body) != nil {
+		return 400, "invalid-request"
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(body, &m) != nil || m == nil {
+		return 400, "invalid-request"
+	}
+	raw, ok := m["title"]
+	var title string
+	if !ok || len(raw) == 0 || raw[0] != '"' || json.Unmarshal(raw, &title) != nil {
+		return 400, "invalid-request"
+	}
+	for _, o := range offered {
+		if o.Key != title {
+			continue
+		}
+		p := strings.Split(title, "/")
+		if len(p) != 3 || p[1] != "local" || !on[catalogImageKinds[p[0]]] || !o.Image {
+			return 404, "not-found"
+		}
+		return 200, ""
+	}
+	return 404, "not-found"
+}
+
+// catalogImageAnswer applies the viewer's server's check of an image
+// answer (catalog section 4.4): url is exactly <stream root><ticket>/image,
+// the ticket as media section 1 gives it. It returns the ticket, or an
+// error when the answer is dropped.
+func catalogImageAnswer(root string, body []byte) (string, error) {
+	if checkIJSON(body) != nil {
+		return "", errors.New("not I-JSON")
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(body, &m) != nil || m == nil {
+		return "", errors.New("not a JSON object")
+	}
+	raw, ok := m["url"]
+	var u string
+	if !ok || len(raw) == 0 || raw[0] != '"' || json.Unmarshal(raw, &u) != nil {
+		return "", errors.New("url absent or not a string")
+	}
+	if !strings.HasPrefix(u, root) {
+		return "", errors.New("url not under the owning server's stream root")
+	}
+	rest := u[len(root):]
+	if !strings.HasSuffix(rest, "/image") {
+		return "", errors.New("url not ending in /image")
+	}
+	t := strings.TrimSuffix(rest, "/image")
+	if len(t) < 1 || len(t) > 64 {
+		return "", errors.New("a ticket not 1 to 64 characters")
+	}
+	for _, c := range []byte(t) {
+		if !catalogTicketByte(c) {
+			return "", fmt.Errorf("a ticket with byte %q outside A-Z a-z 0-9 _ -", c)
+		}
+	}
+	return t, nil
+}
+
+// catalogImageBytes is the bound on a local title's image, and
+// catalogImageSide the bound on its width and height (catalog section 4.4).
+const (
+	catalogImageBytes = 1 << 20
+	catalogImageSide  = 4096
+)
+
+var catalogPNGSignature = []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}
+
+// catalogCheckImage applies the viewer's server's checks of an image
+// before decoding it (catalog section 4.4, media section 3.4): its whole
+// length within 1 MiB, a JPEG (FF D8 FF) or a PNG (the 8-byte signature)
+// by its content, and a width and a height from its header, 1 to 4,096.
+// head is the image's first bytes, size its whole length. It returns
+// "jpeg" or "png".
+func catalogCheckImage(head []byte, size int) (string, error) {
+	if len(head) > size {
+		return "", errors.New("more bytes than its size")
+	}
+	if size > catalogImageBytes {
+		return "", errors.New("over 1 MiB (1,048,576 bytes)")
+	}
+	var format string
+	var w, h int
+	switch {
+	case bytes.HasPrefix(head, catalogPNGSignature):
+		format = "png"
+		ih := head[8:]
+		if len(ih) < 16 || !bytes.Equal(ih[:8], []byte{0, 0, 0, 13, 'I', 'H', 'D', 'R'}) {
+			return "", errors.New("a PNG whose first chunk isn't IHDR")
+		}
+		w = int(ih[8])<<24 | int(ih[9])<<16 | int(ih[10])<<8 | int(ih[11])
+		h = int(ih[12])<<24 | int(ih[13])<<16 | int(ih[14])<<8 | int(ih[15])
+	case bytes.HasPrefix(head, []byte{0xff, 0xd8, 0xff}):
+		format = "jpeg"
+		var err error
+		if w, h, err = catalogJPEGSize(head); err != nil {
+			return "", err
+		}
+	default:
+		return "", errors.New("neither a JPEG nor a PNG by its content")
+	}
+	if w < 1 || h < 1 {
+		return "", errors.New("a width or a height of 0")
+	}
+	if w > catalogImageSide || h > catalogImageSide {
+		return "", errors.New("wider or taller than 4,096 pixels")
+	}
+	return format, nil
+}
+
+// catalogPNG makes the head of a PNG for the vectors: its signature and
+// IHDR, of width w and height h, 8-bit RGBA.
+func catalogPNG(w, h uint32) []byte {
+	ih := []byte{'I', 'H', 'D', 'R', byte(w >> 24), byte(w >> 16), byte(w >> 8), byte(w), byte(h >> 24), byte(h >> 16), byte(h >> 8), byte(h), 8, 6, 0, 0, 0}
+	c := crc32.ChecksumIEEE(ih)
+	b := append(bytes.Clone(catalogPNGSignature), 0, 0, 0, 13)
+	b = append(b, ih...)
+	return append(b, byte(c>>24), byte(c>>16), byte(c>>8), byte(c))
+}
+
+// catalogJPEG makes the head of a JPEG for the vectors: SOI, a JFIF
+// APP0, a DHT when dht, and a frame header of the marker sof, width w
+// and height h, 3 components.
+func catalogJPEG(sof byte, w, h int, dht bool) []byte {
+	b := []byte{0xff, 0xd8, 0xff, 0xe0, 0, 16, 'J', 'F', 'I', 'F', 0, 1, 1, 0, 0, 1, 0, 1, 0, 0}
+	if dht {
+		b = append(b, 0xff, 0xc4, 0, 20, 0)
+		b = append(b, make([]byte, 17)...)
+	}
+	return append(b, 0xff, sof, 0, 17, 8, byte(h>>8), byte(h), byte(w>>8), byte(w), 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1)
+}
+
+// catalogJPEGSize reads a JPEG's markers up to its frame header (SOF0 to
+// SOF15, but DHT, JPG and DAC), and returns its width and height.
+func catalogJPEGSize(b []byte) (int, int, error) {
+	i := 2
+	for {
+		if i >= len(b) || b[i] != 0xff {
+			return 0, 0, errors.New("no marker where one is due")
+		}
+		for i < len(b) && b[i] == 0xff {
+			i++ // the marker's FF, and fill bytes before it
+		}
+		if i >= len(b) {
+			return 0, 0, errors.New("no frame header in its header")
+		}
+		m := b[i]
+		i++
+		switch {
+		case m == 0x01 || m >= 0xd0 && m <= 0xd7:
+			continue // markers without a length
+		case m == 0xd9 || m == 0xda:
+			return 0, 0, errors.New("no frame header before the image data")
+		}
+		if i+2 > len(b) {
+			return 0, 0, errors.New("no frame header in its header")
+		}
+		n := int(b[i])<<8 | int(b[i+1])
+		if n < 2 {
+			return 0, 0, errors.New("a segment length under 2")
+		}
+		if m >= 0xc0 && m <= 0xcf && m != 0xc4 && m != 0xc8 && m != 0xcc {
+			if n < 8 || i+7 > len(b) {
+				return 0, 0, errors.New("a frame header cut short")
+			}
+			h := int(b[i+3])<<8 | int(b[i+4])
+			w := int(b[i+5])<<8 | int(b[i+6])
+			return w, h, nil
+		}
+		i += n
+	}
 }

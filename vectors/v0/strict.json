@@ -5,7 +5,10 @@
     "destinations: IP addresses a server connects to for a peer by default (valid), or refuses (spec/v0/core.md section 3.3; also the test draft's section 3.2).",
     "uncallableAddresses: the address a server that sends inbound false must have, https://msfp-<26>.invalid, the 26 characters being 16 bytes in lowercase base32 with the unused bits zero (spec/v0/core.md section 5.2).",
     "helloVersions: hello bodies (text) and what a receiver keeps of their versions (output: core, and each known part by name; spec/v0/core.md sections 2.3 and 10.2), or a bad body (valid false). A number that isn't an integer is valid I-JSON, and is ignored in a version list.",
-    "languageCodes: a media server's language code (text) and the tag a server sends for it (output), or none (valid false): an ISO 639-2 code, /B or /T, of a language with an ISO 639-1 code sent as that code, the rest kept, in BCP 47's case conventions; und, mul, zxx and mis not sent (spec/v0/catalog.md section 3, language tags; spec/v0/core.md section 2.5)."
+    "languageCodes: a media server's language code (text) and the tag a server sends for it (output), or none (valid false): an ISO 639-2 code, /B or /T, of a language with an ISO 639-1 code sent as that code, the rest kept, in BCP 47's case conventions; und, mul, zxx and mis not sent (spec/v0/catalog.md section 3, language tags; spec/v0/core.md section 2.5).",
+    "titlePages: pages of titles (spec/v0/catalog.md section 3.1). Input: changes (a changes answer or a whole-list one), titles and gone (how many keys the page holds), bytes (the answer body's size), remain (whole list: whether titles remain after the page on the owning server), after (the request's), lastKey (the page's last title key), next (absent when the answer has none). Output: valid (the owning server may send it: at most 5,000 keys, titles and gone together; at most 3 MiB, 3,145,728 bytes, of JSON; in a whole list, next is the last key exactly when titles remain), and caller: what the caller does with it whatever valid says: fail (past the core's 4 MiB, 4,194,304 bytes: core section 3), stop (next absent, empty, or not greater than after in byte order), or ask on.",
+    "opaqueKeyParts: the opaque parts of title keys, a local title's identifier or an extra's part after x/ (spec/v0/catalog.md section 4.2): 1 to 64 characters of A-Z a-z 0-9 _ -, compared byte for byte.",
+    "localImages: the image of a local title (spec/v0/catalog.md section 4.4), on three sides. request: the owning server's answer (status, type: the problem's type) to the image request body, given parts (the content parts on between the two servers) and offered (the titles it offers the caller, with whether their description says image true): 404 not-supported with no content part with local titles on; 400 invalid-request for a malformed body; 404 not-found for a title not offered, not local, of a part that is off, of a kind without an image (only films, series, artists and albums have one), or without an image; else 200. answer: the viewer's server's check of the answer body (body) against the owning server's stream root (streamRoot, spec/v0/media.md section 1): url exactly <stream root><ticket>/image, the ticket 1 to 64 characters of A-Z a-z 0-9 _ -; valid with the ticket, or dropped (valid false). image: the image's first bytes (hex) and its whole length (size): valid when size is at most 1 MiB (1,048,576 bytes), the content is a JPEG (FF D8 FF) or a PNG (the 8-byte signature), whatever any Content-Type, and the header gives a width and a height of 1 to 4,096 pixels (a PNG's IHDR, a JPEG's frame header SOF0 to SOF15 but DHT, JPG and DAC); format jpeg or png."
   ],
   "addresses": [
     {
@@ -946,6 +949,1658 @@
       "text": "français",
       "valid": false,
       "reason": "not a tag: 2 to 12 characters of A-Z a-z 0-9 -"
+    }
+  ],
+  "titlePages": [
+    {
+      "name": "the first page, full, titles remain",
+      "changes": false,
+      "titles": 5000,
+      "gone": 0,
+      "bytes": 2000000,
+      "remain": true,
+      "after": "",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": true,
+      "caller": "ask on"
+    },
+    {
+      "name": "5,000 titles and 3 MiB exactly, titles remain",
+      "changes": false,
+      "titles": 5000,
+      "gone": 0,
+      "bytes": 3145728,
+      "remain": true,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": true,
+      "caller": "ask on"
+    },
+    {
+      "name": "5,001 titles",
+      "changes": false,
+      "titles": 5001,
+      "gone": 0,
+      "bytes": 2000000,
+      "remain": true,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": false,
+      "reason": "over 5,000 titles",
+      "caller": "ask on"
+    },
+    {
+      "name": "3 MiB and one byte",
+      "changes": false,
+      "titles": 4000,
+      "gone": 0,
+      "bytes": 3145729,
+      "remain": true,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": false,
+      "reason": "an answer body over 3 MiB (3,145,728 bytes)",
+      "caller": "ask on"
+    },
+    {
+      "name": "4 MiB exactly: past the owning server's bound, within the caller's",
+      "changes": false,
+      "titles": 4000,
+      "gone": 0,
+      "bytes": 4194304,
+      "remain": true,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": false,
+      "reason": "an answer body over 3 MiB (3,145,728 bytes)",
+      "caller": "ask on"
+    },
+    {
+      "name": "4 MiB and one byte: past the core's bound",
+      "changes": false,
+      "titles": 4000,
+      "gone": 0,
+      "bytes": 4194305,
+      "remain": true,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": false,
+      "reason": "an answer body over 3 MiB (3,145,728 bytes)",
+      "caller": "fail"
+    },
+    {
+      "name": "ended early by its size, titles remain",
+      "changes": false,
+      "titles": 1200,
+      "gone": 0,
+      "bytes": 3100000,
+      "remain": true,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": true,
+      "caller": "ask on"
+    },
+    {
+      "name": "a short page with a next is no end",
+      "changes": false,
+      "titles": 7,
+      "gone": 0,
+      "bytes": 3000,
+      "remain": true,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": true,
+      "caller": "ask on"
+    },
+    {
+      "name": "5,000 titles, the last of the list: no next",
+      "changes": false,
+      "titles": 5000,
+      "gone": 0,
+      "bytes": 2000000,
+      "remain": false,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "valid": true,
+      "caller": "stop"
+    },
+    {
+      "name": "5,000 titles, the last of the list, next set anyway",
+      "changes": false,
+      "titles": 5000,
+      "gone": 0,
+      "bytes": 2000000,
+      "remain": false,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": false,
+      "reason": "next set after the last title",
+      "caller": "ask on"
+    },
+    {
+      "name": "a short last page",
+      "changes": false,
+      "titles": 42,
+      "gone": 0,
+      "bytes": 9000,
+      "remain": false,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "valid": true,
+      "caller": "stop"
+    },
+    {
+      "name": "titles remain, next absent",
+      "changes": false,
+      "titles": 300,
+      "gone": 0,
+      "bytes": 80000,
+      "remain": true,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "valid": false,
+      "reason": "next absent while titles remain",
+      "caller": "stop"
+    },
+    {
+      "name": "titles remain, next empty",
+      "changes": false,
+      "titles": 300,
+      "gone": 0,
+      "bytes": 80000,
+      "remain": true,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "",
+      "valid": false,
+      "reason": "next isn't the page's last key",
+      "caller": "stop"
+    },
+    {
+      "name": "titles remain, next isn't the last key",
+      "changes": false,
+      "titles": 300,
+      "gone": 0,
+      "bytes": 80000,
+      "remain": true,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/8999",
+      "valid": false,
+      "reason": "next isn't the page's last key",
+      "caller": "ask on"
+    },
+    {
+      "name": "an empty page after the last title",
+      "changes": false,
+      "titles": 0,
+      "gone": 0,
+      "bytes": 13,
+      "remain": false,
+      "after": "movie/tmdb/100",
+      "valid": true,
+      "caller": "stop"
+    },
+    {
+      "name": "an empty page while titles remain",
+      "changes": false,
+      "titles": 0,
+      "gone": 0,
+      "bytes": 13,
+      "remain": true,
+      "after": "movie/tmdb/100",
+      "next": "movie/tmdb/100",
+      "valid": false,
+      "reason": "an empty page while titles remain",
+      "caller": "stop"
+    },
+    {
+      "name": "next before after",
+      "changes": false,
+      "titles": 10,
+      "gone": 0,
+      "bytes": 4000,
+      "remain": true,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/1",
+      "next": "movie/tmdb/1",
+      "valid": false,
+      "reason": "the page's last key isn't after after",
+      "caller": "stop"
+    },
+    {
+      "name": "next equal to after",
+      "changes": false,
+      "titles": 10,
+      "gone": 0,
+      "bytes": 4000,
+      "remain": true,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/100",
+      "next": "movie/tmdb/100",
+      "valid": false,
+      "reason": "the page's last key isn't after after",
+      "caller": "stop"
+    },
+    {
+      "name": "gone in a whole-list answer",
+      "changes": false,
+      "titles": 10,
+      "gone": 1,
+      "bytes": 4000,
+      "remain": false,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "valid": false,
+      "reason": "gone in a whole-list answer",
+      "caller": "stop"
+    },
+    {
+      "name": "changes: 3,000 titles and 2,000 gone, more to come",
+      "changes": true,
+      "titles": 3000,
+      "gone": 2000,
+      "bytes": 900000,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": true,
+      "caller": "ask on"
+    },
+    {
+      "name": "changes: 3,000 titles and 2,001 gone",
+      "changes": true,
+      "titles": 3000,
+      "gone": 2001,
+      "bytes": 900000,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": false,
+      "reason": "titles and gone together over 5,000 keys",
+      "caller": "ask on"
+    },
+    {
+      "name": "changes: 5,000 gone, none changed",
+      "changes": true,
+      "titles": 0,
+      "gone": 5000,
+      "bytes": 600000,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": true,
+      "caller": "ask on"
+    },
+    {
+      "name": "changes: a short page with a next",
+      "changes": true,
+      "titles": 10,
+      "gone": 0,
+      "bytes": 5000,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": true,
+      "caller": "ask on"
+    },
+    {
+      "name": "changes: the last page",
+      "changes": true,
+      "titles": 10,
+      "gone": 3,
+      "bytes": 5000,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "valid": true,
+      "caller": "stop"
+    },
+    {
+      "name": "changes: nothing changed",
+      "changes": true,
+      "titles": 0,
+      "gone": 0,
+      "bytes": 40,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "valid": true,
+      "caller": "stop"
+    },
+    {
+      "name": "changes: 3 MiB and one byte",
+      "changes": true,
+      "titles": 900,
+      "gone": 0,
+      "bytes": 3145729,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "movie/tmdb/9000",
+      "valid": false,
+      "reason": "an answer body over 3 MiB (3,145,728 bytes)",
+      "caller": "ask on"
+    },
+    {
+      "name": "changes: next empty",
+      "changes": true,
+      "titles": 10,
+      "gone": 0,
+      "bytes": 5000,
+      "after": "movie/tmdb/100",
+      "lastKey": "movie/tmdb/9000",
+      "next": "",
+      "valid": true,
+      "caller": "stop"
+    }
+  ],
+  "opaqueKeyParts": [
+    {
+      "text": "q3Zp0Lw8",
+      "valid": true
+    },
+    {
+      "text": "a",
+      "valid": true
+    },
+    {
+      "text": "Z",
+      "valid": true
+    },
+    {
+      "text": "0",
+      "valid": true
+    },
+    {
+      "text": "_",
+      "valid": true
+    },
+    {
+      "text": "-",
+      "valid": true
+    },
+    {
+      "text": "A-z_09",
+      "valid": true
+    },
+    {
+      "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "valid": true
+    },
+    {
+      "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "valid": false,
+      "reason": "65 bytes, not 1 to 64"
+    },
+    {
+      "valid": false,
+      "reason": "0 bytes, not 1 to 64"
+    },
+    {
+      "text": "a.b",
+      "valid": false,
+      "reason": "byte '.' outside A-Z a-z 0-9 _ -"
+    },
+    {
+      "text": "a/b",
+      "valid": false,
+      "reason": "byte '/' outside A-Z a-z 0-9 _ -"
+    },
+    {
+      "text": "a b",
+      "valid": false,
+      "reason": "byte ' ' outside A-Z a-z 0-9 _ -"
+    },
+    {
+      "text": "a%20b",
+      "valid": false,
+      "reason": "byte '%' outside A-Z a-z 0-9 _ -"
+    },
+    {
+      "text": "a+b",
+      "valid": false,
+      "reason": "byte '+' outside A-Z a-z 0-9 _ -"
+    },
+    {
+      "text": "a=",
+      "valid": false,
+      "reason": "byte '=' outside A-Z a-z 0-9 _ -"
+    },
+    {
+      "text": "é",
+      "valid": false,
+      "reason": "byte 'Ã' outside A-Z a-z 0-9 _ -"
+    },
+    {
+      "text": "a\tb",
+      "valid": false,
+      "reason": "byte '\\t' outside A-Z a-z 0-9 _ -"
+    },
+    {
+      "text": ".",
+      "valid": false,
+      "reason": "byte '.' outside A-Z a-z 0-9 _ -"
+    },
+    {
+      "text": "..",
+      "valid": false,
+      "reason": "byte '.' outside A-Z a-z 0-9 _ -"
+    },
+    {
+      "text": "xYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY-",
+      "valid": true
+    }
+  ],
+  "localImages": [
+    {
+      "name": "a local film with an image",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"movie/local/q3Zp0Lw8\"}",
+      "status": 200
+    },
+    {
+      "name": "a local series with an image, video on only",
+      "side": "request",
+      "parts": [
+        "video"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"series/local/Hk2v9TnA\"}",
+      "status": 200
+    },
+    {
+      "name": "a local artist with an image, music on only",
+      "side": "request",
+      "parts": [
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"artist/local/Ar34x\"}",
+      "status": 200
+    },
+    {
+      "name": "a local album with an image, an unknown member ignored",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"album/local/Ab12y\",\"size\":\"big\"}",
+      "status": 200
+    },
+    {
+      "name": "a local film without an image",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"movie/local/NoPic01\"}",
+      "status": 404,
+      "type": "not-found"
+    },
+    {
+      "name": "a season of a local series",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"series/local/Hk2v9TnA/s1\"}",
+      "status": 404,
+      "type": "not-found"
+    },
+    {
+      "name": "a title that isn't local",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"movie/tmdb/949\"}",
+      "status": 404,
+      "type": "not-found"
+    },
+    {
+      "name": "a local title not offered to the caller",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"movie/local/Other99\"}",
+      "status": 404,
+      "type": "not-found"
+    },
+    {
+      "name": "a key in another case",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"movie/local/Q3ZP0LW8\"}",
+      "status": 404,
+      "type": "not-found"
+    },
+    {
+      "name": "a music title while only video is on",
+      "side": "request",
+      "parts": [
+        "video"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"album/local/Ab12y\"}",
+      "status": 404,
+      "type": "not-found"
+    },
+    {
+      "name": "a video title while only music is on",
+      "side": "request",
+      "parts": [
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"movie/local/q3Zp0Lw8\"}",
+      "status": 404,
+      "type": "not-found"
+    },
+    {
+      "name": "no content part with local titles on",
+      "side": "request",
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"movie/local/q3Zp0Lw8\"}",
+      "status": 404,
+      "type": "not-supported"
+    },
+    {
+      "name": "no content part on, a malformed body",
+      "side": "request",
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{}",
+      "status": 404,
+      "type": "not-supported"
+    },
+    {
+      "name": "title missing",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{}",
+      "status": 400,
+      "type": "invalid-request"
+    },
+    {
+      "name": "title not a string",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":949}",
+      "status": 400,
+      "type": "invalid-request"
+    },
+    {
+      "name": "title null",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":null}",
+      "status": 400,
+      "type": "invalid-request"
+    },
+    {
+      "name": "title an array",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":[\"movie/local/q3Zp0Lw8\"]}",
+      "status": 400,
+      "type": "invalid-request"
+    },
+    {
+      "name": "not an object",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "[\"movie/local/q3Zp0Lw8\"]",
+      "status": 400,
+      "type": "invalid-request"
+    },
+    {
+      "name": "not JSON",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"movie/local/q3Zp0Lw8\"",
+      "status": 400,
+      "type": "invalid-request"
+    },
+    {
+      "name": "title twice",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"title\":\"movie/local/q3Zp0Lw8\",\"title\":\"movie/local/NoPic01\"}",
+      "status": 400,
+      "type": "invalid-request"
+    },
+    {
+      "name": "title in another case: an unknown member",
+      "side": "request",
+      "parts": [
+        "video",
+        "music"
+      ],
+      "offered": [
+        {
+          "key": "movie/local/q3Zp0Lw8",
+          "image": true
+        },
+        {
+          "key": "series/local/Hk2v9TnA",
+          "image": true
+        },
+        {
+          "key": "movie/local/NoPic01",
+          "image": false
+        },
+        {
+          "key": "series/local/Hk2v9TnA/s1",
+          "image": false
+        },
+        {
+          "key": "movie/tmdb/949",
+          "image": false
+        },
+        {
+          "key": "artist/local/Ar34x",
+          "image": true
+        },
+        {
+          "key": "album/local/Ab12y",
+          "image": true
+        }
+      ],
+      "body": "{\"Title\":\"movie/local/q3Zp0Lw8\"}",
+      "status": 400,
+      "type": "invalid-request"
+    },
+    {
+      "name": "the exact form",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/Tk7_-Tk7_-Tk7_-Tk7_-Q/image\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": true,
+      "ticket": "Tk7_-Tk7_-Tk7_-Tk7_-Q"
+    },
+    {
+      "name": "a stream root with a prefix",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/media/api/v1/stream/Tk7_-Tk7_-Tk7_-Tk7_-Q/image\"}",
+      "streamRoot": "https://a.example.org/media/api/v1/stream/",
+      "valid": true,
+      "ticket": "Tk7_-Tk7_-Tk7_-Tk7_-Q"
+    },
+    {
+      "name": "a ticket of 1 character",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/x/image\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": true,
+      "ticket": "x"
+    },
+    {
+      "name": "a ticket of 64 characters",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/image\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": true,
+      "ticket": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "a ticket of 65 characters",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/image\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "a ticket not 1 to 64 characters"
+    },
+    {
+      "name": "an empty ticket",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream//image\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "a ticket not 1 to 64 characters"
+    },
+    {
+      "name": "a ticket with a dot",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/a.b/image\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "a ticket with byte '.' outside A-Z a-z 0-9 _ -"
+    },
+    {
+      "name": "a ticket with a percent",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/a%41/image\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "a ticket with byte '%' outside A-Z a-z 0-9 _ -"
+    },
+    {
+      "name": "another host",
+      "side": "answer",
+      "body": "{\"url\":\"https://b.example.org/api/v1/stream/Tk7_-Tk7_-Tk7_-Tk7_-Q/image\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "url not under the owning server's stream root"
+    },
+    {
+      "name": "http, not https",
+      "side": "answer",
+      "body": "{\"url\":\"http://a.example.org/api/v1/stream/Tk7_-Tk7_-Tk7_-Tk7_-Q/image\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "url not under the owning server's stream root"
+    },
+    {
+      "name": "the host in another case",
+      "side": "answer",
+      "body": "{\"url\":\"https://A.example.org/api/v1/stream/Tk7_-Tk7_-Tk7_-Tk7_-Q/image\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "url not under the owning server's stream root"
+    },
+    {
+      "name": "without the stream root's prefix",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/Tk7_-Tk7_-Tk7_-Tk7_-Q/image\"}",
+      "streamRoot": "https://a.example.org/media/api/v1/stream/",
+      "valid": false,
+      "reason": "url not under the owning server's stream root"
+    },
+    {
+      "name": "another name",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/Tk7_-Tk7_-Tk7_-Tk7_-Q/file\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "url not ending in /image"
+    },
+    {
+      "name": "Image in another case",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/Tk7_-Tk7_-Tk7_-Tk7_-Q/Image\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "url not ending in /image"
+    },
+    {
+      "name": "a slash after image",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/Tk7_-Tk7_-Tk7_-Tk7_-Q/image/\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "url not ending in /image"
+    },
+    {
+      "name": "a query",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/Tk7_-Tk7_-Tk7_-Tk7_-Q/image?x=1\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "url not ending in /image"
+    },
+    {
+      "name": "a fragment",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/Tk7_-Tk7_-Tk7_-Tk7_-Q/image#x\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "url not ending in /image"
+    },
+    {
+      "name": "a part between ticket and image",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/Tk7_-Tk7_-Tk7_-Tk7_-Q/x/image\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "a ticket with byte '/' outside A-Z a-z 0-9 _ -"
+    },
+    {
+      "name": "a relative url",
+      "side": "answer",
+      "body": "{\"url\":\"Tk7_-Tk7_-Tk7_-Tk7_-Q/image\"}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "url not under the owning server's stream root"
+    },
+    {
+      "name": "url absent",
+      "side": "answer",
+      "body": "{}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "url absent or not a string"
+    },
+    {
+      "name": "url not a string",
+      "side": "answer",
+      "body": "{\"url\":1}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "url absent or not a string"
+    },
+    {
+      "name": "url null",
+      "side": "answer",
+      "body": "{\"url\":null}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "url absent or not a string"
+    },
+    {
+      "name": "not an object",
+      "side": "answer",
+      "body": "[]",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": false,
+      "reason": "not a JSON object"
+    },
+    {
+      "name": "an unknown member ignored",
+      "side": "answer",
+      "body": "{\"url\":\"https://a.example.org/api/v1/stream/Tk7_-Tk7_-Tk7_-Tk7_-Q/image\",\"expires\":600}",
+      "streamRoot": "https://a.example.org/api/v1/stream/",
+      "valid": true,
+      "ticket": "Tk7_-Tk7_-Tk7_-Tk7_-Q"
+    },
+    {
+      "name": "a PNG, 640 by 360",
+      "side": "image",
+      "hex": "89504e470d0a1a0a0000000d4948445200000280000001680806000000c7324a51",
+      "size": 120000,
+      "valid": true,
+      "format": "png"
+    },
+    {
+      "name": "a PNG of 4,096 by 4,096 and 1 MiB exactly",
+      "side": "image",
+      "hex": "89504e470d0a1a0a0000000d4948445200001000000010000806000000f2a32417",
+      "size": 1048576,
+      "valid": true,
+      "format": "png"
+    },
+    {
+      "name": "a PNG of 1 MiB and one byte",
+      "side": "image",
+      "hex": "89504e470d0a1a0a0000000d4948445200000280000001680806000000c7324a51",
+      "size": 1048577,
+      "valid": false,
+      "reason": "over 1 MiB (1,048,576 bytes)"
+    },
+    {
+      "name": "a PNG 4,097 wide",
+      "side": "image",
+      "hex": "89504e470d0a1a0a0000000d4948445200001001000000640806000000e9da9eab",
+      "size": 120000,
+      "valid": false,
+      "reason": "wider or taller than 4,096 pixels"
+    },
+    {
+      "name": "a PNG 4,097 tall",
+      "side": "image",
+      "hex": "89504e470d0a1a0a0000000d49484452000000640000100108060000004f059773",
+      "size": 120000,
+      "valid": false,
+      "reason": "wider or taller than 4,096 pixels"
+    },
+    {
+      "name": "a PNG 0 wide",
+      "side": "image",
+      "hex": "89504e470d0a1a0a0000000d4948445200000000000000640806000000a8ee315e",
+      "size": 120000,
+      "valid": false,
+      "reason": "a width or a height of 0"
+    },
+    {
+      "name": "a PNG 1 by 1",
+      "side": "image",
+      "hex": "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489",
+      "size": 70,
+      "valid": true,
+      "format": "png"
+    },
+    {
+      "name": "a PNG whose first chunk isn't IHDR",
+      "side": "image",
+      "hex": "89504e470d0a1a0a0000000467414d410000b18f00000000",
+      "size": 120000,
+      "valid": false,
+      "reason": "a PNG whose first chunk isn't IHDR"
+    },
+    {
+      "name": "a PNG signature cut short",
+      "side": "image",
+      "hex": "89504e470d0a1a",
+      "size": 120000,
+      "valid": false,
+      "reason": "neither a JPEG nor a PNG by its content"
+    },
+    {
+      "name": "a baseline JPEG, 1920 by 1080",
+      "side": "image",
+      "hex": "ffd8ffe000104a46494600010100000100010000ffc00011080438078003012200021101031101",
+      "size": 300000,
+      "valid": true,
+      "format": "jpeg"
+    },
+    {
+      "name": "a progressive JPEG after a DHT",
+      "side": "image",
+      "hex": "ffd8ffe000104a46494600010100000100010000ffc40014000000000000000000000000000000000000ffc200110804b0032003012200021101031101",
+      "size": 300000,
+      "valid": true,
+      "format": "jpeg"
+    },
+    {
+      "name": "a JPEG of 4,096 by 4,096 and 1 MiB exactly",
+      "side": "image",
+      "hex": "ffd8ffe000104a46494600010100000100010000ffc00011081000100003012200021101031101",
+      "size": 1048576,
+      "valid": true,
+      "format": "jpeg"
+    },
+    {
+      "name": "a JPEG 4,097 wide",
+      "side": "image",
+      "hex": "ffd8ffe000104a46494600010100000100010000ffc0001108000a100103012200021101031101",
+      "size": 300000,
+      "valid": false,
+      "reason": "wider or taller than 4,096 pixels"
+    },
+    {
+      "name": "a JPEG of height 0",
+      "side": "image",
+      "hex": "ffd8ffe000104a46494600010100000100010000ffc00011080000006403012200021101031101",
+      "size": 300000,
+      "valid": false,
+      "reason": "a width or a height of 0"
+    },
+    {
+      "name": "a JPEG of 1 MiB and one byte",
+      "side": "image",
+      "hex": "ffd8ffe000104a46494600010100000100010000ffc000110801e0028003012200021101031101",
+      "size": 1048577,
+      "valid": false,
+      "reason": "over 1 MiB (1,048,576 bytes)"
+    },
+    {
+      "name": "a JPEG with no frame header before its scan",
+      "side": "image",
+      "hex": "ffd8ffda0008010100003f00",
+      "size": 300000,
+      "valid": false,
+      "reason": "no frame header before the image data"
+    },
+    {
+      "name": "a JPEG header cut short",
+      "side": "image",
+      "hex": "ffd8ffe000104a46494600010100000100010000ffc0001108",
+      "size": 300000,
+      "valid": false,
+      "reason": "a frame header cut short"
+    },
+    {
+      "name": "a GIF",
+      "side": "image",
+      "hex": "4749463839614001f000",
+      "size": 50000,
+      "valid": false,
+      "reason": "neither a JPEG nor a PNG by its content"
+    },
+    {
+      "name": "a WebP",
+      "side": "image",
+      "hex": "52494646100000005745425056503820",
+      "size": 50000,
+      "valid": false,
+      "reason": "neither a JPEG nor a PNG by its content"
+    },
+    {
+      "name": "an SVG",
+      "side": "image",
+      "hex": "3c73766720786d6c6e733d22687474703a2f2f7777772e77332e6f72672f323030302f737667222f3e",
+      "size": 41,
+      "valid": false,
+      "reason": "neither a JPEG nor a PNG by its content"
+    },
+    {
+      "name": "empty",
+      "side": "image",
+      "valid": false,
+      "reason": "neither a JPEG nor a PNG by its content"
     }
   ]
 }

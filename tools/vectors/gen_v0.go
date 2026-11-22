@@ -281,6 +281,184 @@ type v1StrictFile struct {
 	Uncalled  []verdict          `json:"uncallableAddresses"`
 	Hellos    []helloVersionCase `json:"helloVersions"`
 	Languages []languageCase     `json:"languageCodes"`
+	Pages     []catalogPageCase  `json:"titlePages"`
+	Opaque    []verdict          `json:"opaqueKeyParts"`
+	Images    []catalogImageCase `json:"localImages"`
+}
+
+// catalogPageCases are pages of titles (spec/v0/catalog.md section 3.1).
+func catalogPageCases() []catalogPageCase {
+	s := func(t string) *string { return &t }
+	const last, after = "movie/tmdb/9000", "movie/tmdb/100"
+	whole := func(titles, size int, remain bool, next *string) catalogPage {
+		return catalogPage{Titles: titles, Bytes: size, Remain: &remain, After: after, LastKey: last, Next: next}
+	}
+	changes := func(titles, gone, size int, next *string) catalogPage {
+		return catalogPage{Changes: true, Titles: titles, Gone: gone, Bytes: size, After: after, LastKey: last, Next: next}
+	}
+	first := whole(5000, 2_000_000, true, s(last))
+	first.After = ""
+	empty := whole(0, 13, false, nil)
+	empty.LastKey = ""
+	emptyRemain := whole(0, 13, true, s(after))
+	emptyRemain.LastKey = ""
+	backwards := whole(10, 4_000, true, s("movie/tmdb/1"))
+	backwards.LastKey = "movie/tmdb/1"
+	equal := whole(10, 4_000, true, s(after))
+	equal.LastKey = after
+	gone := whole(10, 4_000, false, nil)
+	gone.Gone = 1
+	list := []struct {
+		name string
+		p    catalogPage
+	}{
+		{"the first page, full, titles remain", first},
+		{"5,000 titles and 3 MiB exactly, titles remain", whole(5000, catalogPageBytes, true, s(last))},
+		{"5,001 titles", whole(5001, 2_000_000, true, s(last))},
+		{"3 MiB and one byte", whole(4000, catalogPageBytes+1, true, s(last))},
+		{"4 MiB exactly: past the owning server's bound, within the caller's", whole(4000, catalogAnswerBytes, true, s(last))},
+		{"4 MiB and one byte: past the core's bound", whole(4000, catalogAnswerBytes+1, true, s(last))},
+		{"ended early by its size, titles remain", whole(1200, 3_100_000, true, s(last))},
+		{"a short page with a next is no end", whole(7, 3_000, true, s(last))},
+		{"5,000 titles, the last of the list: no next", whole(5000, 2_000_000, false, nil)},
+		{"5,000 titles, the last of the list, next set anyway", whole(5000, 2_000_000, false, s(last))},
+		{"a short last page", whole(42, 9_000, false, nil)},
+		{"titles remain, next absent", whole(300, 80_000, true, nil)},
+		{"titles remain, next empty", whole(300, 80_000, true, s(""))},
+		{"titles remain, next isn't the last key", whole(300, 80_000, true, s("movie/tmdb/8999"))},
+		{"an empty page after the last title", empty},
+		{"an empty page while titles remain", emptyRemain},
+		{"next before after", backwards},
+		{"next equal to after", equal},
+		{"gone in a whole-list answer", gone},
+		{"changes: 3,000 titles and 2,000 gone, more to come", changes(3000, 2000, 900_000, s(last))},
+		{"changes: 3,000 titles and 2,001 gone", changes(3000, 2001, 900_000, s(last))},
+		{"changes: 5,000 gone, none changed", changes(0, 5000, 600_000, s(last))},
+		{"changes: a short page with a next", changes(10, 0, 5_000, s(last))},
+		{"changes: the last page", changes(10, 3, 5_000, nil)},
+		{"changes: nothing changed", changes(0, 0, 40, nil)},
+		{"changes: 3 MiB and one byte", changes(900, 0, catalogPageBytes+1, s(last))},
+		{"changes: next empty", changes(10, 0, 5_000, s(""))},
+	}
+	var out []catalogPageCase
+	for _, x := range list {
+		ok, r := reason(catalogCheckPage(x.p))
+		out = append(out, catalogPageCase{Name: x.name, catalogPage: x.p, Valid: ok, Reason: r, Caller: catalogCallerStep(x.p)})
+	}
+	return out
+}
+
+// catalogOpaqueVerdicts are opaque parts of keys (spec/v0/catalog.md
+// section 4.2).
+func catalogOpaqueVerdicts() []verdict {
+	var out []verdict
+	for _, t := range []string{"q3Zp0Lw8", "a", "Z", "0", "_", "-", "A-z_09", strings.Repeat("x", 64), strings.Repeat("x", 65),
+		"", "a.b", "a/b", "a b", "a%20b", "a+b", "a=", "é", "a\tb", ".", "..", "x" + strings.Repeat("Y", 62) + "-"} {
+		ok, r := reason(catalogCheckOpaque(t))
+		out = append(out, verdict{Text: t, Valid: ok, Reason: r})
+	}
+	return out
+}
+
+// catalogImageCases are image calls, their answers and the images they
+// give (spec/v0/catalog.md section 4.4; spec/v0/media.md sections 1 and
+// 3.4).
+func catalogImageCases() []catalogImageCase {
+	var out []catalogImageCase
+	both := []string{"video", "music"}
+	offered := []catalogOffered{
+		{"movie/local/q3Zp0Lw8", true}, {"series/local/Hk2v9TnA", true}, {"movie/local/NoPic01", false},
+		{"series/local/Hk2v9TnA/s1", false}, {"movie/tmdb/949", false},
+		{"artist/local/Ar34x", true}, {"album/local/Ab12y", true},
+	}
+	req := func(name string, parts []string, body string) {
+		st, ty := catalogImageRequest(parts, offered, []byte(body))
+		out = append(out, catalogImageCase{Name: name, Side: "request", Parts: parts, Offered: offered, Body: body, Status: st, Type: ty})
+	}
+	req("a local film with an image", both, `{"title":"movie/local/q3Zp0Lw8"}`)
+	req("a local series with an image, video on only", []string{"video"}, `{"title":"series/local/Hk2v9TnA"}`)
+	req("a local artist with an image, music on only", []string{"music"}, `{"title":"artist/local/Ar34x"}`)
+	req("a local album with an image, an unknown member ignored", both, `{"title":"album/local/Ab12y","size":"big"}`)
+	req("a local film without an image", both, `{"title":"movie/local/NoPic01"}`)
+	req("a season of a local series", both, `{"title":"series/local/Hk2v9TnA/s1"}`)
+	req("a title that isn't local", both, `{"title":"movie/tmdb/949"}`)
+	req("a local title not offered to the caller", both, `{"title":"movie/local/Other99"}`)
+	req("a key in another case", both, `{"title":"movie/local/Q3ZP0LW8"}`)
+	req("a music title while only video is on", []string{"video"}, `{"title":"album/local/Ab12y"}`)
+	req("a video title while only music is on", []string{"music"}, `{"title":"movie/local/q3Zp0Lw8"}`)
+	req("no content part with local titles on", []string{}, `{"title":"movie/local/q3Zp0Lw8"}`)
+	req("no content part on, a malformed body", []string{}, `{}`)
+	req("title missing", both, `{}`)
+	req("title not a string", both, `{"title":949}`)
+	req("title null", both, `{"title":null}`)
+	req("title an array", both, `{"title":["movie/local/q3Zp0Lw8"]}`)
+	req("not an object", both, `["movie/local/q3Zp0Lw8"]`)
+	req("not JSON", both, `{"title":"movie/local/q3Zp0Lw8"`)
+	req("title twice", both, `{"title":"movie/local/q3Zp0Lw8","title":"movie/local/NoPic01"}`)
+	req("title in another case: an unknown member", both, `{"Title":"movie/local/q3Zp0Lw8"}`)
+
+	const root = "https://a.example.org/api/v1/stream/"
+	const proot = "https://a.example.org/media/api/v1/stream/"
+	ticket := strings.Repeat("Tk7_-", 4) + "Q"
+	ans := func(name, r, body string) {
+		t, err := catalogImageAnswer(r, []byte(body))
+		ok, why := reason(err)
+		out = append(out, catalogImageCase{Name: name, Side: "answer", StreamRoot: r, Body: body, Valid: &ok, Ticket: t, Reason: why})
+	}
+	url := func(u string) string { return fmt.Sprintf(`{"url":%q}`, u) }
+	ans("the exact form", root, url(root+ticket+"/image"))
+	ans("a stream root with a prefix", proot, url(proot+ticket+"/image"))
+	ans("a ticket of 1 character", root, url(root+"x/image"))
+	ans("a ticket of 64 characters", root, url(root+strings.Repeat("A", 64)+"/image"))
+	ans("a ticket of 65 characters", root, url(root+strings.Repeat("A", 65)+"/image"))
+	ans("an empty ticket", root, url(root+"/image"))
+	ans("a ticket with a dot", root, url(root+"a.b/image"))
+	ans("a ticket with a percent", root, url(root+"a%41/image"))
+	ans("another host", root, url("https://b.example.org/api/v1/stream/"+ticket+"/image"))
+	ans("http, not https", root, url("http://a.example.org/api/v1/stream/"+ticket+"/image"))
+	ans("the host in another case", root, url("https://A.example.org/api/v1/stream/"+ticket+"/image"))
+	ans("without the stream root's prefix", proot, url(root+ticket+"/image"))
+	ans("another name", root, url(root+ticket+"/file"))
+	ans("Image in another case", root, url(root+ticket+"/Image"))
+	ans("a slash after image", root, url(root+ticket+"/image/"))
+	ans("a query", root, url(root+ticket+"/image?x=1"))
+	ans("a fragment", root, url(root+ticket+"/image#x"))
+	ans("a part between ticket and image", root, url(root+ticket+"/x/image"))
+	ans("a relative url", root, url(ticket+"/image"))
+	ans("url absent", root, `{}`)
+	ans("url not a string", root, `{"url":1}`)
+	ans("url null", root, `{"url":null}`)
+	ans("not an object", root, `[]`)
+	ans("an unknown member ignored", root, `{"url":"`+root+ticket+`/image","expires":600}`)
+
+	img := func(name string, head []byte, size int) {
+		f, err := catalogCheckImage(head, size)
+		ok, why := reason(err)
+		out = append(out, catalogImageCase{Name: name, Side: "image", Hex: hex.EncodeToString(head), Size: size, Valid: &ok, Format: f, Reason: why})
+	}
+	notIHDR := append(append([]byte{}, catalogPNGSignature...), 0, 0, 0, 4, 'g', 'A', 'M', 'A', 0, 0, 0xb1, 0x8f, 0, 0, 0, 0)
+	img("a PNG, 640 by 360", catalogPNG(640, 360), 120_000)
+	img("a PNG of 4,096 by 4,096 and 1 MiB exactly", catalogPNG(4096, 4096), catalogImageBytes)
+	img("a PNG of 1 MiB and one byte", catalogPNG(640, 360), catalogImageBytes+1)
+	img("a PNG 4,097 wide", catalogPNG(4097, 100), 120_000)
+	img("a PNG 4,097 tall", catalogPNG(100, 4097), 120_000)
+	img("a PNG 0 wide", catalogPNG(0, 100), 120_000)
+	img("a PNG 1 by 1", catalogPNG(1, 1), 70)
+	img("a PNG whose first chunk isn't IHDR", notIHDR, 120_000)
+	img("a PNG signature cut short", catalogPNGSignature[:7], 120_000)
+	img("a baseline JPEG, 1920 by 1080", catalogJPEG(0xc0, 1920, 1080, false), 300_000)
+	img("a progressive JPEG after a DHT", catalogJPEG(0xc2, 800, 1200, true), 300_000)
+	img("a JPEG of 4,096 by 4,096 and 1 MiB exactly", catalogJPEG(0xc0, 4096, 4096, false), catalogImageBytes)
+	img("a JPEG 4,097 wide", catalogJPEG(0xc0, 4097, 10, false), 300_000)
+	img("a JPEG of height 0", catalogJPEG(0xc0, 100, 0, false), 300_000)
+	img("a JPEG of 1 MiB and one byte", catalogJPEG(0xc0, 640, 480, false), catalogImageBytes+1)
+	img("a JPEG with no frame header before its scan", []byte{0xff, 0xd8, 0xff, 0xda, 0, 8, 1, 1, 0, 0, 0x3f, 0}, 300_000)
+	img("a JPEG header cut short", catalogJPEG(0xc0, 640, 480, false)[:25], 300_000)
+	img("a GIF", []byte("GIF89a\x40\x01\xf0\x00"), 50_000)
+	img("a WebP", []byte("RIFF\x10\x00\x00\x00WEBPVP8 "), 50_000)
+	img("an SVG", []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`), 41)
+	img("empty", nil, 0)
+	return out
 }
 
 // addrBPrivate is server B's address once it can't be called.
@@ -350,6 +528,9 @@ func genV0Strict() []byte {
 			"uncallableAddresses: the address a server that sends inbound false must have, https://msfp-<26>.invalid, the 26 characters being 16 bytes in lowercase base32 with the unused bits zero (spec/v0/core.md section 5.2).",
 			"helloVersions: hello bodies (text) and what a receiver keeps of their versions (output: core, and each known part by name; spec/v0/core.md sections 2.3 and 10.2), or a bad body (valid false). A number that isn't an integer is valid I-JSON, and is ignored in a version list.",
 			"languageCodes: a media server's language code (text) and the tag a server sends for it (output), or none (valid false): an ISO 639-2 code, /B or /T, of a language with an ISO 639-1 code sent as that code, the rest kept, in BCP 47's case conventions; und, mul, zxx and mis not sent (spec/v0/catalog.md section 3, language tags; spec/v0/core.md section 2.5).",
+			"titlePages: pages of titles (spec/v0/catalog.md section 3.1). Input: changes (a changes answer or a whole-list one), titles and gone (how many keys the page holds), bytes (the answer body's size), remain (whole list: whether titles remain after the page on the owning server), after (the request's), lastKey (the page's last title key), next (absent when the answer has none). Output: valid (the owning server may send it: at most 5,000 keys, titles and gone together; at most 3 MiB, 3,145,728 bytes, of JSON; in a whole list, next is the last key exactly when titles remain), and caller: what the caller does with it whatever valid says: fail (past the core's 4 MiB, 4,194,304 bytes: core section 3), stop (next absent, empty, or not greater than after in byte order), or ask on.",
+			"opaqueKeyParts: the opaque parts of title keys, a local title's identifier or an extra's part after x/ (spec/v0/catalog.md section 4.2): 1 to 64 characters of A-Z a-z 0-9 _ -, compared byte for byte.",
+			"localImages: the image of a local title (spec/v0/catalog.md section 4.4), on three sides. request: the owning server's answer (status, type: the problem's type) to the image request body, given parts (the content parts on between the two servers) and offered (the titles it offers the caller, with whether their description says image true): 404 not-supported with no content part with local titles on; 400 invalid-request for a malformed body; 404 not-found for a title not offered, not local, of a part that is off, of a kind without an image (only films, series, artists and albums have one), or without an image; else 200. answer: the viewer's server's check of the answer body (body) against the owning server's stream root (streamRoot, spec/v0/media.md section 1): url exactly <stream root><ticket>/image, the ticket 1 to 64 characters of A-Z a-z 0-9 _ -; valid with the ticket, or dropped (valid false). image: the image's first bytes (hex) and its whole length (size): valid when size is at most 1 MiB (1,048,576 bytes), the content is a JPEG (FF D8 FF) or a PNG (the 8-byte signature), whatever any Content-Type, and the header gives a width and a height of 1 to 4,096 pixels (a PNG's IHDR, a JPEG's frame header SOF0 to SOF15 but DHT, JPG and DAC); format jpeg or png.",
 		},
 		Addresses: addressVerdicts(false),
 		Codes:     codeVerdicts(core0, false),
@@ -359,5 +540,8 @@ func genV0Strict() []byte {
 		Uncalled:  uncallableVerdicts(),
 		Hellos:    helloVersionCases(),
 		Languages: languageCases(),
+		Pages:     catalogPageCases(),
+		Opaque:    catalogOpaqueVerdicts(),
+		Images:    catalogImageCases(),
 	})
 }
