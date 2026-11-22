@@ -424,9 +424,7 @@ pair with each other.
 1. ~~**The exact size**~~ Decided 2026-11-22: **exact `size` in the
    catalog.** A file address needs it before play, and anyone who plays
    the copy gets the exact file anyway. `bitrateKbps` stays rounded.
-2. **Scan access's cap:** 32 MB per copy (Plex read 1 to 4 MB per file in
-   the test; the margin covers larger headers). Enough, or another
-   figure?
+2. ~~**Scan access's cap**~~ Decided 2026-11-22: **32 MB per copy**, kept.
 3. **Music queue size:** 5 next tracks under one playback.
 
 ## Recommendation
