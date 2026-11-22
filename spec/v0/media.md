@@ -10,8 +10,8 @@ the short tickets of a `previews` call, for preview sheets, and of an
 fetches and sizes are all here: [video](video.md#6-media) adds text and
 picture subtitles, fonts, seek-bar preview sheets and the image; what
 their bytes must be is video's to say. It needs only the
-[core](core.md); [playback](playback.md) gives the URLs, and says when a
-download, a scan or a restart may happen. Media is fetched with plain
+[core](core.md); [playback](playback.md) gives the tickets the URLs are
+built from, and says when a download, a scan or a restart may happen. Media is fetched with plain
 `GET` requests that carry the ticket only: they are not signed.
 
 The words "must", "must not" and "should" carry their usual meaning in
@@ -63,6 +63,11 @@ Every media URL is absolute, under the owning server's stream root:
 <stream root><ticket>/<name>
 ```
 
+**Built, never received.** Answers carry no URLs. The viewer's server
+builds every media URL itself from the owning server's stream root, a
+ticket an answer gave and one of the fixed names below, so that it never
+fetches an address a peer wrote.
+
 - `<ticket>` matches `^[A-Za-z0-9_-]{1,64}$`. It is the only credential:
   a bearer capability. The owning server makes each ticket from at least
   128 bits of a cryptographically secure random source, never from a
@@ -73,55 +78,52 @@ Every media URL is absolute, under the owning server's stream root:
   enough), and neither side writes tickets into logs, diagnostics or
   error messages. Each ticket is of one kind (section 4), and opens only
   the URLs of its kind.
-- The stream URL of a `play` answer has `stream.protocol` `hls`, with
-  `<name>` `master.m3u8` and `stream.mimeType`
-  `application/vnd.apple.mpegurl`; or `file`, with `<name>` `file` (the
-  copy as it is, all its tracks, read by byte ranges: section 3.2).
-  `file` serves only playback's `file` delivery; a `remux`, a
-  `transcode` and the baseline served without `delivery`
+- The stream of a playback is `master.m3u8` when the answer's `protocol`
+  is `hls`, and `file` when it is `file` (the copy as it is, all its
+  tracks, read by byte ranges: section 3.2). `file` serves only
+  playback's `file` delivery; a `remux`, a `transcode` and the baseline
+  served without `delivery`
   ([playback section 2.7](playback.md#27-delivery)) are served as `hls`.
   The `file` protocol is only for a copy of one file: a `delivery` `file`
   of a copy made of several parts
   ([playback section 1](playback.md#1-terms)) is refused with `409`
   `delivery-refused`. With `file`, the viewer's player selects
   `audioTrack` itself.
-- A content part adds URLs of its own under `<stream root><ticket>/`,
-  with a `<track>` name (the track's ID) where it needs one:
-  [video](video.md#6-media) adds subtitle, picture subtitle, font and
-  preview sheet URLs, and the image of a `local` title;
-  [music](music.md#52-the-queue) adds a stream for each track of a
-  queue, fetched as the main stream is (section 3). Their shapes, which
-  this part fetches as section 3.4 says (the queue's as section 3):
+- The content parts add names of their own: [video](video.md#6-media)
+  subtitle, picture subtitle, font and preview sheet URLs, and the image
+  of a `local` title; [music](music.md#52-the-queue) a stream for each
+  entry of a queue, fetched as the main stream is (section 3).
 
-| URL | What it serves |
-|-----|----------------|
-| `<stream root><ticket>/subtitles/<track>/<part>` | a stretch of a text track, as WebVTT, `<part>` from 0 to 9,999 |
-| `<stream root><ticket>/subtitles/<track>/whole` | a whole text track, as WebVTT |
-| `<stream root><ticket>/ass/<track>/<part>` | a stretch of an ASS or SSA track, as ASS, `<part>` from 0 to 9,999 |
-| `<stream root><ticket>/ass/<track>/whole` | a whole ASS or SSA track, as ASS |
-| `<stream root><ticket>/pictures/<track>/<part>` | a stretch of a picture track, as PGS, `<part>` from 0 to 9,999 |
-| `<stream root><ticket>/fonts/<n>` | font *n* of the copy, `<n>` from 0 to 63 |
-| `<stream root><ticket>/trickplay/<n>` | preview sheet *n*, `<n>` from 0 to 999 |
-| `<stream root><ticket>/image` | the image of a `local` title, under an `image` ticket |
-| `<stream root><ticket>/queue/<n>/file` | queue entry *n*'s stream as `file`, under the playback's ticket, `<n>` from 0 to 4 |
-| `<stream root><ticket>/queue/<n>/master.m3u8` | queue entry *n*'s stream as `hls`; the files its playlists name are under `<stream root><ticket>/queue/<n>/` |
+| What | URL, after `<stream root><ticket>/` | Opened when |
+|------|-------------------------------------|-------------|
+| the stream | `master.m3u8` (`hls`) or `file` (`file`) | always, under a playback's ticket |
+| a text track as WebVTT | `subtitles/<id>/<part>`, `subtitles/<id>/whole` | the answer's `subtitles` has an entry `<id>` of `form` `text` |
+| an ASS or SSA track as ASS | `ass/<id>/<part>`, `ass/<id>/whole` | that entry also has `ass` `true` |
+| a picture track as PGS | `pictures/<id>/<part>` | the answer's `subtitles` has an entry `<id>` of `form` `picture` |
+| font *n* | `fonts/<n>` | *n* from 0 to the answer's `fontCount` − 1 |
+| preview sheet *n* | `trickplay/<n>` | *n* below the sheet count of the copy's `previewLayout` in the catalog ([video section 5.5](video.md#55-seek-bar-previews)) |
+| queue entry *n*'s stream | `queue/<n>/file` (`file`) or `queue/<n>/master.m3u8` (`hls`); the files its playlists name under `queue/<n>/` | *n* the entry's place in the request's `queue`, 0 to 4, for an entry the answer kept |
+| a `local` title's image | `image` | under the ticket of `image`'s answer |
 
-A content part's answer gives a subtitle track by its **track URL**,
-without the last part: `<stream root><ticket>/subtitles/<track>`,
-`<stream root><ticket>/ass/<track>` or
-`<stream root><ticket>/pictures/<track>`. The viewer's server adds
-`/<part>` or, for the first two, `/whole`. Numbers in these URLs are
-decimal, without leading zeros.
+`<id>` is the track's ID (`s<n>`), `<part>` a number from 0 to 9,999.
+Numbers in these URLs are decimal, without leading zeros. **The owning
+server serves exactly these names**, under a ticket of the kind that
+opens them (section 4), and answers `404` to any other, and to a number
+past its count: a font at or past `fontCount`, a sheet at or past the
+sheet count, a subtitle track with no entry of that form, a queue entry
+it didn't prepare.
 
-The viewer's server refuses any URL that doesn't start with the owning
-server's stream root, or that names another ticket, or another file
-shape. `<name>` and `<track>` match `^[A-Za-z0-9._-]{1,64}$` and are
-never `.` or `..`, which a URL resolves as folders, not files. These
-checks apply to the URL's path split at `/` into its parts, compared
-exactly as sent: no part is decoded, normalized or resolved before the
-check, and a URL with an empty part, a `.` or `..` part, a `%`, a query or
-a fragment is refused. Test cases: `mediaNames` in
-[vectors/v0/strict.json](../../vectors/v0/strict.json).
+The names a playlist gives (section 3) are bare names: they match
+`^[A-Za-z0-9._-]{1,64}$` and are never `.` or `..`, which a URL resolves
+as folders, not files. The viewer's server checks a ticket and a track
+ID against their forms before it builds a URL with them, and the URLs
+it builds, split at `/` into their parts, are compared exactly as built:
+no part is decoded, normalized or resolved, and a URL with an empty
+part, a `.` or `..` part, a `%`, a query or a fragment is never fetched.
+Test cases: `mediaNames` in
+[vectors/v0/strict.json](../../vectors/v0/strict.json), and `names` in
+[vectors/v0/media.json](../../vectors/v0/media.json) (the names an
+owning server serves for a playback).
 
 ## 2. Requests
 
@@ -286,10 +288,13 @@ did:
 
 The viewer's server sets the `Content-Type` of what it relays itself:
 `application/vnd.apple.mpegurl` for playlists, and for what a content
-part adds the type section 3.4 gives. For the file and segments, it keeps
-a `video/*` or `audio/*` type made only of letters, digits and `.+-`,
+part adds the type section 3.4 gives. The file it relays with the copy's
+own `mediaType` from the catalog, whatever its top-level type, and as
+`application/octet-stream` when it has none. For segments, it keeps a
+`video/*` or `audio/*` type made only of letters, digits and `.+-`,
 which it sends lowercased, and sends `application/octet-stream` instead
-of any other.
+of any other. Test cases: `relayTypes` in
+[vectors/v0/media.json](../../vectors/v0/media.json).
 
 Test cases for sections 3.1 to 3.4 are in
 [vectors/v0/media.json](../../vectors/v0/media.json), beside video's
@@ -333,6 +338,15 @@ after `#EXT-X-STREAM-INF` and `#EXTINF`:
 | `master.m3u8` | `#EXTM3U`, `#EXT-X-VERSION`, `#EXT-X-INDEPENDENT-SEGMENTS`, `#EXT-X-STREAM-INF`, `#EXT-X-MEDIA` |
 | a media playlist it names | `#EXTM3U`, `#EXT-X-VERSION`, `#EXT-X-TARGETDURATION`, `#EXT-X-MEDIA-SEQUENCE`, `#EXT-X-PLAYLIST-TYPE`, `#EXT-X-INDEPENDENT-SEGMENTS`, `#EXTINF`, `#EXT-X-DISCONTINUITY`, `#EXT-X-ENDLIST`, `#EXT-X-MAP` |
 
+- **The stream served is described in the master playlist**, and only
+  there: every `#EXT-X-STREAM-INF` carries `BANDWIDTH`, `CODECS` (the
+  RFC 6381 strings of what is served) and, for a stream with video,
+  `RESOLUTION`; `VIDEO-RANGE` (`PQ` or `HLG`) when the picture served is
+  PQ or HLG; and `SUPPLEMENTAL-CODECS` when Dolby Vision is kept.
+- **Segments.** In `mp4` segments, HEVC is written with the `hvc1`
+  sample entry, and Dolby Vision with `dvh1` (`dav1` on AV1), parameter
+  sets out of band, in a remux and a transcode alike
+  ([playback section 2.7](playback.md#27-delivery)).
 - URIs are only in URI lines, in `#EXT-X-MAP`'s `URI` attribute, written
   `#EXT-X-MAP:URI="<name>"`, and in `#EXT-X-MEDIA`'s `URI` attribute.
   Each is a bare name (section 1).
@@ -340,7 +354,8 @@ after `#EXT-X-STREAM-INF` and `#EXTINF`:
   `GROUP-ID="audio"`, `NAME="<track ID>"` (the track's `a<n>`, as the
   catalog and `play` give it, never its title), `LANGUAGE="<tag>"` when
   the track has a language, `DEFAULT=YES` or `NO`, `AUTOSELECT=YES` or
-  `NO`, `CHANNELS="<n>"` when known, and `URI="<name>"`. At most 32 of
+  `NO`, `CHANNELS="<n>"` when known (`CHANNELS="16/JOC"` for an E-AC-3
+  track whose `objects` is `dolby-atmos`), and `URI="<name>"`. At most 32 of
   them, one with `DEFAULT=YES`. The viewer's server maps each rendition
   to its track by `NAME`, and names it to its viewer in its own words.
 - Every media playlist has `#EXT-X-TARGETDURATION`, an integer from 1 to
@@ -455,11 +470,12 @@ and a playback started by the first read). What it may rely on:
 It must not read the file to learn what it holds: the details come from
 the catalog only ([video section 3.2](video.md#32-copies)), since each read
 would start a playback on the owning server. Its media type is the
-container's, as section 3 says for the file.
+copy's `mediaType`, as section 3 says for the file.
 
 ### 3.4 Subtitles, fonts, sheets and images
 
-Each is read whole, without `Range`, within its size (section 2.4); then
+Each is fetched only at a name the answer opened (section 1), read
+whole, without `Range`, within its size (section 2.4); then
 checked as the content part says, by its content, whatever its
 `Content-Type`; then served at an address of the viewer's server's own,
 to the viewer playing it only. A viewer's server never hands the owning
@@ -467,9 +483,9 @@ server's URLs to the viewer.
 
 | What | URL (section 1) | Tickets | Answer | Relayed as |
 |------|-----------------|---------|--------|------------|
-| a text track as WebVTT, a stretch or whole | `subtitles/<track>/<part>`, `subtitles/<track>/whole` | playback, download | WebVTT, rebuilt ([video section 6.3](video.md#63-webvtt)) | `text/vtt; charset=utf-8` |
-| an ASS or SSA track as ASS, a stretch or whole | `ass/<track>/<part>`, `ass/<track>/whole` | playback, download | ASS, rebuilt ([video section 6.4](video.md#64-ass)) | `text/x-ass; charset=utf-8` |
-| a stretch of a picture track | `pictures/<track>/<part>` | playback, download | PGS (a VobSub or DVB track converted by the owning server), checked ([video section 6.5](video.md#65-picture-subtitles)) | `application/octet-stream` |
+| a text track as WebVTT, a stretch or whole | `subtitles/<id>/<part>`, `subtitles/<id>/whole` | playback, download | WebVTT, rebuilt ([video section 6.3](video.md#63-webvtt)) | `text/vtt; charset=utf-8` |
+| an ASS or SSA track as ASS, a stretch or whole | `ass/<id>/<part>`, `ass/<id>/whole` | playback, download | ASS, rebuilt ([video section 6.4](video.md#64-ass)) | `text/x-ass; charset=utf-8` |
+| a stretch of a picture track as PGS | `pictures/<id>/<part>` | playback, download | PGS (a VobSub or DVB track converted by the owning server), checked ([video section 6.5](video.md#65-picture-subtitles)) | `application/octet-stream` |
 | a font | `fonts/<n>` | playback, download | a TrueType or OpenType file ([video section 6.6](video.md#66-fonts)) | `font/ttf` or `font/otf` |
 | a preview sheet | `trickplay/<n>` | playback, previews | a JPEG ([video section 5.5](video.md#55-seek-bar-previews)) | `image/jpeg` |
 | the image of a `local` title | `image` | image | a JPEG or a PNG ([catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)) | `image/jpeg` or `image/png` |
@@ -484,9 +500,9 @@ server's URLs to the viewer.
   stretches, under a playback's or a download's ticket. An ASS or SSA
   track may be fetched as WebVTT, its styling flattened, or as ASS, in
   stretches or whole. Picture tracks come in stretches only.
-- **Fonts.** The fonts a copy's ASS tracks use, as the content part
-  lists them ([video section 6.6](video.md#66-fonts)), at most 64 per
-  copy, 64 MiB in all. The
+- **Fonts.** The fonts a copy's ASS tracks use, `fontCount` of them in
+  the answer ([video section 6.6](video.md#66-fonts)), at most 64 per
+  copy, each at most 10 MiB, 64 MiB in all. The
   viewer's server tells a font by its first four bytes: `00 01 00 00` or
   `true` is TrueType (`font/ttf`), `OTTO` is OpenType (`font/otf`); any
   other is refused, a font collection (`ttcf`) included. A viewer's
@@ -494,8 +510,9 @@ server's URLs to the viewer.
 - **Sheets** are fetched under the playback's ticket, or under the
   ticket of a `previews` call with a `versionId`
   ([video section 5.6](video.md#56-previews)), which opens that copy's
-  sheets only. The owning server answers `404` for a sheet number at or
-  past the sheet count.
+  sheets only. Their count is the catalog's: ⌈`tileCount` / (`columns` ×
+  `rows`)⌉ of the copy's `previewLayout`. The owning server answers
+  `404` for a sheet number at or past it.
 - **Images.** The image of a `local` title
   ([video section 3.10](video.md#310-the-description-of-a-local-title),
   [music section 4](music.md#4-pictures)) is fetched under the ticket of
@@ -512,11 +529,11 @@ its kind opens:
 
 | Kind | Given by | Opens | Works until |
 |------|----------|-------|-------------|
-| playback | `play`, to watch ([playback](playback.md#2-play)) | the stream (`hls` or `file`) and what the content parts add for it | its playback ends (below) |
+| playback | `play`, to watch ([playback](playback.md#2-play)) | the stream (`hls` or `file`), the names section 1 opens for it (subtitles, fonts, sheets, queue entries) | its playback ends (below) |
 | download | `play` with `purpose: download` ([playback section 7](playback.md#7-downloads)) | the stream, its subtitles and fonts | its playback ends, without the 2-minute rule; at most 24 hours after the answer (section 4.1) |
-| scan | `play` with `purpose: scan` and `delivery: file` ([playback section 8](playback.md#8-scan-access)) | `file` only, by ranges, within the pairing's `scanBytes` (section 4.2) | its playback ends (below); at most 10 minutes after the answer |
-| previews | a `previews` call ([video section 5.6](video.md#56-previews)) | the sheets its answer lists | 10 minutes after the answer |
-| image | an `image` call ([catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)) | the image its answer gives | 10 minutes after the answer |
+| scan | `play` with `purpose: scan` and `delivery: file` ([playback section 8](playback.md#8-scan-access)) | `file` only, by ranges, within the scan answer's `scanBytes` (section 4.2) | its playback ends (below); at most 10 minutes after the answer |
+| previews | a `previews` call ([video section 5.6](video.md#56-previews)) | the sheets of the copy it names, by its `previewLayout` | 10 minutes after the answer |
+| image | an `image` call ([catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)) | the `image` of the title it names | 10 minutes after the answer |
 
 A playback's ticket works while its playback is live. The playback ends,
 and the ticket with it, when:
@@ -564,10 +581,12 @@ part of a copy, outside a watched playback
   A fetch without one is answered `416`.
 - **The cap.** The owning server counts the body bytes it sends under
   the ticket, a byte sent twice counted twice. Together, they never pass
-  the `scanBytes` it sends in `limits`
-  ([playback section 5](playback.md#5-limits)), or 4 MiB (4,194,304
-  bytes) when it sends none, per scan ticket (a scan is of one copy); the
-  pairing's `scansPerDay` bounds the total. A range that would pass the cap is served as a `206` cut short
+  the scan answer's `scanBytes`
+  ([playback section 8](playback.md#8-scan-access)), 4 MiB (4,194,304
+  bytes) to 1 GiB (1,073,741,824 bytes), per scan ticket (a scan is of
+  one copy); an answer without it, or with one out of range, gives the
+  floor, 4 MiB, the value the caller counts on. The pairing's
+  `scansPerDay` bounds the total. A range that would pass the cap is served as a `206` cut short
   at the cap (its *end* earlier than asked, as section 2.1 allows); a
   range that starts once the cap is spent is answered `416`.
 - **Pace.** The owning server serves at most 2 of a scan's fetches at
@@ -639,15 +658,15 @@ out of this part on 2026-11-17):
 proposal gives no number or form; they may change as implementations
 show):
 
-7. **URL forms**: `subtitles/<track>/whole`, `ass/<track>/<part>` and
-   `ass/<track>/whole`, `fonts/<n>` (0 to 7, 0 to 63 since proposal 17)
-   and `image` (section 1).
+7. **URL forms**: `subtitles/<id>/whole`, `ass/<id>/<part>` and
+   `ass/<id>/whole`, `fonts/<n>` (0 to 7; below `fontCount` since
+   proposal 17) and `image` (section 1).
    The forms of every URL a content part adds are here; video says only
    what their bytes are.
 8. **Sizes**: a whole text track 16 MiB; a font 10 MiB, an image 1 MiB
    and the scan cap 32 MiB, reading the proposal's MB as MiB
-   (sections 2.4 and 4.2). Since proposal 17, the scan cap is the owning
-   server's `scanBytes`, 4 MiB to 1 GiB.
+   (sections 2.4 and 4.2). Since proposal 17, the scan cap is the scan
+   answer's `scanBytes`, 4 MiB to 1 GiB.
 9. **Tickets**: a `local` title's image comes under an `image` ticket,
    of 10 minutes; a scan ticket follows a playback's 2-minute rule, and
    lasts 10 minutes at most (section 4).
@@ -666,11 +685,25 @@ show):
 14. **`405`** for `HEAD` comes with `Allow: GET`, and answers every
     other method but `GET` too (section 2.2).
 
-**Proposal 17** (adopted 2026-11-22): `scanBytes`, 64 fonts a copy, the
-`HEAD` rule kept without a product's reason, and the answer's
+**Proposal 17** (adopted 2026-11-22): URLs built from the ticket, the
+owning server serving exactly their names, the copy's `mediaType` for
+the relayed file, the master playlist's attributes and `hvc1` in `mp4`
+segments, the scan cap in the scan's answer, 64 fonts a copy, the `HEAD`
+rule kept without a product's reason, and the answer's
 `audioRenditions` deciding the renditions. Settled while msfp-go was
 written (2026-11-22):
 
 15. **A segment's `206` with `*` as its total** is a failed fetch when it
     answers a `bytes=-<count>` range: its *start* can't be checked
     (section 2.1).
+
+Proposal 17, written in on 2026-11-22: choices where its text gave no
+form, to be confirmed:
+
+16. **`RESOLUTION`** is required only for a stream with video: an
+    audio-only stream has no picture to describe (section 3.1).
+17. **No new check for the master playlist's attributes**: the viewer's
+    server's steps (section 3.1) don't refuse a playlist that lacks them;
+    the conformance suite checks owning servers.
+18. **Segments keep their own type rule** (section 3): only the file is
+    relayed with the copy's `mediaType`.

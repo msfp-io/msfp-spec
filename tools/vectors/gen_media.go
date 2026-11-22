@@ -63,8 +63,29 @@ type mediaScanCase struct {
 	ContentRange string `json:"contentRange"`
 }
 
+// mediaNameCase is a name under a ticket and whether the owning server
+// serves it.
+type mediaNameCase struct {
+	Name   string      `json:"name"`
+	Ticket mediaTicket `json:"ticket"`
+	Text   string      `json:"text"`
+	Valid  bool        `json:"valid"`
+	Reason string      `json:"reason,omitempty"`
+}
+
+// mediaRelayCase is what the viewer's server relays the file or a segment
+// as.
+type mediaRelayCase struct {
+	Name   string `json:"name"`
+	What   string `json:"what"`
+	Value  string `json:"value"`
+	Output string `json:"output"`
+}
+
 type v1MediaFile struct {
 	About       []string          `json:"about"`
+	Names       []mediaNameCase   `json:"names"`
+	RelayTypes  []mediaRelayCase  `json:"relayTypes"`
 	WebVTT      []vttCase         `json:"webvtt"`
 	ASS         []vttCase         `json:"ass"`
 	PGS         []verdict         `json:"pgs"`
@@ -272,7 +293,7 @@ func mediaPlaylist(body string) string {
 
 // masterPlaylist is a master playlist with the given renditions.
 func masterPlaylist(media string) string {
-	return "#EXTM3U\n#EXT-X-VERSION:7\n" + media + "#EXT-X-STREAM-INF:BANDWIDTH=5000000,AUDIO=\"audio\"\nv0.m3u8\n"
+	return "#EXTM3U\n#EXT-X-VERSION:7\n" + media + "#EXT-X-STREAM-INF:BANDWIDTH=5000000,CODECS=\"avc1.640028,mp4a.40.2\",RESOLUTION=1920x1080,AUDIO=\"audio\"\nv0.m3u8\n"
 }
 
 func rendition(id string) string {
@@ -338,6 +359,10 @@ func hlsVerdicts() []verdict {
 		{"EXTINF without a comma", mediaPlaylist("#EXTINF:6\nseg0.ts\n")},
 		// Step 10.
 		{"a master playlist with an audio rendition", masterPlaylist(rendition("a1"))},
+		{"a PQ stream: VIDEO-RANGE", "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-STREAM-INF:BANDWIDTH=20000000,CODECS=\"hvc1.2.4.L153.B0,ec-3\",RESOLUTION=3840x2160,VIDEO-RANGE=PQ\nv0.m3u8\n"},
+		{"Dolby Vision kept: SUPPLEMENTAL-CODECS", "#EXTM3U\n#EXT-X-VERSION:10\n#EXT-X-STREAM-INF:BANDWIDTH=20000000,CODECS=\"hvc1.2.4.L153.B0,mp4a.40.2\",SUPPLEMENTAL-CODECS=\"dvh1.08.06/db1p\",RESOLUTION=3840x2160,VIDEO-RANGE=PQ\nv0.m3u8\n"},
+		{"an Atmos rendition: CHANNELS 16/JOC", masterPlaylist("#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"a1\",LANGUAGE=\"en\",DEFAULT=YES,AUTOSELECT=YES,CHANNELS=\"16/JOC\",URI=\"a1.m3u8\"\n")},
+		{"an audio-only stream: no RESOLUTION", "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-STREAM-INF:BANDWIDTH=192000,CODECS=\"mp4a.40.2\"\nv0.m3u8\n"},
 		{"32 audio renditions", masterPlaylist(renditions(32))},
 		{"33 audio renditions", masterPlaylist(renditions(33))},
 		{"a subtitles rendition", masterPlaylist("#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"s0\",URI=\"s0.m3u8\"\n")},
@@ -625,9 +650,105 @@ func fileAnswerCases() []mediaAnswerCase {
 	return cases
 }
 
+func nameCases() []mediaNameCase {
+	pb := mediaTicket{Kind: "playback", Protocol: "hls",
+		Subtitles: []playbackSubtitle{{ID: "s4", Form: "text", ASS: true}, {ID: "s5", Form: "text"}, {ID: "s6", Form: "picture"}},
+		FontCount: 3, SheetCount: 12, Queue: []string{"hls", "", "file"}, Names: []string{"v0.m3u8", "init.mp4", "seg0.mp4"}}
+	file := pb
+	file.Protocol = "file"
+	dl := file
+	dl.Kind = "download"
+	scan := mediaTicket{Kind: "scan", Protocol: "file"}
+	prev := mediaTicket{Kind: "previews", SheetCount: 12}
+	img := mediaTicket{Kind: "image"}
+	cases := []struct {
+		name string
+		t    mediaTicket
+		text string
+	}{
+		{"hls: the master playlist", pb, "master.m3u8"},
+		{"hls: a name its playlists give", pb, "seg0.mp4"},
+		{"hls: a name no playlist gave", pb, "seg1.mp4"},
+		{"hls: file, not its protocol", pb, "file"},
+		{"file: the file", file, "file"},
+		{"file: master.m3u8, not its protocol", file, "master.m3u8"},
+		{"a text track's stretch", pb, "subtitles/s4/0"},
+		{"a text track's last stretch", pb, "subtitles/s5/9999"},
+		{"a text track's stretch 10,000", pb, "subtitles/s5/10000"},
+		{"a text track whole", pb, "subtitles/s5/whole"},
+		{"a stretch with a leading zero", pb, "subtitles/s4/01"},
+		{"a text track as ASS, ass true", pb, "ass/s4/whole"},
+		{"a text track as ASS, ass absent", pb, "ass/s5/0"},
+		{"a picture track's stretch", pb, "pictures/s6/3"},
+		{"a picture track whole: pictures come in stretches only", pb, "pictures/s6/whole"},
+		{"a picture track as text", pb, "subtitles/s6/0"},
+		{"a text track as pictures", pb, "pictures/s4/0"},
+		{"a track the answer didn't list", pb, "subtitles/s7/0"},
+		{"a track URL without its part", pb, "subtitles/s4"},
+		{"font 0", pb, "fonts/0"},
+		{"the last font, fontCount - 1", pb, "fonts/2"},
+		{"a font at fontCount", pb, "fonts/3"},
+		{"a font with a leading zero", pb, "fonts/02"},
+		{"a sheet under the playback's ticket", pb, "trickplay/0"},
+		{"the last sheet", pb, "trickplay/11"},
+		{"a sheet at the sheet count", pb, "trickplay/12"},
+		{"queue entry 0, hls", pb, "queue/0/master.m3u8"},
+		{"queue entry 0, a name its playlists give", pb, "queue/0/seg0.mp4"},
+		{"queue entry 0 as file: not its protocol", pb, "queue/0/file"},
+		{"queue entry 1, not prepared", pb, "queue/1/master.m3u8"},
+		{"queue entry 2, file", pb, "queue/2/file"},
+		{"queue entry 3, past the queue", pb, "queue/3/file"},
+		{"queue entry 00", pb, "queue/00/master.m3u8"},
+		{"a name of no list", pb, "index.m3u8"},
+		{"a path under a name", pb, "fonts/0/x"},
+		{"a download's file", dl, "file"},
+		{"a download's subtitles", dl, "subtitles/s4/whole"},
+		{"a download's font", dl, "fonts/1"},
+		{"a download's sheet: not opened", dl, "trickplay/0"},
+		{"a download's queue: not opened", dl, "queue/2/file"},
+		{"a scan's file", scan, "file"},
+		{"a scan's subtitles: not opened", scan, "subtitles/s4/0"},
+		{"a previews ticket's sheet", prev, "trickplay/11"},
+		{"a previews ticket's sheet at the count", prev, "trickplay/12"},
+		{"a previews ticket's stream: not opened", prev, "master.m3u8"},
+		{"an image ticket's image", img, "image"},
+		{"an image ticket's file: not opened", img, "file"},
+		{"a playback ticket's image: not opened", pb, "image"},
+	}
+	var out []mediaNameCase
+	for _, c := range cases {
+		ok, r := reason(mediaServes(c.t, c.text))
+		out = append(out, mediaNameCase{Name: c.name, Ticket: c.t, Text: c.text, Valid: ok, Reason: r})
+	}
+	return out
+}
+
+func relayCases() []mediaRelayCase {
+	cases := []mediaRelayCase{
+		{Name: "the file of video/matroska", What: "file", Value: "video/matroska"},
+		{Name: "the file of audio/flac, a video title's copy too: the copy's own type", What: "file", Value: "audio/flac"},
+		{Name: "the file of video/vnd.dlna.mpeg-tts (M2TS)", What: "file", Value: "video/vnd.dlna.mpeg-tts"},
+		{Name: "the file of a type of another top level, kept", What: "file", Value: "application/mp4"},
+		{Name: "the file with no mediaType", What: "file", Value: ""},
+		{Name: "the file with a malformed mediaType: as none", What: "file", Value: "video/MP4"},
+		{Name: "a segment of video/mp2t", What: "segment", Value: "video/mp2t"},
+		{Name: "a segment of video/MP2T: lowercased", What: "segment", Value: "video/MP2T"},
+		{Name: "a segment with a parameter: dropped", What: "segment", Value: "video/mp4; codecs=\"avc1.640028\""},
+		{Name: "a segment of audio/aac", What: "segment", Value: "audio/aac"},
+		{Name: "a segment of text/html", What: "segment", Value: "text/html"},
+		{Name: "a segment of application/octet-stream", What: "segment", Value: "application/octet-stream"},
+		{Name: "a segment with an underscore", What: "segment", Value: "video/x_y"},
+		{Name: "a segment without a type", What: "segment", Value: ""},
+	}
+	for i := range cases {
+		cases[i].Output = mediaRelayType(cases[i].What, cases[i].Value)
+	}
+	return cases
+}
+
 func scanCases() []mediaScanCase {
 	const big, huge = 1 << 30, 4 << 30
-	const rec = 32 << 20 // the recommended scanBytes
+	const rec = 32 << 20 // the suggested scan cap
 	cases := []mediaScanCase{
 		{Name: "a first read", ScanBytes: rec, Sent: 0, Range: "bytes=0-65535", Size: big},
 		{Name: "a read of exactly the cap", ScanBytes: rec, Sent: 0, Range: "bytes=0-33554431", Size: big},
@@ -641,8 +762,8 @@ func scanCases() []mediaScanCase {
 		{Name: "a read without Range", ScanBytes: rec, Sent: 0, Size: big},
 		{Name: "a malformed Range", ScanBytes: rec, Sent: 0, Range: "bytes=0-1,5-9", Size: big},
 		{Name: "a Range past the end", ScanBytes: rec, Sent: 0, Range: "bytes=1000-", Size: 1000},
-		{Name: "no scanBytes sent: the floor, 4 MiB, cuts the read", Sent: 0, Range: "bytes=0-33554431", Size: big},
-		{Name: "no scanBytes sent: past 4 MiB, refused", Sent: scanFloor, Range: "bytes=0-0", Size: big},
+		{Name: "an answer without scanBytes: the floor, 4 MiB, cuts the read", Sent: 0, Range: "bytes=0-33554431", Size: big},
+		{Name: "an answer without scanBytes: past 4 MiB, refused", Sent: scanFloor, Range: "bytes=0-0", Size: big},
 		{Name: "scanBytes at its floor, 4 MiB", ScanBytes: scanFloor, Sent: 0, Range: "bytes=0-", Size: big},
 		{Name: "scanBytes below its floor: the floor", ScanBytes: scanFloor - 1, Sent: 0, Range: "bytes=0-", Size: big},
 		{Name: "scanBytes at 1 GiB: a read of the whole cap", ScanBytes: scanTop, Sent: 0, Range: "bytes=0-", Size: huge},
@@ -659,16 +780,20 @@ func scanCases() []mediaScanCase {
 func genV0Media() []byte {
 	return encode(v1MediaFile{
 		About: []string{
-			"What a server does with media it serves or relays: spec/v0/media.md sections 2.1, 3.1, 3.2 and 4.2, and spec/v0/video.md sections 6.3 to 6.6, as revised by proposals 16 and 17. Generated by tools/vectors from the specification's rules.",
+			"What a server does with media it serves or relays: spec/v0/media.md sections 1, 2.1, 3, 3.1, 3.2 and 4.2, and spec/v0/video.md sections 6.3 to 6.6, as revised by proposals 16 and 17. Generated by tools/vectors from the specification's rules.",
+			"names: a name, the URL's path after <stream root><ticket>/, under a ticket the owning server knows (its kind; for a playback or a download what its answer opened: protocol, subtitles entries, fontCount, the sheet count of the copy's previewLayout, the protocol of each queue entry it prepared, empty for one it didn't, and the bare names its playlists give). valid: served; else 404, and reason says why (media sections 1 and 4).",
+			"relayTypes: what the viewer's server relays as Content-Type (output): the file (what: file) with the copy's mediaType from the catalog (value; empty: none), application/octet-stream when it has none; a segment (what: segment) from the owning server's Content-Type (value) (media section 3).",
 			"webvtt: a part (text, or hex when it isn't UTF-8), whether it is refused, and the rebuilt part (output) when it isn't (video section 6.3). The 5 MiB part and 16 MiB track sizes and the 50,000 and 200,000 cue counts are not exercised here.",
 			"ass: the same for ASS (video section 6.4). The 5 MiB and 16 MiB sizes and the 50,000 and 200,000 event counts are not exercised here.",
 			"pgs: PGS parts, in hex, as video section 6.5 checks them; times are zero. An empty part (no hex) is valid. The 64 MiB size and 20,000 objects are not exercised here.",
 			"fonts: tiny font headers, in hex (a table directory and 4 zero bytes per table, not real fonts), as video section 6.6 checks them; type is the media type a valid font is relayed as. The 10 MiB size is not exercised here.",
-			"hls: playlists as the viewer's server checks them (media section 3.1, steps 1 to 10); reason names the step that fails first. The playback of every case has the audio tracks a1 to a40. valid means the checks pass; tags outside the subset may still be dropped before serving. The 2 MiB size and 50,000 URIs are not exercised here.",
+			"hls: playlists as the viewer's server checks them (media section 3.1, steps 1 to 10); reason names the step that fails first. The master playlist's attributes (BANDWIDTH, CODECS, RESOLUTION, VIDEO-RANGE, SUPPLEMENTAL-CODECS, CHANNELS) are the owning server's to send; no step refuses a playlist without them. The playback of every case has the audio tracks a1 to a40. valid means the checks pass; tags outside the subset may still be dropped before serving. The 2 MiB size and 50,000 URIs are not exercised here.",
 			"ranges: a Range header against a file of size bytes (media section 2.1): start and end, both included, when it is well-formed and satisfiable; reason says malformed or not satisfiable, both answered 416.",
 			"fileAnswers: an answer of the owning server for the file (status and headers; an absent member is an absent header), for the Range the viewer's server sent (none when absent) and the copy's size and etag from the catalog, as the viewer's server checks it (media sections 2.1, 2.3 and 3.2): valid when it relays it.",
-			"scans: the owning server's answer to a fetch under a scan ticket that has already sent sent body bytes (media section 4.2), for the scanBytes it sends in limits (playback section 5; absent: none sent, and the cap is the floor, 4,194,304 bytes; out of 4 MiB to 1 GiB: the floor too): status 206 with its Content-Range, cut short at the cap, or 416 with Content-Range: bytes */<size>.",
+			"scans: the owning server's answer to a fetch under a scan ticket that has already sent sent body bytes (media section 4.2), for the scanBytes its scan answer states (playback section 8; absent: none, and the cap is the floor, 4,194,304 bytes, the value the caller counts on; out of 4 MiB to 1 GiB: the floor too): status 206 with its Content-Range, cut short at the cap, or 416 with Content-Range: bytes */<size>.",
 		},
+		Names:       nameCases(),
+		RelayTypes:  relayCases(),
 		WebVTT:      vttCases(),
 		ASS:         assCases(),
 		PGS:         pgsVerdicts(),
