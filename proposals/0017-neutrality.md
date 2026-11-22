@@ -1,6 +1,6 @@
 # Proposal 17: Neutrality
 
-Status: Adopted (2026-11-22); to be written into spec/v0 in one batch
+Status: Adopted (2026-11-22); written into spec/v0 in one batch
 with proposal 16's remaining work. Every choice below is the owner's,
 taken on 2026-11-22, except those listed in "Points to confirm".
 
