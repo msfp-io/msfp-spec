@@ -896,3 +896,23 @@ func catalogJPEGSize(b []byte) (int, int, error) {
 		i += n
 	}
 }
+
+// catalogLibraryKind is what a caller keeps of a library's kind
+// (catalog section 2.2): the kind when it is a token, known or not
+// (core section 8.5); nil when it is absent, not a string, or not a
+// token. library is the library's JSON object.
+func catalogLibraryKind(library []byte) (*string, error) {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(library, &m); err != nil || m == nil {
+		return nil, errors.New("not a JSON object")
+	}
+	raw, ok := m["kind"]
+	if !ok || len(raw) == 0 || raw[0] != '"' {
+		return nil, nil
+	}
+	var k string
+	if json.Unmarshal(raw, &k) != nil || !openToken(k) {
+		return nil, nil
+	}
+	return &k, nil
+}

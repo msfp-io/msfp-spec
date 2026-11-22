@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -18,13 +19,15 @@ func verifyRevCatalog(read func(string) []byte) []error {
 		Pages  []json.RawMessage `json:"titlePages"`
 		Opaque []verdict         `json:"opaqueKeyParts"`
 		Images []json.RawMessage `json:"localImages"`
+		Tokens []verdict         `json:"openTokens"`
+		Kinds  []json.RawMessage `json:"libraryKinds"`
 	}
 	if err := json.Unmarshal(raw, &f); err != nil {
 		bad("%v", err)
 		return errs
 	}
-	if len(f.Pages) == 0 || len(f.Opaque) == 0 || len(f.Images) == 0 {
-		bad("titlePages, opaqueKeyParts or localImages missing or empty")
+	if len(f.Pages) == 0 || len(f.Opaque) == 0 || len(f.Images) == 0 || len(f.Tokens) == 0 || len(f.Kinds) == 0 {
+		bad("titlePages, opaqueKeyParts, localImages, openTokens or libraryKinds missing or empty")
 	}
 
 	// Each case holds exactly the members its kind defines.
@@ -177,6 +180,65 @@ func verifyRevCatalog(read func(string) []byte) []error {
 		if sides[s] == 0 {
 			bad("localImages: no %s case", s)
 		}
+	}
+	// openTokens: each verdict again, by the helper and by a pattern of
+	// its own; the bounds 0, 1, 32 and 33 there, kept and dropped both.
+	tokenRE := regexp.MustCompile(`^[a-z0-9._-]{1,32}$`)
+	tokenLens := map[int]bool{}
+	tokenTexts := map[string]bool{}
+	var kept, dropped int
+	for _, v := range f.Tokens {
+		if tokenTexts[v.Text] {
+			bad("openTokens %q: twice", v.Text)
+		}
+		tokenTexts[v.Text] = true
+		ok, r := reason(openTokenReason(v.Text))
+		if ok != v.Valid || r != v.Reason || openToken(v.Text) != v.Valid || tokenRE.MatchString(v.Text) != v.Valid {
+			bad("openTokens %q: the file says valid=%v %q, the rules give %v %q", v.Text, v.Valid, v.Reason, ok, r)
+		}
+		tokenLens[len(v.Text)] = true
+		if v.Valid {
+			kept++
+		} else {
+			dropped++
+		}
+	}
+	if !tokenLens[0] || !tokenLens[1] || !tokenLens[32] || !tokenLens[33] || kept == 0 || dropped == 0 {
+		bad("openTokens: no case of 0, 1, 32 or 33 characters, or none kept or dropped")
+	}
+
+	// libraryKinds: the kind kept, derived again; kept kinds are tokens.
+	var kindKept, kindAbsent int
+	for _, b := range f.Kinds {
+		var c libraryKindCase
+		if err := json.Unmarshal(b, &c); err != nil {
+			bad("libraryKinds: %v", err)
+			continue
+		}
+		seen("libraryKinds", c.Name)
+		members("libraryKinds "+c.Name, b, []string{"name", "library"}, []string{"kind"})
+		if checkIJSON([]byte(c.Library)) != nil {
+			bad("libraryKinds %q: library isn't I-JSON", c.Name)
+		}
+		k, err := catalogLibraryKind([]byte(c.Library))
+		if err != nil {
+			bad("libraryKinds %q: %v", c.Name, err)
+			continue
+		}
+		switch {
+		case (k == nil) != (c.Kind == nil), k != nil && *k != *c.Kind:
+			bad("libraryKinds %q: the file and the rules differ", c.Name)
+		case k != nil && !tokenRE.MatchString(*k):
+			bad("libraryKinds %q: a kept kind that isn't a token", c.Name)
+		}
+		if c.Kind != nil {
+			kindKept++
+		} else {
+			kindAbsent++
+		}
+	}
+	if kindKept == 0 || kindAbsent == 0 {
+		bad("libraryKinds: no kind kept, or none absent")
 	}
 	return errs
 }
