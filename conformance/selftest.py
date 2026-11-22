@@ -65,7 +65,18 @@ FAULTS = {
     "etag": ["PB18"],               # a download's answer whose etag isn't the catalog's (playback 2.3)
     "head": ["M4", "F4"],           # HEAD on media answered 404, not 405 (media 2.2)
     "growing": ["M2"],              # a media playlist without EXT-X-ENDLIST (media 3.1)
-    "scancap": ["PB22"],            # a scan's reads past 32 MiB served (media 4.2)
+    "scancap": ["PB22"],            # a scan's reads past its cap served (media 4.2)
+    "scanfloor": ["PB22"],          # scans cut at the 4 MiB floor, not at the scanBytes announced (playback 5)
+    "tokens": ["PB24"],             # an unknown delivery token refused with 400, not 409 (core 8.5)
+    "remux": ["PB24"],              # a remux to matroska served, not refused (playback 2.7: mpegts or mp4)
+    "baseline": ["PB4"],            # the file served without delivery (playback 2.7: the baseline is HLS)
+    "renditions": ["PB17"],         # audioRenditions true in the answer, none in the playlist (playback 2.3)
+    "oldnames": ["T1"],             # a copy's container mkv, MSFP's old name, not ffmpeg's matroska (video 3.5)
+}
+# Faults in what the spec only recommends since proposal 17: the checks
+# named must still pass (a recommended default is a note, never a failure).
+DEFAULTS = {
+    "lastcopy": ["PB9", "T1"],      # the last copy plays without versionId, not the first (playback 2.6)
 }
 
 
@@ -122,6 +133,12 @@ def vectors():
         expect("destinations", c.get("text", ""), c["valid"], check_destination(c.get("text", "")) is None)
     for c in st["uncallableAddresses"]:
         expect("uncallableAddresses", c.get("text", ""), c["valid"], check_uncallable_address(c.get("text", "")) is None)
+
+    for c in st["openTokens"]:
+        expect("openTokens", c.get("text", ""), c["valid"], copies.token(c.get("text")) is not None)
+    from msfpconf.content import library_kind
+    for c in st["libraryKinds"]:
+        expect("libraryKinds", c["name"], c.get("kind"), library_kind(copies.loads(c["library"])))
 
     keys = load("v0", "keys.json")
     K = {}
@@ -216,7 +233,8 @@ def vectors():
                                            c.get("contentRange"), c.get("contentLength"))
         expect("fileAnswers", c["name"], c["valid"], why is None)
     for c in media["scans"]:
-        expect("scans", c["name"], (c["status"], c["contentRange"]), mediarules.scan_answer(c["sent"], c.get("range"), c["size"]))
+        expect("scans", c["name"], (c["status"], c["contentRange"]), mediarules.scan_answer(c["sent"], c.get("range"), c["size"],
+                                                                                        c.get("scanBytes")))
 
     video = load("v0", "video.json")
     for group in ("titles", "extras", "localTitles"):
@@ -249,6 +267,19 @@ def vectors():
         except ValueError:
             out, ok = None, False
         expect("video previews", c["name"], (c["valid"], c.get("output")), (ok, out))
+    for c in video["fontURLs"]:
+        try:
+            out, ok = copies.dumps(copies.keep_fonts(copies.loads(c["text"]), video["streamRoot"])), True
+        except ValueError:
+            out, ok = None, False
+        expect("video fontURLs", c["name"], (c["valid"], c.get("output")), (ok, out))
+    for c in video["fontSets"]:
+        try:
+            n, total = copies.check_font_set(copies.loads(c["text"]))
+            out, ok = '{"fonts":%d,"bytes":%d}' % (n, total), True
+        except ValueError:
+            out, ok = None, False
+        expect("video fontSets", c["name"], (c["valid"], c.get("output")), (ok, out))
     bad += playback_vectors_ok(os.path.join(VEC, "v0", "playback.json"))
     bad += music_vectors_ok(os.path.join(VEC, "v0", "music.json"))
 
@@ -362,11 +393,19 @@ def main():
     status = {r.id: r.status for r in report.results}
     missed = ["%s (fault %s): %s" % (cid, f, status.get(cid, "not run")) for f, ids in FAULTS.items() for cid in ids
               if status.get(cid) != "fail"]
+    _, _, _, report2, suite2 = end_to_end(verbose, faults=list(DEFAULTS))
+    status2 = {r.id: r.status for r in report2.results}
+    missed += ["%s (default %s, only recommended): %s, should pass with a note" % (cid, f, status2.get(cid, "not run"))
+               for f, ids in DEFAULTS.items() for cid in ids if status2.get(cid) != "pass"]
+    if not any("versionId" in t for _, t in suite2.defaults):
+        missed.append("lastcopy: no note of the recommended default not followed")
     if missed:
         print("the fake server with deliberate faults: these checks should have failed and didn't:\n" + "\n".join(missed))
         return 1
-    print("with %d deliberate faults in the fake server, the %d checks aimed at them all failed (%d checks in %.0f s)"
-          % (len(FAULTS), sum(len(v) for v in FAULTS.values()), n, took))
+    print("with %d deliberate faults in the fake server, the %d checks aimed at them all failed (%d checks in %.0f s); "
+          "with %d recommended defaults not followed, the %d checks concerned passed, with notes"
+          % (len(FAULTS), sum(len(v) for v in FAULTS.values()), n, took, len(DEFAULTS),
+             sum(len(v) for v in DEFAULTS.values())))
     return 0
 
 
