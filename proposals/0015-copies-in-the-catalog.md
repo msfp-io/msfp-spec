@@ -1,6 +1,10 @@
 # Proposal 15: Copies in the catalog
 
-Status: Proposed (2026-11-21), for the owner's review.
+Status: Proposed (2026-11-21), under review: open points 1 to 5 and 7
+settled the same day, 6 open. On hold since 2026-11-21: it becomes part
+of one revision of the protocol, prepared from a survey of what other
+platforms need (Jellyfin, Emby, Plex, Kodi, Infuse, Swiftfin,
+Navidrome/Subsonic), applied everywhere at once.
 Touches: [video section 3](../spec/v0/video.md#3-titles) (a new member,
 `copies`, with chapters), [catalog section 3.1](../spec/v0/catalog.md#31-paging-and-ordering)
 (pages bounded by size too), [video section 5.5](../spec/v0/video.md#55-seek-bar-previews)
@@ -83,7 +87,8 @@ Copy:
 |-------|------|---------|
 | `id` | string | the copy's version ID: the same `versionId` `play` takes and gives ([playback section 2.3](../spec/v0/playback.md#23-the-answer)); with one copy, may be absent |
 | `name` | string, optional | its name, as `versions[].name` gives it ("4K HDR", "Director's cut") |
-| `durationMs` | integer | its length, all its parts; for an episode in a copy holding several (`with`), see open point 2 |
+| `durationMs` | integer | its length, all its parts; for an episode in a copy holding several (`with`), the episode's own length when the owning server knows it, the copy's otherwise |
+| `startMs` | integer, optional | for an episode in a copy holding several: where the episode starts in the copy, when the owning server knows it (as `play` starts there, [video section 5.2](../spec/v0/video.md#52-several-episodes-in-one-copy)); absent otherwise |
 | `container` | string | its container, from the list below |
 | `bitrateKbps` | integer, optional | its overall bitrate, rounded (section 3) |
 | `video` | stream, optional | its picture (below); absent for a copy whose picture isn't known |
@@ -301,29 +306,24 @@ MSFP is version 0, a draft: no version number changes.
 
 ## Open points
 
-1. **8 copies, 32 audio and 64 subtitle tracks**: enough? Box sets and
-   anime releases can carry many subtitle tracks.
-2. **Episodes in a copy holding several** (`with`): give the copy's
-   whole length, or the episode's share with its start (`startMs`, as
-   `play` already uses `EpisodeStartMs`)? The second is what a media
-   server needs for a correct running time, if the owning server knows
-   it.
-3. **Rounding**: 500 kbit/s and whole seconds enough to keep a release
-   from being picked out? Or drop `bitrateKbps` altogether (Jellyfin
-   uses it to decide on converting for a bandwidth cap, and can do
-   without)?
-4. **The plugin's spike**: does Jellyfin, with a plain remote source
-   whose streams are known, leave it alone outside playback (no probe at
-   scans, previews or chapters), and do jellyfin-web, the Android app and
-   Kodi then play it with seeking and track changes? To try before the
-   plugin's viewing side is rebuilt on this; the proposal stands either
-   way, since the length and versions are needed whatever the plugin
-   does.
-5. **`audio`, `subtitles` and `video`**: keep them for good, or drop
-   them once every implementation sends `copies`? Keeping them costs
-   little and keeps a light reader light.
+1. ~~**8 copies, 32 audio and 64 subtitle tracks**: enough?~~ Decided
+   2026-11-21: kept.
+2. ~~**Episodes in a copy holding several**: the copy's whole length, or
+   the episode's share?~~ Decided 2026-11-21: the episode's share
+   (`startMs` and its own `durationMs`) when known, the copy's length
+   otherwise.
+3. ~~**Rounding**: enough, or drop `bitrateKbps`?~~ Decided 2026-11-21:
+   kept as written (bitrate down to 500 kbit/s, length to the second).
+4. ~~**The plugin's spike**~~ Not a protocol point: step 5 of the
+   plugin's plan (the playback hand-over), after this proposal.
+5. ~~**`audio`, `subtitles` and `video`**: keep them or drop them?~~
+   Agreed 2026-11-21: one source of truth. The summary goes, and `copies`
+   becomes required for films and episodes, with a small required core
+   (version ID, length, track languages); the details stay optional.
+   MSFP is a draft and both implementations are ours: now is the time.
 6. **Chapters** (section 5): 256 and 64 characters enough?
-7. **Previews before a first play** (section 6): (a) or (b)?
+7. ~~**Previews before a first play** (section 6): (a) or (b)?~~ Decided
+   2026-11-21: (a), the call `previews`.
 
 ## Recommendation
 
