@@ -374,6 +374,13 @@ func verifyAll(read func(string) []byte) []error {
 	if opened, err := openMail(mustX25519(priv), sealed, info, aad); err != nil || string(opened) != str(m, "opened") {
 		bad("v0/groups.json: the mail doesn't open to opened with crypto/hpke: %v", err)
 	}
+	// The revision of version 0 (proposal 16): each part checks its own
+	// vectors in its own file (verify_rev_<part>.go).
+	errs = append(errs, verifyRevCatalog(read)...)
+	errs = append(errs, verifyRevVideo(read)...)
+	errs = append(errs, verifyRevMusic(read)...)
+	errs = append(errs, verifyRevMedia(read)...)
+	errs = append(errs, verifyRevPlayback(read)...)
 	return errs
 }
 
