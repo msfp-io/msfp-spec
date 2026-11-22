@@ -205,7 +205,7 @@ sources use.
 ### Colour: ffmpeg's names to H.273
 
 `colour` carries ITU-T H.273 code points
-([video section 3.3](video.md#33-streams-and-tracks)). ffprobe prints
+([video section 3.6](video.md#36-colour-and-dynamic-range)). ffprobe prints
 ffmpeg's names for them (`color_primaries`, `color_transfer`,
 `color_space`); each name stands for one code point. `unknown`,
 `unspecified` and `reserved` are left out, as is any value 2.
@@ -261,7 +261,7 @@ data or the SEI itself.
 
 `codecs` is the stream's RFC 6381 string, required for `h264`, `hevc`,
 `av1` and `vp9` on video and `aac` and `dts` on audio
-([video section 3.3](video.md#33-streams-and-tracks)). Two ways to
+([video section 3.5](video.md#35-names)). Two ways to
 build it.
 
 **From the file's records** (exact). In MP4 the sample entry names the
@@ -270,7 +270,8 @@ level, its bytes 1 to 3), `hvcC` (profile space, tier, profile,
 compatibility flags, constraint bytes, level), `av1C` (profile, level,
 tier, bit depth, monochrome, chroma subsampling), `vpcC` (profile,
 level, bit depth, chroma subsampling, colour), `esds` (the object type
-and, for AAC, the audio object type of its AudioSpecificConfig). A
+and, for AAC, the audio object type of its AudioSpecificConfig), `ddts`
+(the DTS flavour). A
 Matroska file's CodecPrivate holds the same records for H.264, HEVC and
 AV1, and the AudioSpecificConfig for AAC; VP9's CodecPrivate holds its
 profile, level, bit depth and chroma subsampling when the muxer wrote
@@ -294,7 +295,8 @@ enough; few libraries build RFC 6381 strings.
 MP4; elsewhere `avc1` and `hvc1` are sent. Media servers that keep less
 (Jellyfin keeps a profile name and a level) have known gaps: H.264
 High 10, 4:2:2 and 4:4:4, and HE-AAC v2, need the pixel format or the
-channel layout to name the right profile. On Dolby Vision, `codecs` is
+channel layout to name the right profile; many report HE-AAC v2 as
+HE-AAC, where the record tells. On Dolby Vision, `codecs` is
 the base codec's, with the base 4CC of the file's Dolby Vision entry
 (the [registry](../registry.md)'s table).
 
@@ -315,8 +317,9 @@ Where each codec stores the object layer, for `objects`
 
 A viewer's server whose players want Atmos in E-AC-3 named in the
 codecs string (Apple's players read `ec+3`) writes `ec+3` itself from
-`codecs` `ec-3` and `objects` `dolby-atmos`: `ec+3` isn't a registered
-code, and `codecs` never carries it.
+`codecs` `ec-3` and `objects` `dolby-atmos`, in an HLS `CODECS` too,
+beside `CHANNELS="16/JOC"` ([media section 3.1](media.md#31-hls-playlists)):
+`ec+3` isn't a registered code, and `codecs` never carries it.
 
 ### Track titles to roles and flags
 
@@ -342,7 +345,10 @@ sound.
 No stream carries its bitrate. The copy's overall rate, `size` × 8 /
 `durationMs`, in kbit/s, bounds every stream in it: a viewer's server
 that needs a bitrate for a stream (a device's cap, a transcode's
-target) uses it. On music it runs high when the file holds cover art.
+target) uses it, and an owning server compares it with the cap for
+`file` and `remux` ([playback section 2.2](playback.md#22-what-the-owning-server-does)).
+On music it runs high when the file holds cover art: a FLAC file with a
+large picture shows a higher rate than its audio has.
 
 ## Choosing, on the viewer's server
 
@@ -358,8 +364,8 @@ best first, and the first plays when `play` names none. A reasonable
 order: the copy of the greatest height first (for a picture wider than
 16:9, the height of a 16:9 picture as wide: a 3840 × 1600 film counts
 as 2160), then one with a high dynamic range before one without
-(`colour.transfer` 16 or 18, or a `dv` object), then the one with more
-`hdr` entries; between copies equal on all three, the server's own
+(`colour.transfer` 16 or 18, a `dv` object, or a non-empty `hdr`), then
+the one with more `hdr` entries; between copies equal on all three, the server's own
 order. A copy without `video` comes after those with one.
 
 ### The copy and the audio
@@ -412,6 +418,9 @@ only when the viewer's device can show none of its forms.
   file to list it, but a 4 MiB cap misses an MP4's `moov` box or
   Matroska's cues written at the end of a big file: a pool for scans is
   better set to 32 MiB.
+- **Plex's "extensive media analysis"** must be off for a library of a
+  peer's copies: tested, it reads every file whole, and when a read is
+  refused, overwrites the file's length with what it read.
 
 ## Video
 
@@ -425,84 +434,6 @@ media server's container and codec names are mapped by the owning server
 to media types and the [registry](../registry.md)'s tokens
 ([video section 3.5](video.md#35-names)); a producer reading ffprobe
 gets the codec and subtitle tokens as they are, from `codec_name`.
-
-**The order of copies** ([video section 3.7](video.md#37-the-order-of-copies)).
-A reasonable order, for an owning server, and for a viewer's server
-choosing without a better reason: the copy of the greatest height first
-(for a picture wider than 16:9, the height of a 16:9 picture as wide: a
-3840 × 1600 film counts as 2160), then one with a high dynamic range
-before one without (a `colour.transfer` of 16 or 18, or a non-empty
-`hdr`), then the one with more `hdr` entries; a copy without `video`
-after those with one.
-
-**Building `codecs`** ([video section 3.5](video.md#35-names)). ffprobe
-prints no RFC 6381 string: a producer builds it from the stream's
-fields, or from the file's own records (`avcC`, `hvcC`, `av1C`, `vpcC`,
-`esds`, `ddts`; in Matroska, the same records in `CodecPrivate`), which
-are exact.
-
-- H.264: `avc1.PPCCLL` (`avc3` when the file's sample entry is
-  `avc3`): `profile_idc`, the constraint flags (zero when unknown) and
-  `level_idc`, in hexadecimal. ffprobe's `level` 41 is `29`; High is
-  `64`, High 10 `6E`, High 4:2:2 `7A`, High 4:4:4 `F4`, Main `4D`,
-  Constrained Baseline `42E0`.
-- HEVC: `hvc1` or `hev1`, as the sample entry (ffprobe's
-  `codec_tag_string`) says, then `general_profile_idc`, the
-  compatibility flags in reverse bit order (only the profile's own bit
-  when unknown: Main `2`, Main 10 `4`), the tier and `general_level_idc`
-  (`L153` for level 5.1, Main tier), and the constraint bytes (`B0` for
-  most progressive streams), required for range extensions (profile 4
-  and above), where they carry the chroma format.
-- AV1: `av01.P.LLT.DD`: the profile, `seq_level_idx` on two digits, the
-  tier (`M` or `H`) and the bit depth on two digits; for a stream that
-  isn't 4:2:0, the long form with its mono flag and chroma subsampling.
-- VP9: `vp09.PP.LL.DD`, and the long form for profiles 1 and 3 (4:2:2,
-  4:4:4). ffprobe gives no VP9 level: a guess from the picture's size and
-  frame rate is enough, since consumers ignore it.
-- AAC: `mp4a.40.<object type>`: LC `2`, HE-AAC `5`, HE-AAC v2 `29`, LD
-  `23`, ELD `39`, xHE-AAC `42`. Media servers often report HE-AAC v2 as
-  HE-AAC: the record tells.
-- DTS: `dtsc` for core, ES and 96/24, `dtsh` for DTS-HD (High Resolution,
-  or Master Audio with a core), `dtsl` for Master Audio without a core,
-  `dtse` for Express.
-
-**Colour from ffmpeg's names** ([video section 3.6](video.md#36-colour-and-dynamic-range)).
-ffprobe prints H.273's values by name. `color_primaries`: `bt709` 1,
-`bt470m` 4, `bt470bg` 5, `smpte170m` 6, `smpte240m` 7, `film` 8, `bt2020`
-9, `smpte428` 10, `smpte431` 11, `smpte432` 12, `jedec-p22` 22.
-`color_transfer`: `bt709` 1, `gamma22` 4, `gamma28` 5, `smpte170m` 6,
-`smpte240m` 7, `linear` 8, `log100` 9, `log316` 10, `iec61966-2-4` 11,
-`bt1361e` 12, `iec61966-2-1` 13, `bt2020-10` 14, `bt2020-12` 15,
-`smpte2084` 16, `smpte428` 17, `arib-std-b67` 18. `color_space` (the
-matrix): `gbr` 0, `bt709` 1, `fcc` 4, `bt470bg` 5, `smpte170m` 6,
-`smpte240m` 7, `ycgco` 8, `bt2020nc` 9, `bt2020c` 10, `smpte2085` 11,
-`chroma-derived-nc` 12, `chroma-derived-c` 13, `ictcp` 14. `unknown`
-(2) isn't sent. `color_range` `tv` is `fullRange` false, `pc` true.
-ffprobe reports the VUI's transfer: for broadcast HLG, read the
-alternative transfer characteristics SEI too (its side data), which
-holds 18 where the VUI holds 14.
-
-**Object audio** ([video section 3.3](video.md#33-streams-and-tracks)).
-Where each codec stores it: Dolby Atmos in E-AC-3 is the JOC flag
-(`flag_ec3_extension_type_a` in `addbsi`, and the same flag in MP4's
-`dec3`); in TrueHD, four substreams and the top bit of `substream_info`
-in the major sync. DTS:X in DTS-HD Master Audio is an extension
-substream payload with the sync word `0x02000850` (`0xF14000D0` for IMAX
-Enhanced). Media servers often show these in a profile string ("Dolby
-TrueHD + Dolby Atmos", "DTS-HD MA + DTS:X"). Some players want `ec+3`
-rather than `ec-3` for E-AC-3 with Atmos: a viewer's server writes it
-from `ec-3` and `objects` `dolby-atmos` for them.
-
-**Track titles** ([video section 3.3](video.md#33-streams-and-tracks)).
-Tracks carry no title. An owning server maps what a good title says to
-the facts: "Commentary" to `role` `commentary`, "Audio description" to
-`description`, "SDH" or "CC" to `hearingImpaired`, "Forced" to `forced`
-when the file doesn't flag it. A title that is only the language's name,
-or a release group's, says nothing to map.
-
-**A stream's bitrate.** No stream carries its own: the copy's overall
-rate (`size` × 8 / `durationMs`) bounds every stream's. On music it is
-inflated by cover art.
 
 **Skip markers from other media servers**
 ([video section 3.4](video.md#34-chapters-and-skip-markers)). Credits
@@ -525,14 +456,6 @@ episode's TMDB numbers from its IMDb or TheTVDB ID: TMDB's lookup by
 external ID gives the series, the season number and the episode number.
 Once per episode, kept.
 
-**Choosing the subtitles** ([video section 5.4](video.md#54-choosing-the-subtitles)).
-A reasonable default for a viewer's server: a track the viewer chose
-wins, and "off" shows none; otherwise, a regular track in the viewer's
-subtitle language when there is one, else none; whatever is chosen, the
-forced track in the language of the audio played, when the copy has one.
-When the viewer's language matches both a regular track and a forced
-one, the regular one is shown.
-
 **Seek-bar previews** ([video section 5.5](video.md#55-seek-bar-previews)).
 A media server that keeps one image per interval (BIF files) has them
 tiled into sheets by the owning server. A set near 320 pixels wide is a
@@ -554,12 +477,6 @@ device plays more than the baseline. A media server's "direct stream"
 (video kept, audio converted) is a transcode with `videoCodec` `copy`;
 its HDR and Dolby Vision fallbacks are a `range`
 ([playback section 2.7](playback.md#27-delivery)).
-
-**A stream's bitrate.** No stream carries its own bitrate. The copy's
-overall rate, `size` × 8 / `durationMs`, bounds each stream's, and is
-what an owning server compares with the cap for `file` and `remux`
-([playback section 2.2](playback.md#22-what-the-owning-server-does)).
-On music it is inflated by cover art.
 
 **Overfin's requests.** Since 2026-11-16, an `audioTrack` that isn't a
 track of the copy counts as absent (before, the audio track was passed
@@ -595,14 +512,6 @@ change, open media responses included; each media request checks again.
 After a playback ends, it remembers why for an hour; `progress` gets
 `410` either way.
 
-**Plex and scan access.** Plex reaches a peer's titles as a viewer only
-through scan access: through a file system, it reads 1 to 4 MiB of a
-file to list it ([playback section 8](playback.md#8-scan-access)). A
-4 MiB cap misses an MP4 `moov`, or Matroska cues, at the end of a big
-file; 32 MiB covers most. Its "extensive media analysis" must be off
-for a library of a peer's copies: tested, it reads every file whole, and
-when a read is refused, overwrites the file's length with what it read.
-
 ## Media
 
 Notes for [media](media.md), not normative.
@@ -637,11 +546,6 @@ fetch, are new with
 [proposal 16](../../proposals/0016-version-0-revision.md) and still to
 build; so are the master playlist's attributes and `hvc1` in `mp4`
 segments of [proposal 17](../../proposals/0017-neutrality.md).
-
-**Atmos in a playlist.** Some players want `ec+3` in `CODECS` for an
-E-AC-3 track with Atmos. A viewer's server may write it from `ec-3` and
-the track's `objects` `dolby-atmos`, beside `CHANNELS="16/JOC"`
-([media section 3.1](media.md#31-hls-playlists)).
 
 **URLs from a ticket.** An engine builds the media URLs itself
 ([media section 1](media.md#1-the-urls)): what used to be URL checks
@@ -684,10 +588,6 @@ through the registry. ffprobe's `format_name` is a demuxer list
 codec token as ffprobe prints it. For AAC, ffprobe's `profile` (`LC`,
 `HE-AAC`, `HE-AACv2`) gives `codecs`' object type: `mp4a.40.2`,
 `mp4a.40.5`, `mp4a.40.29`.
-
-**The overall rate** (`size` × 8 / `durationMs`) of a track counts its
-embedded cover art: a FLAC file with a large picture shows a higher
-rate than its audio has.
 
 **R128 to ReplayGain.** An EBU R128 gain (Opus's `R128_TRACK_GAIN`,
 relative to −23 LUFS, in 1/256 dB) converts to ReplayGain 2.0's

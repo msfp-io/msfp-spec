@@ -291,7 +291,7 @@ owner's order of preference, at most 16; the `id` `play` takes as
 `versionId`; an exact `size`; an `etag` that changes whenever the copy's
 bytes change. `durationMs` is exact, as the owning server knows it,
 never rounded. `mediaType`, `codec` and `codecs` follow video's rules
-([video section 3.3](video.md#33-streams-and-tracks)): the file's media
+([video section 3.5](video.md#35-names)): the file's media
 type, a registry token, and an RFC 6381 string. A track's copy is one
 audio stream, so it carries these:
 
@@ -301,7 +301,7 @@ audio stream, so it carries these:
 | `durationMs` | integer | yes | its length in milliseconds, exact, 1 to 86,400,000 |
 | `mediaType` | string | yes | the file's media type ([core section 8.5](core.md#85-unknown-values)), as for video: `audio/flac`, `audio/mpeg`, `audio/mp4`, `audio/ogg`, `audio/wave`, `audio/matroska`… |
 | `codec` | string | yes | its audio codec, a token from the [registry](../registry.md) (`flac`, `mp3`, `aac`, `alac`, `opus`, `vorbis`, `pcm_s16le`…) |
-| `codecs` | string | for `aac` and `dts`; else no | its RFC 6381 codecs string (`mp4a.40.2`, `fLaC`, `Opus`, `ec-3`), 1 to 64 characters of `A–Z a–z 0–9 . + -`, registered codes only (video section 3.3) |
+| `codecs` | string | for `aac` and `dts`; else no | its RFC 6381 codecs string (`mp4a.40.2`, `fLaC`, `Opus`, `ec-3`), 1 to 64 characters of `A–Z a–z 0–9 . + -`, registered codes only (video section 3.5) |
 | `size` | integer | yes | its exact size in bytes, as for video |
 | `etag` | string | yes | its identity, as for video |
 | `sampleRate` | integer | no | in Hz, 8,000 to 768,000 |
