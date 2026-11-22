@@ -3,18 +3,21 @@
 **Not normative.** Nothing here is a rule. The specification names no
 product; this file does. It holds what the parts said of particular
 media servers and implementations (Overfin, Jellyfin, Plex, Kodi and
-others), suggested numbers, and advice on mapping a media server's names
-to the vocabularies MSFP uses. An implementation that does otherwise
-still conforms, as long as it follows the parts. It was made by
+others), suggested numbers, advice on mapping a media server's names to
+the vocabularies MSFP uses, and advice to viewer's servers on choosing
+what to play. An implementation that does otherwise still conforms, as
+long as it follows the parts. It was made by
 [proposal 17](../../proposals/0017-neutrality.md).
 
 **The principle.** The protocol carries facts in outside vocabularies
-(ffmpeg's names, RFC 6381, ITU-T H.273, the DASH role scheme,
-MusicBrainz, IANA media types) and open lists, with one rule for values
+(IANA media types, RFC 6381, ITU-T H.273, the DASH role scheme,
+MusicBrainz) and, where none exists, in the
+[MSFP registry](../registry.md), with open lists and one rule for values
 a receiver doesn't know ([core section 8.5](core.md#85-unknown-values)).
 Implementations map their media server's names to these; the protocol
-doesn't map for them. A new media server, codec or kind of library needs
-no change of the specification.
+doesn't map for them. A new media server or codec needs no change of the
+specification; a new codec is a registry entry. ffmpeg's names are where
+many registry tokens come from, not a vocabulary of the protocol.
 
 What Overfin does is said of its version at the time of writing; its
 code is the reference for what it does now.
@@ -23,10 +26,13 @@ code is the reference for what it does now.
 
 1. [Core](#core)
 2. [Catalog](#catalog)
-3. [Video](#video)
-4. [Playback](#playback)
-5. [Media](#media)
-6. [Music](#music)
+3. [Facts from a media server](#facts-from-a-media-server)
+4. [Choosing, on the viewer's server](#choosing-on-the-viewers-server)
+5. [Scans](#scans)
+6. [Video](#video)
+7. [Playback](#playback)
+8. [Media](#media)
+9. [Music](#music)
 
 ## Core
 
@@ -127,19 +133,24 @@ serves it there when the media server serves nothing at the root.
 
 ## Catalog
 
-### Library kinds
+### Library types
 
-A library's `kind` is open
-([catalog section 2](catalog.md#2-libraries)): a server sends its media
-server's kind, as a token. The examples the part gives (`movies`,
-`tvshows`, `music`, `mixed`) and the other kinds version 0 listed before
-it was opened (`musicvideos`, `homevideos`, `boxsets`, `books`,
-`photos`) are Jellyfin's collection types, which a Jellyfin server can
-send as they are. A media server with other names maps them to these
-where they mean the same (a library of films to `movies`, of series to
-`tvshows`, of music to `music`), and sends its own token otherwise. A
-caller that doesn't know a kind shows the library under a generic label
-and reads its titles by the kinds of their keys.
+A library carries no kind ([catalog section 2](catalog.md#2-libraries)):
+the keys of its titles say what it holds. A viewer's server whose media
+server wants a type for each library (Jellyfin's collection types
+`movies`, `tvshows`, `music`, `mixed`, say) works it out from the
+titles: films only, `movies`; series only, `tvshows`; music only,
+`music`; several, `mixed`. An empty library is typed by its first
+titles.
+
+### Other identifiers
+
+A film or a series keyed under `tmdb` carries no `ids`
+([catalog section 4.1](catalog.md#41-same-title-same-key)): a viewer's
+server that wants its IMDb or TheTVDB ID asks TMDB for the title's
+`external_ids`, once per title, kept. For a music track keyed under
+`mb`, MusicBrainz gives the recording's ISRCs from `mbrecording`, and the
+AcoustID service its AcoustIDs.
 
 ### Language codes
 
@@ -183,6 +194,224 @@ handed to image decoders that have a long history of flaws. Advice:
   same format, with no metadata carried over (EXIF, comments, colour
   profiles beyond what the picture needs): only the pixels reach them.
 - **Never pass the peer's bytes on**, and never show the peer's URL.
+
+## Facts from a media server
+
+How an owning server turns what its media server or ffprobe reports
+into the facts the parts ask for. The tokens are the
+[registry](../registry.md)'s; its crosswalk gives the names other
+sources use.
+
+### Colour: ffmpeg's names to H.273
+
+`colour` carries ITU-T H.273 code points
+([video section 3.3](video.md#33-streams-and-tracks)). ffprobe prints
+ffmpeg's names for them (`color_primaries`, `color_transfer`,
+`color_space`); each name stands for one code point. `unknown`,
+`unspecified` and `reserved` are left out, as is any value 2.
+
+| ffmpeg's name | H.273 | Field |
+|---------------|-------|-------|
+| `bt709` | 1 | primaries, transfer, matrix |
+| `bt470m` | 4 | primaries, transfer (also read `gamma22`) |
+| `bt470bg` | 5 | primaries, transfer (also read `gamma28`), matrix |
+| `smpte170m` | 6 | primaries, transfer, matrix |
+| `smpte240m` | 7 | primaries, transfer, matrix |
+| `film` | 8 | primaries |
+| `bt2020` | 9 | primaries |
+| `smpte428` (also read `smpte428_1`) | 10 | primaries |
+| `smpte431` | 11 | primaries |
+| `smpte432` | 12 | primaries |
+| `jedec-p22` (also read `ebu3213`) | 22 | primaries |
+| `linear` | 8 | transfer |
+| `log100` (also read `log`) | 9 | transfer |
+| `log316` (also read `log_sqrt`) | 10 | transfer |
+| `iec61966-2-4` | 11 | transfer |
+| `bt1361e` | 12 | transfer |
+| `iec61966-2-1` (also read `srgb`) | 13 | transfer |
+| `bt2020-10` | 14 | transfer |
+| `bt2020-12` | 15 | transfer |
+| `smpte2084` | 16 | transfer (PQ, HDR10's) |
+| `smpte428` | 17 | transfer |
+| `arib-std-b67` | 18 | transfer (HLG) |
+| `gbr` (also read `rgb`) | 0 | matrix |
+| `fcc` | 4 | matrix |
+| `ycgco` | 8 | matrix |
+| `bt2020nc` | 9 | matrix |
+| `bt2020c` | 10 | matrix |
+| `smpte2085` | 11 | matrix |
+| `chroma-derived-nc` | 12 | matrix |
+| `chroma-derived-c` | 13 | matrix |
+| `ictcp` | 14 | matrix |
+| `ipt-c2` | 15 | matrix |
+| `ycgco-re` | 16 | matrix |
+| `ycgco-ro` | 17 | matrix |
+
+ffprobe prints the first name; the others are spellings ffmpeg also
+reads. From libavutil's `pixfmt.h` and the names `av_color_*_name`
+gives; a name not here is mapped by the same file. ffprobe's `color_range` is
+`tv` for limited range (`fullRange: false`) and `pc` for full range
+(`fullRange: true`); `unknown` leaves `fullRange` out. ffprobe reads
+the VUI, and the container's colour where the stream has none; for the
+alternative transfer characteristics SEI (broadcast HLG often signals
+14 in the VUI and 18 there), an owning server reads the stream's side
+data or the SEI itself.
+
+### Building `codecs`
+
+`codecs` is the stream's RFC 6381 string, required for `h264`, `hevc`,
+`av1` and `vp9` on video and `aac` and `dts` on audio
+([video section 3.3](video.md#33-streams-and-tracks)). Two ways to
+build it.
+
+**From the file's records** (exact). In MP4 the sample entry names the
+4CC and its box holds the rest: `avcC` (profile, constraint flags and
+level, its bytes 1 to 3), `hvcC` (profile space, tier, profile,
+compatibility flags, constraint bytes, level), `av1C` (profile, level,
+tier, bit depth, monochrome, chroma subsampling), `vpcC` (profile,
+level, bit depth, chroma subsampling, colour), `esds` (the object type
+and, for AAC, the audio object type of its AudioSpecificConfig). A
+Matroska file's CodecPrivate holds the same records for H.264, HEVC and
+AV1, and the AudioSpecificConfig for AAC; VP9's CodecPrivate holds its
+profile, level, bit depth and chroma subsampling when the muxer wrote
+them, else the first frame's header gives them. On Matroska or MPEG-TS
+the string is the one the stream would have in ISO BMFF: `avc1`,
+`hvc1`, `av01`, `vp09`, `mp4a`. A small parser of these records is
+enough; few libraries build RFC 6381 strings.
+
+**From ffprobe** (`-show_streams`), where the records aren't read:
+
+| Codec | String | From ffprobe |
+|-------|--------|--------------|
+| `h264` | `avc1.PPCCLL`, hex | `profile` to `profile_idc`: Baseline and Constrained Baseline 66 (`42`), Main 77 (`4D`), Extended 88 (`58`), High 100 (`64`), High 10 110 (`6E`), High 4:2:2 122 (`7A`), High 4:4:4 Predictive 244 (`F4`); `CC`, the constraint flags, `00` when unknown (Constrained Baseline: `40`); `level` is `level_idc` (41 is `29`) |
+| `hevc` | `hvc1.P.F.TL.C` | `profile` to `general_profile_idc` (Main 1, Main 10 2, Main Still Picture 3, Rext 4); `F`, the compatibility flags, only the profile's own bit when unknown (`2` for Main, `4` for Main 10, `10` for Rext); `T` is `L` when the tier is unknown; `level` is `general_level_idc` (`L153`); the constraint bytes (`B0` on most streams), required from profile 4 on, come only from the records |
+| `av1` | `av01.P.LLT.DD` | `profile` (Main 0, High 1, Professional 2), `level` (`seq_level_idx`, two digits), tier `M` when unknown, bit depth from `pix_fmt` (`08`, `10`, `12`); a stream that isn't 4:2:0 takes the long form, with its chroma subsampling (`.0.110` is 4:2:0, `.0.100` 4:2:2, `.0.000` 4:4:4) and its colour |
+| `vp9` | `vp09.PP.LL.DD` | `profile` (`00` to `03`); the level, which ffprobe doesn't give, guessed from size and frame rate; bit depth from `pix_fmt`; a stream that isn't 4:2:0 takes the long form, with chroma subsampling `02` (4:2:2) or `03` (4:4:4) |
+| `aac` | `mp4a.40.A` | `profile` to the audio object type: LC 2, HE-AAC 5, HE-AACv2 29, LD 23, ELD 39, xHE-AAC 42 |
+| `dts` | `dtsc`, `dtsh`, `dtsl`, `dtse` | `profile`: DTS, DTS-ES and DTS 96/24 are `dtsc`; DTS-HD HRA and DTS-HD MA (with a core) `dtsh`; DTS Express `dtse`; a lossless stream with no core (Matroska's `A_DTS/LOSSLESS`) `dtsl` |
+
+`codec_tag_string` tells `avc1` from `avc3` and `hvc1` from `hev1` in
+MP4; elsewhere `avc1` and `hvc1` are sent. Media servers that keep less
+(Jellyfin keeps a profile name and a level) have known gaps: H.264
+High 10, 4:2:2 and 4:4:4, and HE-AAC v2, need the pixel format or the
+channel layout to name the right profile. On Dolby Vision, `codecs` is
+the base codec's, with the base 4CC of the file's Dolby Vision entry
+(the [registry](../registry.md)'s table).
+
+### Atmos and DTS:X: `objects`
+
+Where each codec stores the object layer, for `objects`
+([video section 3.3](video.md#33-streams-and-tracks)):
+
+- **E-AC-3** (Dolby Atmos, JOC): `flag_ec3_extension_type_a` in the
+  bitstream's `addbsi`; in MP4 the same flag in `dec3`. ffprobe prints
+  the profile "Dolby Digital Plus + Dolby Atmos".
+- **TrueHD** (Dolby Atmos): 4 substreams and the top bit of
+  `substream_info` set in the major sync. ffprobe: "Dolby TrueHD + Dolby
+  Atmos".
+- **DTS-HD MA** (DTS:X): an XLL payload with the sync word `0x02000850`
+  (DTS:X) or `0xF14000D0` (IMAX Enhanced). ffprobe: "DTS-HD MA + DTS:X"
+  and "DTS-HD MA + DTS:X IMAX".
+
+A viewer's server whose players want Atmos in E-AC-3 named in the
+codecs string (Apple's players read `ec+3`) writes `ec+3` itself from
+`codecs` `ec-3` and `objects` `dolby-atmos`: `codecs` never carries a
+`+`.
+
+### Track titles to roles and flags
+
+Tracks carry no titles. An owning server reads the flags first
+(Matroska's FlagCommentary, FlagVisualImpaired, FlagHearingImpaired,
+FlagForced and FlagOriginal; MP4's `kind` boxes), and only then, where
+a flag is missing, a track's title:
+
+| A title such as | Sent |
+|-----------------|------|
+| "Commentary", "Director's commentary" | `role` `commentary` |
+| "Audio description", "AD", "Descriptive" | audio `role` `description` |
+| "SDH", "CC", "Hearing impaired" | `hearingImpaired` `true` (never a `caption` role) |
+| "Forced", "Foreign parts only" | `forced` `true` (never a `forced-subtitle` role) |
+| "Easy reader" | subtitle `role` `easyreader` |
+| anything else (a release group, a language name, "English") | nothing |
+
+When it can't tell, it leaves `role` out: absent is the title's own
+sound.
+
+### A stream's bitrate
+
+No stream carries its bitrate. The copy's overall rate, `size` × 8 /
+`durationMs`, in kbit/s, bounds every stream in it: a viewer's server
+that needs a bitrate for a stream (a device's cap, a transcode's
+target) uses it. On music it runs high when the file holds cover art.
+
+## Choosing, on the viewer's server
+
+The viewer's server chooses the copy and the tracks
+([playback section 2.6](playback.md#26-choosing-the-copy-and-the-tracks)).
+What follows were once the owning server's recommended defaults; they
+are advice for the viewer's server now.
+
+### The order of copies
+
+The owning server lists a title's copies in its order of preference,
+best first, and the first plays when `play` names none. A reasonable
+order: the copy of the greatest height first (for a picture wider than
+16:9, the height of a 16:9 picture as wide: a 3840 × 1600 film counts
+as 2160), then one with a high dynamic range before one without
+(`colour.transfer` 16 or 18, or a `dv` object), then the one with more
+`hdr` entries; between copies equal on all three, the server's own
+order. A copy without `video` comes after those with one.
+
+### The copy and the audio
+
+A viewer's server picks, among the copies its device can play as they
+are, or the ones it will ask to convert:
+
+- **Languages.** Match the same tag first (`fr-CA` for `fr-CA`), then
+  the same base language (`fr` for `fr-CA`), without case; look for the
+  same tag in every copy before the base language in any (with `fr-CA`
+  asked, a later copy with `fr-CA` wins over an earlier one with `fr`).
+  For audio, match only the title's own sound: a track with no `role`,
+  or `main` or `dub`; never a commentary, a description or a role it
+  doesn't know.
+
+| Wanted | Copy |
+|--------|------|
+| a language a copy's audio matches | the first copy whose audio matches |
+| none, or no copy matches | the first copy |
+
+| Wanted | Audio |
+|--------|-------|
+| a language a track matches | that track |
+| none, or no track matches | the default audio: the track the file marks default, else its first audio track |
+
+It names both in the request (`versionId`, `audioTrack`), and shows
+what the answer says plays.
+
+### The subtitles
+
+| Wanted | Subtitles |
+|--------|-----------|
+| a track the viewer chose | that track, or none for "off" |
+| a language a regular track matches | that track (a regular one before a forced one) |
+| nothing, or no track matches | none, but the forced track below |
+
+Whatever is shown, the forced track in the language of the audio
+played, when the copy has one, is shown too. A track is fetched in the
+form the owning server serves it apart
+([video section 5.4](video.md#54-choosing-the-subtitles)), or burned in
+only when the viewer's device can show none of its forms.
+
+## Scans
+
+- **Plex as a viewer** reaches a peer's copies only through scan access
+  ([playback section 8](playback.md#8-scan-access)): it lists files by
+  reading them through a file system, then plays them.
+- **The cap.** The scan's answer states how many bytes its ticket may
+  read (`scanBytes`, 4 MiB to 1 GiB). Media servers read 1 to 4 MiB of a
+  file to list it, but a 4 MiB cap misses an MP4's `moov` box or
+  Matroska's cues written at the end of a big file: a pool for scans is
+  better set to 32 MiB.
 
 ## Video
 
