@@ -565,10 +565,24 @@ owning server gives one artist key per track.
 `Audio drama`, `Mixtape/Street`); an owning server sends them
 lowercased.
 
-**Container and codec names.** ffprobe's `format_name` is the demuxer's
-list (`mov,mp4,m4a,3gp,3g2,mj2`), not a muxer name: the owning server
-sends the one muxer name that fits the file (`mp4` for an MP4 or .m4a
-file). `codec_name` is sent as ffprobe prints it.
+**A track's members** (`artists`, `artistNames`, dates, genres): an
+owning server compares each with its album's and leaves out those that
+are equal. Most tracks of an album then carry none; a compilation's
+carry their own artists.
+
+**Media types and codecs.** A track's `mediaType` is read from the
+file's first bytes where the owning server can (`fLaC` gives
+`audio/flac`, `OggS` `audio/ogg`, an ISO BMFF `ftyp` such as `M4A `
+`audio/mp4`), else mapped from its media server's container name
+through the registry. ffprobe's `format_name` is a demuxer list
+(`mov,mp4,m4a,3gp,3g2,mj2`), not a media type. `codec_name` gives the
+codec token as ffprobe prints it. For AAC, ffprobe's `profile` (`LC`,
+`HE-AAC`, `HE-AACv2`) gives `codecs`' object type: `mp4a.40.2`,
+`mp4a.40.5`, `mp4a.40.29`.
+
+**The overall rate** (`size` × 8 / `durationMs`) of a track counts its
+embedded cover art: a FLAC file with a large picture shows a higher
+rate than its audio has.
 
 **R128 to ReplayGain.** An EBU R128 gain (Opus's `R128_TRACK_GAIN`,
 relative to −23 LUFS, in 1/256 dB) converts to ReplayGain 2.0's
@@ -577,12 +591,20 @@ reference as the value over 256, plus 5 dB.
 **Gapless playback** needs a format whose padding the player knows: the
 file as it is (FLAC, Opus, MP3 or AAC with its encoder delay tags),
 rather than AAC converted track by track, which usually adds a short
-silence at its start.
+silence at its start. With a queue, a viewer's server can ask `file`
+for the tracks its player plays and a conversion for the others only
+(music section 5.2).
 
-**Album art.** The Cover Art Archive serves a release's cover at
-`/release/<mbid>/front` and a release group's at
-`/release-group/<mbid>/front`, in sizes 250, 500 and 1200 pixels. It
-states no rate limit (checked 2026-11-17) but may answer `503`.
+**Album art.** A public source by MusicBrainz ID serves it, such as the
+Cover Art Archive: a release's cover at `/release/<mbid>/front` and a
+release group's at `/release-group/<mbid>/front`, in sizes 250, 500 and
+1200 pixels. It states no rate limit (checked 2026-11-17) but may
+answer `503`.
 
-**Lyrics times.** Jellyfin keeps lyric times as 100-nanosecond ticks:
-divide by 10,000 for milliseconds.
+**Lyrics.** OpenSubsonic's `structuredLyrics` also has `synced`,
+`offset`, `displayArtist` and `displayTitle`, which MSFP doesn't send. An
+owning server applies an offset (an LRC `[offset:]` tag, or
+OpenSubsonic's `offset`) to every `start` before sending; a viewer's
+server built on OpenSubsonic sets `synced` from the lines' `start`, and
+the display names from the track. Jellyfin keeps lyric times as
+100-nanosecond ticks: divide by 10,000 for milliseconds.

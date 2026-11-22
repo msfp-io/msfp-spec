@@ -23,17 +23,36 @@ import (
 
 var (
 	mbidForm        = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	isrcForm        = regexp.MustCompile(`^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$`)
 	musicOpaqueForm = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`) // catalog section 4.2
 	musicIDForm     = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`) // version IDs, etags, tickets
 	musicDateForm   = regexp.MustCompile(`^([0-9]{4})(?:-([0-9]{2})(?:-([0-9]{2}))?)?$`)
-	musicDayForm    = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
-	musicMediaName  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 	musicTypeForm   = regexp.MustCompile(`^[a-z0-9._/-](?:[a-z0-9 ._/-]{0,30}[a-z0-9._/-])?$`) // music section 3
 	musicCodecsForm = regexp.MustCompile(`^[A-Za-z0-9.-]{1,64}$`)                              // RFC 6381, video section 3.3
 
-	musicMethods = []string{"direct", "remux", "transcode"}
+	musicMethods    = []string{"direct", "remux", "transcode"}
+	musicDeliveries = []string{"file", "remux", "transcode"}
+	// A track's remux: MPEG-TS or fragmented MP4 segments, audio only
+	// (playback section 2.7).
+	musicRemuxTypes = []string{"audio/mp2t", "audio/mp4"}
 )
+
+// musicMediaType tells a media type as core section 8.5 defines it:
+// lowercase, exactly one /, no parameters, each half starting with a
+// letter or a digit, at most 127 characters of a-z 0-9 . + - _ /.
+// (Local to music until the parts' rules are merged.)
+func musicMediaType(s string) bool {
+	if len(s) < 3 || len(s) > 127 || strings.Count(s, "/") != 1 {
+		return false
+	}
+	for _, c := range []byte(s) {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '+' || c == '-' || c == '_' || c == '/') {
+			return false
+		}
+	}
+	top, sub, _ := strings.Cut(s, "/")
+	alnum := func(h string) bool { return h != "" && (h[0] >= 'a' && h[0] <= 'z' || h[0] >= '0' && h[0] <= '9') }
+	return alnum(top) && alnum(sub)
+}
 
 // musicType: a MusicBrainz release-group type as music section 3 sends
 // it: lowercased, 1 to 32 characters of a-z 0-9 space . _ - /, no space
@@ -194,15 +213,6 @@ func musicDate(s string) (int, bool) {
 	return y, true
 }
 
-// musicDay: a valid date YYYY-MM-DD (a copy's added, as for video).
-func musicDay(s string) bool {
-	if !musicDayForm.MatchString(s) {
-		return false
-	}
-	_, err := time.Parse("2006-01-02", s)
-	return err == nil
-}
-
 // musicTitle is what a caller keeps of a music title, in the order the
 // vectors write it.
 type musicTitle struct {
@@ -210,7 +220,6 @@ type musicTitle struct {
 	Kind           string            `json:"kind"`
 	Library        string            `json:"library"`
 	Name           string            `json:"name"`
-	SortName       string            `json:"sortName,omitempty"`
 	Artists        []string          `json:"artists,omitempty"`
 	ArtistNames    string            `json:"artistNames,omitempty"`
 	PrimaryType    string            `json:"primaryType,omitempty"`
@@ -230,15 +239,12 @@ type musicTitle struct {
 // musicCopy is what a caller keeps of a track's copy (music section 3.3).
 type musicCopy struct {
 	ID          string           `json:"id"`
-	Name        string           `json:"name,omitempty"`
 	DurationMs  int64            `json:"durationMs"`
-	Container   string           `json:"container"`
+	MediaType   string           `json:"mediaType"`
 	Codec       string           `json:"codec"`
 	Codecs      string           `json:"codecs,omitempty"`
 	Size        int64            `json:"size"`
 	Etag        string           `json:"etag"`
-	Added       string           `json:"added,omitempty"`
-	BitrateKbps *int64           `json:"bitrateKbps,omitempty"`
 	SampleRate  *int64           `json:"sampleRate,omitempty"`
 	BitDepth    *int64           `json:"bitDepth,omitempty"`
 	Channels    *int64           `json:"channels,omitempty"`
@@ -253,12 +259,11 @@ type musicReplayGain struct {
 	AlbumPeak *float64 `json:"albumPeak,omitempty"`
 }
 
-// musicIDKinds: the kind each scheme of ids is for (music section 3.1).
+// musicIDKinds: the kind each scheme of ids is for (music section 3.1),
+// on mb titles only.
 var musicIDKinds = map[string]string{
 	"mbreleasegroup": "album",
 	"mbrecording":    "track",
-	"isrc":           "track",
-	"acoustid":       "track",
 }
 
 // keepMusicTitle applies catalog section 3.3 and music section 3.2 to one
@@ -309,8 +314,6 @@ func keepMusicTitle(raw []byte, libraries []string) ([]byte, error) {
 		t.ArtistNames = cleanName(an, 512)
 	}
 	if kind == "album" {
-		sn, _ := text("sortName")
-		t.SortName = cleanName(sn, 256)
 		if pt, ok := text("primaryType"); ok && musicType(pt) {
 			t.PrimaryType = pt
 		}
@@ -381,13 +384,13 @@ func keepMusicTitle(raw []byte, libraries []string) ([]byte, error) {
 			t.Image = &b
 		}
 	}
-	if ids, ok := o["ids"].(map[string]any); ok {
+	if ids, ok := o["ids"].(map[string]any); ok && scheme == "mb" { // none on local titles
 		for s, val := range ids {
 			v, ok := val.(string)
 			if !ok || musicIDKinds[s] != kind {
 				continue
 			}
-			if (s == "isrc" && isrcForm.MatchString(v)) || (s != "isrc" && checkMBID(v) == nil) {
+			if checkMBID(v) == nil {
 				if t.IDs == nil {
 					t.IDs = map[string]string{}
 				}
@@ -399,12 +402,12 @@ func keepMusicTitle(raw []byte, libraries []string) ([]byte, error) {
 }
 
 // keepMusicCopies is music section 3.3's "what the caller keeps", copy
-// by copy: the first 8 kept, a repeat of a kept copy's id skipped.
+// by copy: the first 16 kept, a repeat of a kept copy's id skipped.
 func keepMusicCopies(list []any) []musicCopy {
 	var out []musicCopy
 	seen := map[string]bool{}
 	for _, e := range list {
-		if len(out) == 8 {
+		if len(out) == 16 {
 			break
 		}
 		o, ok := e.(map[string]any)
@@ -412,29 +415,25 @@ func keepMusicCopies(list []any) []musicCopy {
 			continue
 		}
 		id, _ := o["id"].(string)
-		container, okC := o["container"].(string)
+		mt, okT := o["mediaType"].(string)
 		codec, okK := o["codec"].(string)
 		etag, _ := o["etag"].(string)
 		dur := integerIn(o["durationMs"], 1, 86_400_000)
 		size := integerIn(o["size"], 1, 999_999_999_999_999)
-		// container and codec are open (core section 8.5): an unknown
-		// token is kept; a value that isn't a token is dropped, and the
-		// copy, missing a required member, skipped.
-		if !musicIDForm.MatchString(id) || seen[id] || dur == nil || !okC || !okK || !openToken(container) || !openToken(codec) || size == nil || !musicIDForm.MatchString(etag) {
+		// mediaType and codec are open (core section 8.5): an unknown
+		// value is kept; a malformed one is dropped, and the copy,
+		// missing a required member, skipped.
+		if !musicIDForm.MatchString(id) || seen[id] || dur == nil || !okT || !okK || !musicMediaType(mt) || !openToken(codec) || size == nil || !musicIDForm.MatchString(etag) {
 			continue
 		}
 		seen[id] = true
-		c := musicCopy{ID: id, DurationMs: *dur, Container: container, Codec: codec, Size: *size, Etag: etag}
+		c := musicCopy{ID: id, DurationMs: *dur, MediaType: mt, Codec: codec, Size: *size, Etag: etag}
+		// codecs: required for aac and dts, but missing or malformed it
+		// counts as absent and the copy stays (the viewer's server then
+		// doesn't play it as it is).
 		if cs, ok := o["codecs"].(string); ok && musicCodecsForm.MatchString(cs) {
 			c.Codecs = cs
 		}
-		if n, ok := o["name"].(string); ok {
-			c.Name = cleanName(n, 64)
-		}
-		if a, ok := o["added"].(string); ok && musicDay(a) {
-			c.Added = a
-		}
-		c.BitrateKbps = integerIn(o["bitrateKbps"], 1, 100_000) // exact
 		c.SampleRate = integerIn(o["sampleRate"], 8_000, 768_000)
 		c.BitDepth = integerIn(o["bitDepth"], 8, 32)
 		c.Channels = integerIn(o["channels"], 1, 64)
@@ -478,148 +477,140 @@ func musicNumberIn(v any, lo, hi float64, places int) *float64 {
 
 // --- The queue (music section 5.2) ---
 
+// musicAsked is one entry of a play request's queue, once the request
+// is accepted.
+type musicAsked struct {
+	title, versionID, delivery string
+}
+
 // musicCheckQueueRequest is what the owning server checks of a play
-// request's title and queue: nil means it accepts them.
+// request's title and queue: nil means it accepts them. Malformed
+// values are refused first (400), then deliveries the owning server
+// doesn't make (409 delivery-refused), as playback section 2.2's steps
+// go. The request's own delivery members are playback.json's, and an
+// entry's transcode targets too: here a transcode is only an object.
 func musicCheckQueueRequest(raw []byte) error {
+	_, err := musicQueueAsked(raw)
+	return err
+}
+
+// musicQueueAsked checks a play request's queue and returns its
+// entries, each with the delivery it takes (its own, else the
+// request's).
+func musicQueueAsked(raw []byte) ([]musicAsked, error) {
 	v, err := musicDecode(raw)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	o, ok := v.(map[string]any)
 	if !ok {
-		return errors.New("400: not an object")
+		return nil, errors.New("400: not an object")
 	}
 	title, ok := o["title"].(string)
 	if !ok || !musicKeyOf(title, "track") {
-		return errors.New("400: title isn't a track key")
+		return nil, errors.New("400: title isn't a track key")
 	}
+	own, _ := o["delivery"].(string) // the request's, judged by playback.json
 	q, present := o["queue"]
 	if !present {
-		return nil
+		return nil, nil
 	}
 	list, ok := q.([]any)
 	if !ok {
-		return errors.New("400: queue isn't an array")
+		return nil, errors.New("400: queue isn't an array")
 	}
 	if len(list) > 5 {
-		return fmt.Errorf("400: a queue of %d entries, more than 5", len(list))
+		return nil, fmt.Errorf("400: a queue of %d entries, more than 5", len(list))
 	}
+	var asked []musicAsked
+	var refused error // the first 409, returned once no entry is malformed
 	seen := map[string]bool{}
 	for i, e := range list {
-		s, ok := e.(string)
+		eo, ok := e.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("400: queue entry %d isn't an object", i)
+		}
+		s, ok := eo["title"].(string)
 		switch {
 		case !ok:
-			return fmt.Errorf("400: queue entry %d isn't a string", i)
+			return nil, fmt.Errorf("400: queue entry %d: title isn't a string", i)
 		case !musicKeyOf(s, "track"):
-			return fmt.Errorf("400: queue entry %d isn't a track key in canonical form", i)
+			return nil, fmt.Errorf("400: queue entry %d: title isn't a track key in canonical form", i)
 		case s == title:
-			return fmt.Errorf("400: queue entry %d is title itself", i)
+			return nil, fmt.Errorf("400: queue entry %d is title itself", i)
 		case seen[s]:
-			return fmt.Errorf("400: queue entry %d is a repeat", i)
+			return nil, fmt.Errorf("400: queue entry %d is a repeat", i)
 		}
 		seen[s] = true
+		a := musicAsked{title: s, delivery: own}
+		if vid, present := eo["versionId"]; present {
+			x, ok := vid.(string)
+			if !ok || !musicIDForm.MatchString(x) {
+				return nil, fmt.Errorf("400: queue entry %d: versionId isn't a version ID", i)
+			}
+			a.versionID = x
+		}
+		d, hasD := eo["delivery"]
+		if hasD {
+			x, ok := d.(string)
+			if !ok || !openToken(x) {
+				return nil, fmt.Errorf("400: queue entry %d: delivery isn't a token (core section 8.5)", i)
+			}
+			if !kindIn(x, musicDeliveries...) && refused == nil {
+				refused = fmt.Errorf("409 delivery-refused: queue entry %d: a delivery the owning server doesn't make", i)
+			}
+			a.delivery = x
+		}
+		entryD := ""
+		if hasD {
+			entryD = a.delivery
+		}
+		if mt, present := eo["mediaType"]; present {
+			x, ok := mt.(string)
+			switch {
+			case entryD != "remux":
+				return nil, fmt.Errorf("400: queue entry %d: mediaType without its own delivery remux", i)
+			case !ok || !musicMediaType(x):
+				return nil, fmt.Errorf("400: queue entry %d: mediaType isn't a media type (core section 8.5)", i)
+			case !kindIn(x, musicRemuxTypes...) && refused == nil:
+				refused = fmt.Errorf("409 delivery-refused: queue entry %d: a remux into %s, not audio/mp2t or audio/mp4", i, x)
+			}
+		} else if entryD == "remux" {
+			return nil, fmt.Errorf("400: queue entry %d: delivery remux without mediaType", i)
+		}
+		if tr, present := eo["transcode"]; present {
+			if entryD != "transcode" {
+				return nil, fmt.Errorf("400: queue entry %d: a transcode object without its own delivery transcode", i)
+			}
+			if _, ok := tr.(map[string]any); !ok {
+				return nil, fmt.Errorf("400: queue entry %d: transcode isn't an object", i)
+			}
+		}
+		asked = append(asked, a)
 	}
-	return nil
+	if refused != nil {
+		return nil, refused
+	}
+	return asked, nil
 }
 
+// musicQueueEntry is what the viewer's server keeps of an answer's
+// queue entry. It carries no URL: the viewer's server builds
+// <stream root><ticket>/queue/<n>/file or .../master.m3u8 itself, from
+// the playback's ticket and the entry's place n in the request's queue.
 type musicQueueEntry struct {
-	Title      string           `json:"title"`
-	VersionID  string           `json:"versionId"`
-	Method     string           `json:"method"`
-	Stream     musicQueueStream `json:"stream"`
-	DurationMs *int64           `json:"durationMs,omitempty"`
-}
-
-type musicQueueStream struct {
-	URL      string `json:"url"`
-	Protocol string `json:"protocol"`
-	MimeType string `json:"mimeType,omitempty"`
-}
-
-// musicStreamCheck checks an entry's stream as media section 1 says:
-// <stream root><ticket>/queue/<n>/<name>, under the playback's ticket, n
-// the entry's place in the request's queue (0 to 4, decimal, no leading
-// zeros), hls as master.m3u8 (its mimeType, when sent,
-// application/vnd.apple.mpegurl) or file as file; a remux or a transcode
-// served as hls, a delivery file as file.
-func musicStreamCheck(s musicQueueStream, mimeSet bool, root, ticket string, n int, method, delivery string) error {
-	if !strings.HasPrefix(s.URL, root) {
-		return errors.New("the url isn't under the stream root")
-	}
-	if strings.ContainsAny(s.URL, "%?#") {
-		return errors.New("a %, a query or a fragment in the url")
-	}
-	p := strings.Split(strings.TrimPrefix(s.URL, root), "/")
-	if len(p) != 4 || p[1] != "queue" || !musicMediaName.MatchString(p[3]) || p[3] == "." || p[3] == ".." {
-		return errors.New("the url isn't <stream root><ticket>/queue/<n>/<name>")
-	}
-	if p[0] != ticket {
-		return errors.New("the url names another ticket than the playback's")
-	}
-	if p[2] != strconv.Itoa(n) {
-		return fmt.Errorf("the url's <n> isn't %d, the entry's place in the request's queue", n)
-	}
-	switch s.Protocol {
-	case "hls":
-		if p[3] != "master.m3u8" {
-			return errors.New("an hls stream not named master.m3u8")
-		}
-		if mimeSet && s.MimeType != "application/vnd.apple.mpegurl" {
-			return errors.New("an hls stream of another mimeType")
-		}
-		if delivery == "file" {
-			return errors.New("delivery file served as hls")
-		}
-	case "file":
-		if p[3] != "file" {
-			return errors.New("a file stream not named file")
-		}
-		if method != "direct" {
-			return errors.New("a remux or a transcode served as file")
-		}
-	default:
-		return fmt.Errorf("protocol %q is neither hls nor file", s.Protocol)
-	}
-	return nil
-}
-
-// musicQueueAsked is the request's queue, once the request is accepted.
-func musicQueueAsked(request []byte) ([]string, string, error) {
-	if err := musicCheckQueueRequest(request); err != nil {
-		return nil, "", fmt.Errorf("the request: %v", err)
-	}
-	v, _ := musicDecode(request)
-	o := v.(map[string]any)
-	var asked []string
-	if q, ok := o["queue"].([]any); ok {
-		for _, e := range q {
-			asked = append(asked, e.(string))
-		}
-	}
-	delivery, _ := o["delivery"].(string)
-	return asked, delivery, nil
-}
-
-// musicPlaybackTicket is the ticket of a play answer's own stream URL,
-// <stream root><ticket>/<name>, or "" when it has none of that form.
-func musicPlaybackTicket(a map[string]any, root string) string {
-	so, _ := a["stream"].(map[string]any)
-	url, _ := so["url"].(string)
-	rest, ok := strings.CutPrefix(url, root)
-	tk, name, cut := strings.Cut(rest, "/")
-	if !ok || !cut || !musicIDForm.MatchString(tk) || (name != "file" && name != "master.m3u8") {
-		return ""
-	}
-	return tk
+	Title     string `json:"title"`
+	VersionID string `json:"versionId"`
+	Method    string `json:"method"`
+	Protocol  string `json:"protocol"`
 }
 
 // musicKeepQueueAnswer is what the viewer's server keeps of a play
-// answer's queue (an array, possibly empty), given its request and the
-// owning server's stream root.
-func musicKeepQueueAnswer(request, answer []byte, root string) ([]byte, error) {
-	asked, delivery, err := musicQueueAsked(request)
+// answer's queue (an array, possibly empty), given its request.
+func musicKeepQueueAnswer(request, answer []byte) ([]byte, error) {
+	asked, err := musicQueueAsked(request)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("the request: %v", err)
 	}
 	av, err := musicDecode(answer)
 	if err != nil {
@@ -629,8 +620,6 @@ func musicKeepQueueAnswer(request, answer []byte, root string) ([]byte, error) {
 	if !ok {
 		return nil, errors.New("the answer isn't an object")
 	}
-	want := map[string]string{"file": "direct", "remux": "remux", "transcode": "transcode"}[delivery]
-	ticket := musicPlaybackTicket(a, root) // "" when the answer's own stream names none: every entry dropped
 	kept := []musicQueueEntry{}
 	list, _ := a["queue"].([]any) // not an array: absent
 	next := 0                     // the first place of the request's queue an entry may take
@@ -645,35 +634,27 @@ func musicKeepQueueAnswer(request, answer []byte, root string) ([]byte, error) {
 		title, _ := o["title"].(string)
 		at := -1
 		for i := next; i < len(asked) && at < 0; i++ {
-			if asked[i] == title {
+			if asked[i].title == title {
 				at = i
 			}
 		}
+		if at < 0 {
+			continue
+		}
 		vid, _ := o["versionId"].(string)
 		method, _ := o["method"].(string)
-		so, okS := o["stream"].(map[string]any)
-		if at < 0 || !musicIDForm.MatchString(vid) || !kindIn(method, musicMethods...) || (want != "" && method != want) || !okS {
+		proto, _ := o["protocol"].(string)
+		d := asked[at].delivery
+		want := map[string]string{"file": "direct", "remux": "remux", "transcode": "transcode"}[d]
+		wantProto := "hls"
+		if d == "file" {
+			wantProto = "file"
+		}
+		if !musicIDForm.MatchString(vid) || (asked[at].versionID != "" && vid != asked[at].versionID) ||
+			!kindIn(method, musicMethods...) || (want != "" && method != want) || proto != wantProto {
 			continue
 		}
-		url, ok1 := so["url"].(string)
-		proto, ok2 := so["protocol"].(string)
-		mime, okM := so["mimeType"].(string)
-		_, mimeSet := so["mimeType"]
-		if !ok1 || !ok2 || (mimeSet && !okM) {
-			continue
-		}
-		s := musicQueueStream{URL: url, Protocol: proto, MimeType: mime}
-		if ticket == "" || musicStreamCheck(s, mimeSet, root, ticket, at, method, delivery) != nil {
-			continue
-		}
-		k := musicQueueEntry{Title: title, VersionID: vid, Method: method, Stream: s}
-		if d, ok := o["durationMs"].(json.Number); ok && checkInteger(d.String()) == nil {
-			if k.DurationMs = integerIn(d, 0, 86_400_000); k.DurationMs == nil {
-				zero := int64(0)
-				k.DurationMs = &zero
-			}
-		}
-		kept = append(kept, k)
+		kept = append(kept, musicQueueEntry{Title: title, VersionID: vid, Method: method, Protocol: proto})
 		next = at + 1
 	}
 	return musicEncode(kept), nil
@@ -708,13 +689,9 @@ type musicLyrics struct {
 }
 
 type musicLyricsSet struct {
-	Lang          string           `json:"lang,omitempty"`
-	Kind          string           `json:"kind"`
-	Synced        bool             `json:"synced"`
-	Offset        int64            `json:"offset"`
-	DisplayArtist string           `json:"displayArtist,omitempty"`
-	DisplayTitle  string           `json:"displayTitle,omitempty"`
-	Line          []musicLyricLine `json:"line"`
+	Lang string           `json:"lang,omitempty"`
+	Kind string           `json:"kind"`
+	Line []musicLyricLine `json:"line"`
 }
 
 type musicLyricLine struct {
@@ -723,7 +700,8 @@ type musicLyricLine struct {
 }
 
 // musicKeepLyrics is what the viewer's server keeps of a lyrics answer,
-// or why the fetch fails.
+// or why the fetch fails. A set is synced when every line left carries
+// start, plain when none does, skipped when they mix.
 func musicKeepLyrics(raw []byte) ([]byte, error) {
 	if len(raw) > 1<<20 {
 		return nil, errors.New("an answer past 1 MiB")
@@ -749,39 +727,40 @@ func musicKeepLyrics(raw []byte) ([]byte, error) {
 		if !ok {
 			continue
 		}
-		synced, ok := so["synced"].(bool)
-		if !ok {
-			continue
-		}
-		s := musicLyricsSet{Kind: "main", Synced: synced}
+		s := musicLyricsSet{Kind: "main"}
 		if l, ok := so["lang"].(string); ok && validTag(l) {
 			s.Lang = l
 		}
 		if k, ok := so["kind"].(string); ok && openToken(k) { // open (core section 8.5)
 			s.Kind = k
 		}
-		if off := integerIn(so["offset"], -600_000, 600_000); off != nil {
-			s.Offset = *off
-		}
-		da, _ := so["displayArtist"].(string)
-		s.DisplayArtist = cleanName(da, 512)
-		dt, _ := so["displayTitle"].(string)
-		s.DisplayTitle = cleanName(dt, 256)
+		// The lines left: objects whose value is a string.
 		lines, _ := so["line"].([]any)
-		var last int64
+		var left []map[string]any
+		withStart := 0
 		for _, le := range lines {
-			if len(s.Line) == 2000 {
-				break
-			}
 			lo, ok := le.(map[string]any)
 			if !ok {
 				continue
 			}
-			val, ok := lo["value"].(string)
-			if !ok {
+			if _, ok := lo["value"].(string); !ok {
 				continue
 			}
-			l := musicLyricLine{Value: cleanName(val, 512)}
+			left = append(left, lo)
+			if _, has := lo["start"]; has {
+				withStart++
+			}
+		}
+		if withStart != 0 && withStart != len(left) {
+			continue // a set mixing synced and plain lines
+		}
+		synced := withStart > 0
+		var last int64
+		for _, lo := range left {
+			if len(s.Line) == 2000 {
+				break
+			}
+			l := musicLyricLine{Value: cleanName(lo["value"].(string), 512)}
 			if synced {
 				st := integerIn(lo["start"], 0, 86_400_000)
 				if st == nil || *st < last {
