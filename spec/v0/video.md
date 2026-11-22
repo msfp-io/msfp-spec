@@ -864,7 +864,7 @@ and a number from 0 to 999 without leading zeros) is refused (`400`).
 viewer's server must play, in complete HLS, as
 [playback section 2.7](playback.md#27-delivery) says. For a copy with
 `video`: H.264 at most High profile and level 4.1, 8-bit 4:2:0,
-progressive, standard range in BT.709 (H.273 `primaries`, `transfer`
+progressive, SDR in BT.709 (H.273 `primaries`, `transfer`
 and `matrix` 1); AAC-LC, at most 2 channels, at most 48 kHz. For a copy
 with no `video` (an extra such as a theme song): the same AAC, audio
 only. It may leave a stream unchanged only when it is already within

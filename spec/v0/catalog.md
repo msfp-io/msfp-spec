@@ -184,8 +184,7 @@ rules give for it is itself, unchanged (`fr`, `fr-CA`, `yue`,
 `zh-Hant-TW`, `es-419`). Anything else is not a valid tag: `fre`
 (not yet converted), `fr-ca` or `FR` (another case), `e` (a tag is 2
 to 12 characters, its language 2 to 8 letters), `und`, `fr_CA`. Wherever a
-title or a track carries a language tag (video's tracks, music's lyrics,
-playback's tracks and `play`'s `audioLanguage` and `subtitleLanguage`),
+title or a track carries a language tag (video's tracks, music's lyrics),
 the receiver checks it is a valid tag, as its part says, and never
 converts it: an invalid one counts as absent in what it keeps, and
 refuses a request. Valid tags are compared byte for byte, or without
