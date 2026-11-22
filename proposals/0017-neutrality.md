@@ -1,12 +1,12 @@
 # Proposal 17: Neutrality
 
 Status: Adopted (2026-11-22); written into spec/v0 in one batch
-with proposal 16's remaining work. Amended 2026-11-23: format names from
+with proposal 16's remaining work. Amended 2026-11-22: format names from
 outside vocabularies and the registry instead of ffmpeg's (section 3.2),
 colour as H.273 numbers (3.3), seek-bar previews fetched only when used
 (3.7), and the points left open settled ("Points settled"); the
 amendment is not yet written into spec/v0. Every choice
-below is the owner's, taken on 2026-11-22 and 2026-11-23.
+below is the owner's, taken on 2026-11-22 and 2026-11-22.
 
 Amends [proposal 16](0016-version-0-revision.md) and reverses some of its
 decisions (listed below).
@@ -94,7 +94,7 @@ One rule, in the core, for every part:
 
 - A **token** is 1 to 32 characters of `a–z 0–9 . _ -`. Fields this
   proposal calls open take tokens unless they say otherwise.
-- A **media type** (amended 2026-11-23) is an IANA-form media type,
+- A **media type** (amended 2026-11-22) is an IANA-form media type,
   lowercase, with exactly one `/`, no parameters, at most 64 characters
   of `a–z 0–9 . + - _ /` (`video/mp4`, `application/ttml+xml`). It
   follows the token rules below: unknown ones are kept in facts and
@@ -156,7 +156,7 @@ Art Archive" (music 4), not "from the Cover Art Archive".
 
 #### 3.2 Format names: outside vocabularies and the registry (video 3.3, 3.5; music 3.3)
 
-Amended 2026-11-23. The first version took ffmpeg's names; ffmpeg is a
+Amended 2026-11-22. The first version took ffmpeg's names; ffmpeg is a
 product, and ffprobe doesn't even give the muxer name it asked for (its
 demuxer names are lists: `mov,mp4,m4a,3gp,3g2,mj2`, `matroska,webm`).
 Research: [format names](0017-format-names-research.md).
@@ -211,7 +211,7 @@ Research: [format names](0017-format-names-research.md).
 #### 3.3 HDR from the signal (video 3.3)
 
 - `colour` is the base fact: `primaries`, `transfer` and `matrix` as
-  **ITU-T H.273 code points**, integers 0 to 255 (amended 2026-11-23:
+  **ITU-T H.273 code points**, integers 0 to 255 (amended 2026-11-22:
   numbers, the standard's own form, not ffmpeg's names), and `range`
   (`tv` or `pc`, open). They are what the file stores (the video
   stream's VUI, Matroska's colour elements, MP4's `colr` box). HDR10 and
@@ -228,7 +228,7 @@ Research: [format names](0017-format-names-research.md).
 #### 3.4 Other bounds and facts (video 3.2, 3.3)
 
 - `copies`: at most **16**, for video titles and music tracks alike
-  (music too, 2026-11-23). `audioTracks` at most 32, `subtitleTracks` at
+  (music too, 2026-11-22). `audioTracks` at most 32, `subtitleTracks` at
   most 64, unchanged.
 - Video `bitDepth`: 1 to 16 (not only 8, 10, 12).
 - New, optional, on the video stream: `sampleAspect`, the sample (pixel)
@@ -269,7 +269,7 @@ Each becomes open, unknown values kept (section 1):
 
 #### 3.7 Seek-bar previews: fetched only when used (video 5.5, 5.6; media 1)
 
-Amended 2026-11-23. Proposal 16 has a viewer's server ask `previews` for
+Amended 2026-11-22. Proposal 16 has a viewer's server ask `previews` for
 every copy and fetch every sheet at once, to show previews from the first
 play. A library's previews can weigh tens of gigabytes; every paired
 server would download them all.
@@ -384,7 +384,7 @@ most 1 MiB. The DNL rule moves to "Decoding safely" (section 2).
   range, a caller counts on the floor, 4 MiB. The recommended default
   for owners is 32 MiB.
 - `play`'s answer for a scan states the **`scanBytes` that applies to
-  its ticket** (amended 2026-11-23): an owner sharing through a pairing
+  its ticket** (amended 2026-11-22): an owner sharing through a pairing
   and groups has one cap per pool, and only the owner knows which pool
   counted the scan. The announced `limits` stay a hint for planning.
 - The owning server cuts and refuses reads past its `scanBytes` as it
@@ -456,7 +456,7 @@ changes, section 3.7); the tiled sheets; the `tvdb` and
    decision 8.
 3. **ffmpeg's names for every format** (this proposal's first version).
    They cover every file a media server reads, but tie the protocol to a
-   product, and ffprobe gives no muxer name. Replaced on 2026-11-23 by
+   product, and ffprobe gives no muxer name. Replaced on 2026-11-22 by
    media types for containers and the registry for codecs (section
    3.2). No single outside vocabulary covers codecs and subtitles: RFC
    6381 codes miss ASS, PGS and VobSub and give two codes for one codec,
@@ -509,7 +509,7 @@ changes, section 3.7); the tiled sheets; the `tvdb` and
   extras as Jellyfin theme songs and videos, behind a setting. Med; most
   of the rest is proposal 16's migration (review A-1 to A-4).
 
-- **The 2026-11-23 amendment** (sections 3.2, 3.3, 3.7, 6.4) on work
+- **The 2026-11-22 amendment** (sections 3.2, 3.3, 3.7, 6.4) on work
   already done: the registry's codec and subtitle table with its
   crosswalk; `mediaType` and `brand` read from the file's first bytes
   (the engines' extension map goes); H.273 numbers; `objects`, subtitle
@@ -529,7 +529,7 @@ release.
 
 ## Points settled
 
-The details the owner's first answers left open, settled on 2026-11-23:
+The details the owner's first answers left open, settled on 2026-11-22:
 
 1. **`fps`**: a rational string, `"24000/1001"`. Kept.
 2. **Container**: the file's media type plus an optional `brand`, not an

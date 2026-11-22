@@ -1,7 +1,7 @@
 # MSFP format names: research for proposal 17, section 3.2
 
 Research behind [proposal 17](0017-neutrality.md) section 3.2. The owner
-decided afterwards (2026-11-23), so this report goes further than what
+decided afterwards (2026-11-22), so this report goes further than what
 was adopted in places: the container is the IANA media type with **no**
 `brand` field (the owner reads the brand to choose the media type);
 `codecs` has no `+`; codec, subtitle and `objects` tokens live in the
