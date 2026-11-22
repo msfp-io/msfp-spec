@@ -463,7 +463,7 @@ def music_vectors_ok(path):
                 bad.append("music queue request %s: %s" % (c["name"], check_queue_request(o)))
         else:
             try:
-                out, ok = dumps(keep_queue(loads(c["request"]), loads(c["text"]), v["streamRoot"])), True
+                out, ok = dumps(keep_queue(loads(c["request"]), loads(c["text"]), v.get("streamRoot", ""))), True  # no streamRoot since proposal 17: mismatches until the update
             except ValueError as e:
                 out, ok = str(e), False
             if ok != c["valid"] or (ok and out != c["output"]):

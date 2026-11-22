@@ -136,9 +136,8 @@ def vectors():
 
     for c in st["openTokens"]:
         expect("openTokens", c.get("text", ""), c["valid"], copies.token(c.get("text")) is not None)
-    from msfpconf.content import library_kind
-    for c in st["libraryKinds"]:
-        expect("libraryKinds", c["name"], c.get("kind"), library_kind(copies.loads(c["library"])))
+    # libraryKinds left the vectors with proposal 17 (a library has no
+    # kind); the suite's library_kind stays until the conformance update.
 
     keys = load("v0", "keys.json")
     K = {}
@@ -267,7 +266,7 @@ def vectors():
         except ValueError:
             out, ok = None, False
         expect("video previews", c["name"], (c["valid"], c.get("output")), (ok, out))
-    for c in video["fontURLs"]:
+    for c in video.get("fontURLs", []):  # gone with proposal 17 (URLs built from the ticket): skipped until the update
         try:
             out, ok = copies.dumps(copies.keep_fonts(copies.loads(c["text"]), video["streamRoot"])), True
         except ValueError:
