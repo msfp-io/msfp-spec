@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -87,16 +88,34 @@ func verifyRevPlayback(read func(string) []byte) []error {
 				if !found {
 					bad("%s: versionId %q isn't a copy of %s", where, s.VersionID, s.Title)
 				}
-				// The required minimum (section 2.6): a named copy and a
-				// named track of it win; defaults only otherwise.
+				// Section 2.6: a named copy plays, else the first.
 				var req map[string]any
 				_ = json.Unmarshal([]byte(c.Text), &req)
-				if v, _ := req["versionId"].(string); v != "" && v != s.VersionID && slices.ContainsFunc(ctx.Copies[s.Title], func(cp playbackCopy) bool { return cp.ID == v }) {
-					bad("%s: the named copy %q doesn't win", where, v)
+				copies := ctx.Copies[s.Title]
+				v, _ := req["versionId"].(string)
+				named := slices.ContainsFunc(copies, func(cp playbackCopy) bool { return cp.ID == v })
+				if named && v != s.VersionID || !named && s.VersionID != copies[0].ID {
+					bad("%s: copy %q, not the named one or the first", where, s.VersionID)
 				}
 				// Without delivery, the baseline; never the file.
-				if (s.Delivery == "") != (s.Baseline != "") {
+				if (s.Delivery == "") != (s.Baseline != nil) {
 					bad("%s: the baseline goes with no delivery", where)
+				}
+				// A stream left unchanged by the baseline is within it, and
+				// a remux takes no transcode.
+				if b := s.Baseline; b != nil {
+					cp := playbackPickCopy(copies, v)
+					a, _ := playbackPickAudio(cp, s.AudioTrack)
+					if (b.Audio == "copy") != playbackAudioWithin(a) || (cp.Video != nil) != (b.Video != "") || cp.Video != nil && (b.Video == "copy") != playbackVideoWithin(*cp.Video) {
+						bad("%s: the baseline leaves unchanged what isn't within it, or converts what is", where)
+					}
+					if (b.Method == "remux") != (s.Transcodes == "") {
+						bad("%s: a baseline remux takes a transcode, or a conversion none", where)
+					}
+				}
+				// A transcode copying both streams takes no transcode.
+				if t := s.Transcode; t != nil && t.VideoCodec == "copy" && t.AudioCodec == "copy" && s.Transcodes != "" {
+					bad("%s: video and audio copy take a transcode", where)
 				}
 				// No capabilities: the owning server never keeps them.
 				if strings.Contains(c.Output, "capabilities") {
@@ -111,6 +130,12 @@ func verifyRevPlayback(read func(string) []byte) []error {
 	}
 	calls("requests", f.Requests)
 	calls("deliveries", f.Deliveries)
+	calls("baseline", f.Baseline)
+	for _, c := range f.Baseline {
+		if c.Call != "play" || strings.Contains(c.Text, `"delivery"`) {
+			bad("baseline %s: not a play without delivery", c.Name)
+		}
+	}
 	calls("reports", f.Reports)
 	calls("downloads", f.Downloads)
 	calls("scans", f.Scans)
@@ -128,14 +153,41 @@ func verifyRevPlayback(read func(string) []byte) []error {
 	var n []string
 	for _, c := range f.Answers {
 		n = append(n, c.Name)
-		got, err := playbackKeepAnswer([]byte(c.Text), c.Delivery, c.CatalogEtag, ctx.StreamRoot)
+		got, err := playbackKeepAnswer([]byte(c.Text), c.Asked, ctx.StreamRoot)
 		valid, _ := reason(err)
 		if valid != c.Valid || string(got) != c.Output {
 			bad("answers %s: the file says valid=%v, output %q; the rules give %v, %q", c.Name, c.Valid, c.Output, err, got)
 		}
 		output("answers "+c.Name, c.Output, c.Valid)
+		// Every URL kept is built: the stream root, the ticket, a fixed name.
+		if c.Valid {
+			var a playbackAnswer
+			_ = json.Unmarshal([]byte(c.Output), &a)
+			for _, u := range a.URLs {
+				rest, ok := strings.CutPrefix(u, ctx.StreamRoot+a.Ticket+"/")
+				if !ok || !playbackBuiltName.MatchString(rest) {
+					bad("answers %s: %q isn't a name built from the ticket", c.Name, u)
+				}
+			}
+			if len(a.URLs) == 0 || a.FontCount > 64 || len(a.Subtitles) > 64 {
+				bad("answers %s: no stream URL, or counts past their bounds", c.Name)
+			}
+		}
 	}
 	names("answers", n)
+
+	n = nil
+	for _, c := range f.QueueEntries {
+		n = append(n, c.Name)
+		got, err := playbackQueueEntry(ctx, ctx.Limits, ctx.InUse, []byte(c.Request), []byte(c.Entry))
+		valid, _ := reason(err)
+		status, typ := playbackStatus(err)
+		if valid != c.Valid || string(got) != c.Output || status != c.Status || typ != c.Type {
+			bad("queueEntries %s: the file says valid=%v, output %q; the rules give %v, %q", c.Name, c.Valid, c.Output, err, got)
+		}
+		output("queueEntries "+c.Name, c.Output, c.Valid)
+	}
+	names("queueEntries", n)
 
 	n = nil
 	for _, c := range f.Restarts {
@@ -166,6 +218,10 @@ func verifyRevPlayback(read func(string) []byte) []error {
 	names("limits", n)
 	return errs
 }
+
+// playbackBuiltName is a name media section 1 lets a viewer's server
+// build after <stream root><ticket>/ from a play answer.
+var playbackBuiltName = regexp.MustCompile(`^(master\.m3u8|file|(subtitles|ass|pictures)/s(0|[1-9][0-9]{0,2})|fonts/(0|[1-9][0-9]?))$`)
 
 // playbackPurposeOf is a play request's purpose ("play" when absent).
 func playbackPurposeOf(text string) string {

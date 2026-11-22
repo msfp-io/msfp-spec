@@ -110,7 +110,8 @@ refused (`400`).
 
 Test cases: `requests` in
 [vectors/v0/playback.json](../../vectors/v0/playback.json) (members,
-combinations of `purpose` and `delivery`, unknown values).
+combinations of `purpose` and `delivery`, unknown values), and
+`queueEntries` (an entry's own copy and delivery).
 
 ### 2.2 What the owning server does
 
@@ -434,7 +435,7 @@ reads of one viewer session go through its one playback. A viewer's
 server must not share one playback, or its ticket, between viewer
 sessions.
 
-Test cases: `deliveries` and `restarts` in
+Test cases: `deliveries`, `baseline` and `restarts` in
 [vectors/v0/playback.json](../../vectors/v0/playback.json).
 
 ## 3. progress
