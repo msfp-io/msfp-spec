@@ -33,13 +33,13 @@ proposal 17 section 3.3 requires `codecs`.
 |---|---|---|---|---|---|---|
 | `h264` | H.264 / AVC | `h264` | `avc1`, `avc2`, `avc3`, `avc4`; on Dolby Vision `dva1`, `dvav` | `V_MPEG4/ISO/AVC` | `video/H264` (RFC 6184) | `codecs` required |
 | `hevc` | H.265 / HEVC | `hevc` | `hvc1`, `hev1` (`hvc2`, `hvc3`, `hev2`, `hev3` with extractors); on Dolby Vision `dvh1`, `dvhe` | `V_MPEGH/ISO/HEVC` | `video/H265` (RFC 7798) | `codecs` required |
-| `vvc` | H.266 / VVC | `vvc` | `vvc1`, `vvi1` | `V_MPEGI/ISO/VVC` | `video/H266` (RFC 9328) | |
+| `vvc` | H.266 / VVC | `vvc` | `vvc1`, `vvi1` | `V_MPEGI/ISO/VVC` | `video/H266` (RFC 9328) | `codecs` sent when known (it carries profile and level) |
 | `av1` | AV1 | `av1` | `av01`; on Dolby Vision `dav1` | `V_AV1` | `video/AV1` | `codecs` required |
 | `vp8` | VP8 | `vp8` | `vp08` | `V_VP8` | `video/VP8` (RFC 7741) | |
 | `vp9` | VP9 | `vp9` | `vp09` (OTI 0xB1) | `V_VP9` | `video/VP9` (RFC 9628) | `codecs` required |
 | `mpeg1video` | MPEG-1 video | `mpeg1video` | `mp4v`, OTI 0x6A | `V_MPEG1` | `video/MPV` (RFC 3555) | |
 | `mpeg2video` | MPEG-2 video (H.262) | `mpeg2video` | `mp4v`, OTI 0x60 to 0x65 | `V_MPEG2` | `video/MPV` (RFC 3555) | DVD, Blu-ray, broadcast |
-| `mpeg4` | MPEG-4 Part 2 (DivX 4+, Xvid) | `mpeg4` | `mp4v`, OTI 0x20 | `V_MPEG4/ISO/SP`, `/ASP`, `/AP` | `video/MP4V-ES` (RFC 6416) | in AVI: FourCC `XVID`, `DX50`… |
+| `mpeg4` | MPEG-4 Part 2 (DivX 4+, Xvid) | `mpeg4` | `mp4v`, OTI 0x20 | `V_MPEG4/ISO/SP`, `/ASP`, `/AP` | `video/MP4V-ES` (RFC 6416) | in AVI: FourCC `XVID`, `DX50`…; `codecs` sent when known (`mp4v.20.<n>` tells Simple from Advanced Simple) |
 | `msmpeg4v3` | Microsoft MPEG-4 v3 (DivX 3) | `msmpeg4v3` | — | `V_MPEG4/MS/V3` | — | AVI FourCC `DIV3`, `MP43`… |
 | `msmpeg4v2` | Microsoft MPEG-4 v2 | `msmpeg4v2` | — | `V_MS/VFW/FOURCC` + `MP42` | — | |
 | `wmv1`, `wmv2` | Windows Media Video 7, 8 | same | — | `V_MS/VFW/FOURCC` + `WMV1`, `WMV2` | — | usually in ASF |
@@ -65,6 +65,18 @@ Not codec tokens: **Dolby Vision** (its sample entries map to the base
 codec's token; the layer is the copy's `dv` object) and **encrypted
 entries** (`encv`, `enca`: the real codec's token is sent).
 
+Dolby Vision entry to the base 4CC `codecs` starts with (proposal 17
+section 3.3), every profile; a consumer goes back the other way, with
+`dv`, to rebuild the Dolby Vision string:
+
+| Dolby Vision entry | Base 4CC in `codecs` |
+|---|---|
+| `dvh1` | `hvc1` |
+| `dvhe` | `hev1` |
+| `dav1` | `av01` |
+| `dva1` | `avc1` |
+| `dvav` | `avc3` |
+
 ## 2. Audio codecs (`codec` on an audio track or a music copy)
 
 **Fixed `codecs`** is the code a producer sends where `codecs` is
@@ -76,10 +88,10 @@ optional (proposal 17 section 3.3).
 | `aac_latm` | AAC in LATM syntax | `aac_latm` | — | — | `audio/MP4A-LATM` (RFC 6416) | broadcast TS |
 | `ac3` | Dolby Digital (AC-3) | `ac3` | `ac-3` | `A_AC3` (also `/BSID9`, `/BSID10`) | `audio/ac3` (RFC 4184) | `ac-3` |
 | `eac3` | Dolby Digital Plus (E-AC-3) | `eac3` | `ec-3` | `A_EAC3` | `audio/eac3` (RFC 4598) | `ec-3`; Atmos in `objects` (section 5) |
-| `ac4` | Dolby AC-4 | `ac4` | `ac-4` | — | — | |
+| `ac4` | Dolby AC-4 | `ac4` | `ac-4` | — | — | `codecs` sent when known (`ac-4.<…>` carries the version, profile and level) |
 | `truehd` | Dolby TrueHD | `truehd` | `mlpa` | `A_TRUEHD` | `audio/vnd.dolby.mlp` | `mlpa` |
 | `mlp` | Meridian Lossless Packing (DVD-Audio) | `mlp` | UNVERIFIED (`mlpa` may cover it) | `A_MLP` | `audio/vnd.dolby.mlp` | |
-| `dts` | DTS Coherent Acoustics and every DTS-HD flavour | `dts` (Plex reports `dca`) | `dtsc`, `dtsh`, `dtsl`, `dtse` (layered `dts+`, `dts-`) | `A_DTS`, `A_DTS/LOSSLESS`, `A_DTS/EXPRESS` | `audio/vnd.dts`; `audio/vnd.dts.hd` | `codecs` required; flavours in section 2.1 |
+| `dts` | DTS Coherent Acoustics and every DTS-HD flavour | `dts` (Plex reports `dca`) | `dtsc`, `dtsh`, `dtsl`, `dtse` (layered `dts+`, `dts-`, never sent: `codecs` bans `+`) | `A_DTS`, `A_DTS/LOSSLESS`, `A_DTS/EXPRESS` | `audio/vnd.dts`; `audio/vnd.dts.hd` | `codecs` required; flavours in section 2.1; a layered stream is sent `dtsh` (`dtsc` for its core alone) |
 | `dtsuhd` | DTS-UHD (DTS:X profiles 2, 3) | — (ffmpeg has none) | `dtsx` (OTI 0xB2), `dtsy` (0xB3) | — | `audio/vnd.dts.uhd` | MSFP-coined; spelling open (`dtsuhd` or `dts_uhd`) |
 | `mp3` | MPEG-1, 2 Layer III | `mp3` | `mp4a` OTI 0x6B (MPEG-1), 0x69 (MPEG-2) | `A_MPEG/L3` | `audio/mpeg` (RFC 3003; file); `audio/MPA` (RTP) | `mp4a.40.34` as Jellyfin sends it, or `mp4a.6B` (UNVERIFIED which players prefer) |
 | `mp2` | MPEG-1, 2 Layer II | `mp2` | `mp4a` OTI 0x6B, 0x69 | `A_MPEG/L2` | `audio/mpeg`, `audio/MPA` | DVD, DVB |
@@ -90,7 +102,7 @@ optional (proposal 17 section 3.3).
 | `alac` | Apple Lossless | `alac` | `alac` | `A_ALAC` | — | `alac` |
 | `wmav1`, `wmav2` | Windows Media Audio 1, 2 | same | — | `A_MS/ACM` + WAVE tag 0x0160, 0x0161 | — | usually in ASF |
 | `wmapro`, `wmalossless` | WMA 9 Pro, WMA Lossless | same | — | `A_MS/ACM` + 0x0162, 0x0163 | — | |
-| `mpegh_3d_audio` | MPEG-H 3D Audio | `mpegh_3d_audio` | `mha1`, `mha2`, `mhm1`, `mhm2` | — | `audio/mhas` | |
+| `mpegh_3d_audio` | MPEG-H 3D Audio | `mpegh_3d_audio` | `mha1`, `mha2`, `mhm1`, `mhm2` | — | `audio/mhas` | `codecs` sent when known (`mha1.<level>`) |
 | `wavpack` | WavPack | `wavpack` | — | `A_WAVPACK4` | — | music |
 | `tta` | True Audio | `tta` | — | `A_TTA1` | — | music |
 | `ape` | Monkey's Audio | `ape` | — | — | — | music |
@@ -120,7 +132,9 @@ sample entry tells it.
 
 `dtsh` covers both High Resolution (lossy) and Master Audio (lossless),
 and `dtsc` covers core, ES and 96/24: with audio `profile` dropped,
-nothing in a copy tells them apart. Open (section 12).
+nothing in a copy tells them apart. Settled 2026-11-22 as label-only:
+players decide on `dtsc`, `dtsh`, `dtsl`, `dtse` and `dtsx` (Media3's
+DTS, DTS-HD, Express, DTS:X), which `codecs` carries.
 
 ### 2.2 PCM: ffmpeg's tokens, many to one
 
@@ -186,6 +200,11 @@ same: RFC 4337 (`audio/mp4`), RFC 3839 and 4393 (3GPP), RFC 9559 section
 27.18 (`audio/matroska`), RFC 5334 (`audio/ogg`), the WebM guidelines
 (`audio/webm`). Sent lowercase.
 
+A receiver treats `audio/<sub>` and `video/<sub>` as one container only
+for the pairs listed: `mp4`, `matroska`, `webm`, `ogg`, `3gpp`, `3gpp2`,
+`mp2t`. Not for `mpeg` (`audio/mpeg` is MP3 or MP2 alone, `video/mpeg`
+MPEG-PS).
+
 ### 4.2 Registered by IANA
 
 | File | `mediaType` | Audio only | Source |
@@ -193,7 +212,8 @@ same: RFC 4337 (`audio/mp4`), RFC 3839 and 4393 (3GPP), RFC 9559 section
 | MP4 family (`.mp4`, `.m4v`) | `video/mp4` | `audio/mp4` (`.m4a`, `.m4b`) | RFC 4337, RFC 6381 |
 | QuickTime (`.mov`) | `video/quicktime` | stays `video/quicktime` (nothing else registered) | IANA |
 | Matroska (`.mkv`) | `video/matroska` (`video/matroska-3d` for stereoscopic) | `audio/matroska` (`.mka`) | RFC 9559 section 27.18 |
-| MPEG-TS, M2TS (`.ts`, `.m2ts`) | `video/mp2t` | `audio/mp2t` (not in IANA; in the W3C MSE byte-stream registry) | RFC 3555 |
+| MPEG-TS, 188-byte packets (`.ts`) | `video/mp2t` | `audio/mp2t` (not in IANA; in the W3C MSE byte-stream registry) | RFC 3555 |
+| BDAV / M2TS, 192-byte packets (`.m2ts`, `.mts`: Blu-ray, AVCHD) | `video/vnd.dlna.mpeg-tts` | — (stays `video/vnd.dlna.mpeg-tts`) | IANA |
 | MPEG-PS (`.mpg`, `.vob`) | `video/mpeg` | — (`audio/mpeg` is MP3 or MP2 alone, not PS) | RFC 2045, 2046 (UNVERIFIED that `.vob` is commonly served so) |
 | Ogg (`.ogv`, `.ogg`, `.oga`, `.opus`) | `video/ogg` | `audio/ogg` | RFC 5334, RFC 7845 |
 | 3GPP (`.3gp`) | `video/3gpp` | `audio/3gpp` | RFC 3839 |
@@ -304,7 +324,7 @@ Candidates, not registered: `uncut`, `ultimate`, `collectors`,
 Jellyfin's `ExtraType`**, lowercased. Jellyfin's `sample` is left out
 (open); `unknown` is never sent.
 
-## 9. Segment `kind` and audio `role`
+## 9. Segment `kind` and `role`
 
 - Segment `kind`: `intro`, `outro`, `recap`, `preview`, `commercial`.
   **Origin: Jellyfin's `MediaSegmentType`**, lowercased (`unknown` not
@@ -315,13 +335,19 @@ Jellyfin's `ExtraType`**, lowercased. Jellyfin's `sample` is left out
   `commentary`, `dub`, `description`, `enhanced-audio-intelligibility`,
   `emergency`, `karaoke` (the last two UNVERIFIED as audio roles: the
   standard is paywalled; the list is from Shaka Packager and ExoPlayer).
+- Subtitle `role`: the same scheme. The values that concern subtitles:
+  `subtitle`, `caption`, `commentary`, `description`, `easyreader`,
+  `main`, `alternate` (from the same sources). `forced-subtitle` is never
+  sent: `forced` is the flag.
 
 ## 10. `threeD` (copy)
 
 | Token | What | Equivalents |
 |---|---|---|
-| `sbs` | side by side | Jellyfin `HalfSideBySide`, `FullSideBySide`; Matroska `StereoMode` 1, 11 (UNVERIFIED) |
-| `tab` | top and bottom | Jellyfin `HalfTopAndBottom`, `FullTopAndBottom`; Matroska `StereoMode` 2, 3 (UNVERIFIED) |
+| `sbs` | side by side, left eye first | Jellyfin `HalfSideBySide`, `FullSideBySide` (no eye order); Matroska `StereoMode` 1 (UNVERIFIED) |
+| `sbs-rl` | side by side, right eye first | Matroska `StereoMode` 11 (UNVERIFIED) |
+| `tab` | top and bottom, left eye on top | Jellyfin `HalfTopAndBottom`, `FullTopAndBottom` (no eye order); Matroska `StereoMode` 3 (UNVERIFIED) |
+| `tab-rl` | top and bottom, right eye on top | Matroska `StereoMode` 2 (UNVERIFIED) |
 | `mvc` | H.264 MVC (Blu-ray 3D) | Jellyfin `MVC` |
 
 **Origin: MSFP's own**, close to Jellyfin's `Video3DFormat`. Half or
@@ -345,16 +371,16 @@ with no space at either end (music 3).
 
 Not decided; the spec pass leaves them out or marks them:
 
-1. **DTS flavours**: with audio `profile` dropped, `dtsh` can't tell
-   High Resolution from Master Audio, nor `dtsc` core from ES or 96/24
-   (section 2.1).
-2. **DTS-UHD**'s token spelling, and whether `dts-x` applies to it.
-3. **20-bit Matroska PCM** (section 2.2).
-4. **IAMF**: no token; a layer like Dolby Vision.
-5. **ASF, WMV, WMA** and **RealMedia** media types; types for WavPack,
+1. **DTS-UHD**'s token spelling, and whether `dts-x` applies to it.
+2. **20-bit Matroska PCM** (section 2.2).
+3. **IAMF**: no token; a layer like Dolby Vision.
+4. **ASF, WMV, WMA** and **RealMedia** media types; types for WavPack,
    Monkey's Audio, TTA, DSF, DFF.
-6. **CEA-608 as its own track** (MP4 `c608`): listed or not.
-7. **Jellyfin's `sample`** extra type.
+5. **CEA-608 as its own track** (MP4 `c608`): listed or not.
+6. **Jellyfin's `sample`** extra type.
+
+The DTS flavours (section 2.1) were closed by the viewer review as
+label-only.
 
 ## 13. Sources (fetched 2026-11-22)
 

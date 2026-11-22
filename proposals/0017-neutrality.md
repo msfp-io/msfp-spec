@@ -16,17 +16,17 @@ catalog 2 and 4 (open library kinds, `tmdb` in `ids`); video 3 to 6
 media 1 to 4; music 3 (MusicBrainz types, exact values). Nothing else
 below is: format names, colour as numbers, previews on demand, the scan
 cap in the scan's answer, the field review's drops, URLs built from the
-ticket, 16 music copies. **The whole proposal, as written here, is to be
-written into spec/v0, the vectors, the engines and the conformance suite
-in one batch**, replacing what the first version put there where they
-differ.
+ticket, 16 music copies, the viewer review's changes. **The whole
+proposal, as written here, is to be written into spec/v0, the vectors,
+the engines and the conformance suite in one batch**, replacing what the
+first version put there where they differ.
 
 Touches: [core](../spec/v0/core.md) (8.4, 8.5),
 [catalog](../spec/v0/catalog.md) (2, 3, 3.3, 3.4, 4.4),
 [video](../spec/v0/video.md) (3.2 to 3.10, 4.3, 5.1 to 5.6, 6.1, 6.2, 7),
 [playback](../spec/v0/playback.md) (2.1 to 2.7, 3, 5, 8),
-[media](../spec/v0/media.md) (1, 3, 3.3, 3.4, 4, 4.2),
-[music](../spec/v0/music.md) (3, 3.1, 3.3, 5.2, 6),
+[media](../spec/v0/media.md) (1, 3, 3.1, 3.3, 3.4, 4, 4.2),
+[music](../spec/v0/music.md) (3, 3.1, 3.3, 5.2, 6, 9),
 [groups](../spec/v0/groups.md) (5, 8.3, 9),
 [implementers.md](../spec/v0/implementers.md), the
 [registry](../spec/registry.md) (widened to the lists that describe
@@ -80,6 +80,13 @@ turned into `other`.
 A second review (about 217 fields, against the three rules) found some
 30 fields to drop and 8 to reshape.
 
+A third, the viewer review, asked whether a viewer's server can still do
+everything a local title allows (Jellyfin, Emby, Kodi and Plex as
+viewers; browsers, Media3 and AVPlayer as players). Deciding whether a
+copy plays as it is was nearly covered; asking for what a local server
+would make when it doesn't (video kept with the audio converted, a known
+output picture) was not.
+
 **The rule this proposal applies.** The protocol carries facts in
 outside vocabularies (IANA media types, RFC 6381, ITU-T H.273, the DASH
 role scheme, MusicBrainz) and, where none exists, in MSFP's registry,
@@ -99,19 +106,20 @@ Implementations map their media server's names to these vocabularies.
 | 1.1, `hdr` | `hdr10`, `hdr10plus`, `hlg`, `dv` | enhancement layers only, from the registry; HDR10 and HLG from `colour`; Dolby Vision by the `dv` object alone (section 3.4) |
 | 1.1, audio `profile` | MSFP's list (`atmos`, `dtsx`…) | dropped; Atmos and DTS:X in `objects` (section 3.5) |
 | 1.1, `profile`, `level`, `codecTag`, `layout`, `fileIndex` | sent | dropped (section 4) |
-| 1.4, names and titles | copy `name`, track `title`, extra `name`, owner guidance | dropped (section 4); labels built from facts |
+| 1.4, names and titles | copy `name`, track `title`, extra `name`, owner guidance | dropped (section 4); labels built from facts; `role` on subtitle tracks too (section 3.9) |
 | 1.1, `durationMs` of a shared episode | the episode's, else the copy's | always the copy's; the episode's span by `startMs` and `endMs` (section 3.7) |
 | 1.1, `parts` | each part's `size` and `durationMs` | a count (section 3.7) |
 | 1.1, `added` | sent | dropped (section 4) |
 | Proposal 15 point 1, copies | at most 8 | 16, music tracks too (section 3.8) |
 | 4 (decision 6), themes | left out | allowed as extras (section 3.9) |
 | 5, `releaseType` | MSFP's list | MusicBrainz's `primaryType` and `secondaryTypes` (section 10) |
-| 6 (decision 8), capabilities | the viewer may ask a method; capabilities enriched, coarsened | dropped: the viewer's server sends `delivery`; without it, the baseline (section 8) |
+| 6 (decision 8), capabilities | the viewer may ask a method; capabilities enriched, coarsened | dropped: the viewer's server sends `delivery`; without it, the baseline, its picture defined; a transcode may `copy` one stream and names its `range` (section 8) |
+| music queue | every entry its first copy, under the request's `delivery` | an entry may name its own `versionId` and `delivery` (section 10) |
 | 7 (decision 4), fonts | 8 a copy, 10 MiB each | 64 a copy, 10 MiB each, 64 MiB in all (section 9.2) |
 | 7, previews | fetched for every copy before play, every sheet at once | layout in the catalog; sheets only for copies someone opens, never a library ahead (section 6) |
 | 9 (decision 3), scan cap | 32 MiB fixed, Plex text normative | the cap the scan's answer states, 4 MiB to 1 GiB, not in `limits`; Plex text to the notes (section 9.4) |
 | 3 and 6, choice | the owner chooses copy and tracks from the viewer's languages | the viewer's server chooses; no language members (section 7) |
-| 1.2, answers | URLs, tracks, length, media type | the ticket and what the catalog can't know (section 5) |
+| 1.2, answers | URLs, tracks, length, media type | the ticket and what the catalog can't know (section 5); subtitle forms fixed in advance for the formats video 5.4 lists (section 5.3) |
 | 8, limits | `streams`, `downloads` at most 50 | at most 1,000 (section 9.1) |
 
 Kept as proposal 16 decided: "off by default", normative, for `local`
@@ -145,9 +153,13 @@ One rule, in the core, for every part. It replaces what each part said.
   hint, and refused with `409` `delivery-refused` where it names what to
   serve (a remux's media type, a transcode's codec). Only a malformed
   value gets `400`.
-- A viewer's server that doesn't know a value of a copy treats the copy
-  as one it can't play as it is: it asks for a `remux` or a `transcode`,
-  or doesn't offer the copy.
+- A viewer's server that doesn't know a copy's `mediaType`, a stream's
+  `codec`, or its `threeD`, or can't parse a `codecs` string, treats the
+  copy as one it can't play as it is: it asks for a `remux` or a
+  `transcode`, or doesn't offer the copy. An unknown subtitle `format`
+  affects that track only. Other unknown values (`edition`, `role`, an
+  `hdr` token, `objects`, `extraType`, a segment `kind`) don't stop the
+  copy from playing as it is; section 3.9 says how some are shown.
 - No list has a value meaning "other". A sender with no value for an
   optional field leaves it out.
 - The values a part gives beside an open field are examples. The lists
@@ -167,8 +179,13 @@ H.273 numbers, and the `tv`/`pc` words (section 3.4); how to build
 `codecs` from ffprobe and from the file's records (section 3.3); where
 each codec stores Atmos and DTS:X (section 3.5); mapping a track's title
 to `role`, `hearingImpaired` and `forced` (section 4); the choice
-tables, as advice to viewer's servers (section 7). Its sentences that
-call ffmpeg's names a vocabulary go.
+tables, as advice to viewer's servers (section 7); using the overall
+rate (`size` × 8 / `durationMs`) as the bound on a stream's bitrate,
+since no stream carries its own (inflated by cover art on music); writing
+`ec+3` from `ec-3` and `objects` `dolby-atmos` where a player wants it;
+Plex as a viewer only through scan access, and a 4 MiB cap missing an
+MP4 `moov` or Matroska cues at the end of a big file (section 9.4). Its
+sentences that call ffmpeg's names a vocabulary go.
 
 Album art: "from a public source by MusicBrainz ID, such as the Cover
 Art Archive" (music 4).
@@ -195,9 +212,14 @@ media type (section 1), on video and music copies alike.
   aliases: a producer sends the registry's type; a receiver may accept
   an alias as the same.
 - **Audio or video.** `audio/<sub>` when the file has no video stream
-  other than attached pictures (cover art), else `video/<sub>`. A
-  receiver treats `audio/<sub>` and `video/<sub>` of the same subtype as
-  the same container.
+  other than attached pictures (cover art), else `video/<sub>`. For the
+  pairs the registry lists (`mp4`, `matroska`, `webm`, `ogg`, `3gpp`,
+  `3gpp2`, `mp2t`), a receiver treats `audio/<sub>` and `video/<sub>` as
+  the same container; not for others (`audio/mpeg` is MP3 alone,
+  `video/mpeg` MPEG-PS).
+- **BDAV.** A transport stream of 192-byte packets (Blu-ray, AVCHD:
+  M2TS) is `video/vnd.dlna.mpeg-tts`, IANA's type; one of 188-byte
+  packets stays `video/mp2t`.
 - **From the file where it can.** A producer reads the type from the
   file's first bytes where it can, else maps its media server's
   container name through the registry. For ISO BMFF, the major brand
@@ -248,16 +270,23 @@ codecs string of RFC 6381 (`avc1.640028`, `hvc1.2.4.L153.B0`,
 
 - **Required** when `codec` is `h264`, `hevc`, `av1` or `vp9` (video)
   or `aac` or `dts` (audio): there it carries the profile, level, tier or
-  flavour players decide on. **Optional** for every other codec, where
+  flavour players decide on. **Optional** for every other codec. Where
   it is a fixed code the registry gives (`ac-3`, `ec-3`, `fLaC`, `Opus`,
-  `mlpa`).
-- **Tolerance.** Profile, level, tier and (AV1, VP9) bit depth must be
-  the stream's own. The rest may be inferred: H.264 constraint flags (the
+  `mlpa`), it may be left out; where its string carries a profile or
+  level (`mpeg4`'s `mp4v.20.<n>`, `vvc`, `ac4`, `mpegh_3d_audio`), it is
+  sent when known.
+- **The chroma format.** For `hevc` with `general_profile_idc` 4 or
+  more, the constraint bytes are required; for `av1` and `vp9` on a
+  stream that isn't 4:2:0, the long form is required. Elsewhere the
+  profile tells it.
+- **Tolerance.** Profile, level and (AV1, VP9) bit depth must be the
+  stream's own, as must the parts the previous point requires. The rest
+  may be inferred, and a consumer ignores it: H.264 constraint flags (the
   stream's, or zero); HEVC compatibility flags (the stream's, or only the
-  profile's own bit) and constraint bytes (the stream's, or left out);
-  VP9 level (the stream's, or a guess from size and frame rate); an
-  unknown HEVC tier is sent as `L`. A viewer's server never refuses a
-  copy for a mismatch in an inferred part alone.
+  profile's own bit); VP9 level (the stream's, or a guess from size and
+  frame rate). HEVC tier `L` means "Main or unknown", `H` High: a
+  producer that doesn't know the tier sends `L`. A viewer's server never
+  refuses a copy for a mismatch in a part it ignores.
 - **Whatever the container.** On a Matroska or MPEG-TS file, `codecs` is
   the string the stream would have in ISO BMFF.
 - **Compared case-sensitively**, as RFC 6381 says. A consumer may also
@@ -267,8 +296,13 @@ codecs string of RFC 6381 (`avc1.640028`, `hvc1.2.4.L153.B0`,
 - **Missing or malformed where required**: the stream or track is kept,
   `codecs` counts as absent, and the viewer's server treats the copy as
   one it can't play as it is (section 1).
-- Dolby Vision profile 8: `codecs` holds the base layer's code
-  (`hvc1…`); the `dv` object holds the rest (section 3.4).
+- **Dolby Vision**, every profile: `codecs` is the base codec's string,
+  with the base 4CC of the file's Dolby Vision entry (`dvh1` → `hvc1`,
+  `dvhe` → `hev1`, `dav1` → `av01`, `dva1` → `avc1`, `dvav` → `avc3`);
+  the `dv` object holds the rest (section 3.4). A consumer rebuilds the
+  Dolby Vision string (`dvh1.08.06`) from that 4CC and `dv`. A viewer's
+  server that can't decode Dolby Vision treats a copy whose
+  `dv.compatibility` is 0 as one it can't play as it is.
 - Music track copies follow the same rules (music 3.3).
 
 #### 3.4 Colour and HDR (video 3.3, 3.7, 3.8)
@@ -312,22 +346,23 @@ TrueHD major sync, DTS-HD MA's extension substream).
 - **Exact values**: `durationMs` as known, never rounded.
 - **`fps`**: `"<num>/<den>"`, each 1 to 1,000,000, reduced
   (`"24000/1001"`, `"25/1"`): the nominal rate the stream or container
-  declares; for a variable rate, the average, or left out. Malformed:
-  absent.
+  declares; for a variable rate, always the average. Malformed: absent.
 - **`sampleAspect`**: `"<w>:<h>"`, each 1 to 65,535, as the stream or
   container states it; absent means square pixels.
 - **`rotation`**: `0`, `90`, `180` or `270`, the degrees clockwise to
   show the picture upright; absent means 0. A display matrix that mirrors
   the picture, or turns it by another angle: left out.
-- **`bitDepth`**: 1 to 16 on video.
+- **`bitDepth`**: 1 to 16 on video. Where `codecs` holds the bit depth
+  too (AV1, VP9), the two agree.
 - **`refFrames`** (new): integer, optional, on an H.264 video stream
   only: the stream's declared maximum number of reference frames
   (`max_num_ref_frames`), 1 to 16. Out of range, or on another codec:
   absent. Some players refuse H.264 past a number of reference frames,
   and `codecs` doesn't carry it.
-- **`threeD`**: an open token from the registry (`sbs`, `tab`, `mvc`),
-  absent for 2D. Half or full resolution follows from the picture's
-  size.
+- **`threeD`**: an open token from the registry (`sbs`, `tab`, with
+  the left eye first; `sbs-rl`, `tab-rl`, with the right eye first;
+  `mvc`), absent for 2D. Half or full resolution follows from the
+  picture's size.
 - **`channels`** stays; `layout` goes (section 4): labels come from the
   count.
 - **`original`** (audio): only the file's own flag (Matroska's
@@ -366,12 +401,17 @@ kept (section 1):
   `main`, `alternate`, `supplementary`, `commentary`, `dub`,
   `description`…); an unknown role is never taken for the title's own
   sound;
+- subtitle `role` (new, optional): from the same scheme (`subtitle`,
+  `caption`, `commentary`, `description`, `easyreader`…). `forced` stays
+  the only forced flag: `forced-subtitle` isn't sent as a `role`;
 - segment `kind` (`intro`, `outro`, `recap`, `preview`, `commercial`); a
   viewer's server shows a kind it doesn't know as a plain "Skip";
 - `extraType`, with `themesong` and `themevideo`: an owning server may
   offer theme songs and videos as extras; the viewer's server decides
   whether and how to present them, and each one it plays is a playback
-  like any other. An unknown type is shown as a plain extra.
+  like any other. An unknown type is shown as a plain extra. Extras are
+  listed in key order (byte order), so a label built from `extraType`
+  and a number stays the same between readings.
 
 ### 4. Fields dropped
 
@@ -385,7 +425,7 @@ Each by the three rules (Problem): **G** only safe through guidance,
 | extra `name` | video 3.9 | G: often a file name. Shown as `extraType` and a number. |
 | title `kind` | catalog 3 | D: the key says it. |
 | copy `bitrateKbps` (video and music) | video 3.2; music 3.3 | R: `size` × 8 / `durationMs` (section 3.7). |
-| `codecTag` | video 3.3 | D: the first element of `codecs`. |
+| `codecTag` | video 3.3 | D: the first element of `codecs`, or on Dolby Vision the entry rebuilt from that 4CC (section 3.3). |
 | video and audio `profile`, video `level` | video 3.3 | D: in `codecs`. |
 | audio `layout` | video 3.3 | R: labels come from `channels`; the exact layout stays in the stream. |
 | `fileIndex` | video 3.3 | D: the track ID's number (section 3.7). |
@@ -394,11 +434,11 @@ Each by the three rules (Problem): **G** only safe through guidance,
 | `brand`, subtitle `kind` (first amendment) | — | D: the brand chooses `mediaType`; the registry gives each format's kind. |
 | copy `added` (video and music) | video 3.2; music 3.3 | a fact about a person. R: "recently added" from the day the viewer's server first saw the copy; the titles of a first reading count as old. |
 | progress `paused` | playback 3 | a fact about a person, used by no rule. |
-| library `kind` | catalog 2 | R: the titles' keys say what a library holds. |
+| library `kind` | catalog 2 | R: the titles' keys say what a library holds; a viewer's server types an empty library by its first titles. |
 | segment `final` | video 3.4 | R: the last `outro`. |
 | `ids` on `tmdb`-keyed films and series | video 4.3 | R: TMDB's lookup by key gives them (`external_ids`). Kept on episodes and on `tvdb`-keyed titles. |
 | `ids` on `local` music titles | music 3.1 | no allowed use: a `local` title is never matched through `ids`. |
-| `isrc`, `acoustid` on `mb` tracks | music 3.1 | R: MusicBrainz gives them from `mbrecording`. |
+| `isrc`, `acoustid` on `mb` tracks | music 3.1 | R: from `mbrecording`, MusicBrainz gives the ISRCs and the AcoustID service the AcoustIDs. |
 | album `sortName` | music 3 | R: receivers sort by their own rules. |
 | track `artists`, `artistNames`, `date`, `originalDate`, `genres` equal to the album's | music 3 | D: sent on a track only when they differ from its album's. |
 | lyrics `displayArtist`, `displayTitle` | music 6 | D: the track's `artistNames` and `name`. |
@@ -472,12 +512,17 @@ count. HLS playlists' URIs are checked as media 1 and 3.1 say today.
   (WebVTT); `picture` opens `pictures/<id>` (PGS); `ass: true`, only with
   `text`, also opens `ass/<id>`. An entry whose `id` isn't a track of the
   copy in the catalog, or whose `form` is neither value, is dropped
-  alone; `ass` that isn't a boolean counts as absent. A track with no
-  entry reaches a viewer only in the copy played as it is, or burned in.
+  alone; `ass` that isn't a boolean counts as absent. A track of the
+  file with no entry reaches a viewer only in the copy played as it is,
+  or burned in. An `external` track the owning server can't serve apart
+  isn't listed in the catalog.
 - **`fontCount`**: the number of fonts the copy's ASS tracks use, 0 to
   64; absent means 0.
-- Video 5.4's table of which formats are served in which form stays, as
-  the owning server's rule for `form` and `ass`.
+- **Forms known before `play`.** Video 5.4's table is a must for the
+  formats it lists: `subrip`, `webvtt`, `mov_text`, `ttml` are served
+  `text`; `ass` and `ssa`, `text` with `ass: true`;
+  `hdmv_pgs_subtitle`, `dvd_subtitle` and `dvb_subtitle`, `picture`.
+  Only a track in another format waits for the answer to know its form.
 
 #### 5.4 The other answers
 
@@ -488,7 +533,7 @@ count. HLS playlists' URIs are checked as media 1 and 3.1 say today.
 - **`image`'s answer** (catalog 4.4): `{"ticket"}`.
 - **Queue entries** (music 5.2): `title`, `versionId`, `method` and
   `protocol`; their URLs as section 5.2 says, under the playback's
-  ticket.
+  ticket. The request's entries are in section 10.
 - A malformed `ticket`: the answer is refused (for `play`, `stop` and
   give up; for `previews` and `image`, no sheets, no image).
 
@@ -563,25 +608,52 @@ As in the first version, with media types and registry tokens:
 - The viewer's server asks with **`delivery`**: `file`, `remux` or
   `transcode`.
 - **Without `delivery`**, the owning server serves the baseline every
-  viewer's server must play: H.264 video and AAC audio, at most 2
-  channels, in complete HLS, for a film, an episode or an extra; AAC in
-  complete HLS, audio only, for a track. It may leave the copy's streams
-  unchanged when they already meet it.
+  viewer's server must play, in complete HLS. For a copy with video (a
+  film, an episode, an extra): H.264 at most High profile and level 4.1,
+  8-bit 4:2:0, progressive, SDR in BT.709 (H.273 primaries, transfer and
+  matrix 1); AAC-LC, at most 2 channels, at most 48 kHz. For a copy with
+  no `video` (a track, or an extra such as a theme song): the same AAC,
+  audio only. It may leave a stream unchanged only when it is already
+  within that.
 - **Remux** (playback 2.7): the request member `container` becomes
   **`mediaType`**, required with `delivery` `remux` only: a media type
   (section 1) of subtype `mp2t` (MPEG-TS segments) or `mp4` (fragmented
   MP4 segments), the two HLS segment formats, as `video/…` or, for a
-  track, `audio/…`. A malformed value gets `400`; a well-formed one the
-  owner doesn't make, `409` `delivery-refused`. A remux is served as
-  complete HLS. Playback 2.1, 2.2 and 2.7 and core 8.5's example say
-  "a remux's media type".
+  copy with no `video`, `audio/…`. A malformed value gets `400`; a
+  well-formed one the owner doesn't make, `409` `delivery-refused`. A
+  remux is served as complete HLS. Playback 2.1, 2.2 and 2.7 and core
+  8.5's example say "a remux's media type".
 - **Transcode targets** (`videoCodec`, `audioCodec`, `maxHeight`,
-  `maxBitrateKbps`, `audioChannels`, `burnSubtitle`) take registry
-  tokens; an unknown or unsupported codec gets `409`
-  `delivery-refused`. A target left out takes the baseline's value:
-  `h264`, `aac`, the copy's own height, no cap, at most 2 channels. The
+  `maxBitrateKbps`, `audioChannels`, `burnSubtitle`, `range`): the
+  codecs take registry tokens or `copy`; an unknown or unsupported codec
+  gets `409` `delivery-refused`. A target left out takes the baseline's
+  value: `h264`, `aac`, the copy's own height, no cap, at most 2
+  channels, `sdr`. The
   steps stay (`maxHeight` 480 to 4320, `maxBitrateKbps` in 1,000s,
   `audioChannels` 2, 6 or 8).
+- **`copy`** (new value of `videoCodec` and `audioCodec`, a closed
+  mechanic like `delivery`, not a registry token): that stream is served
+  unchanged. `409` `delivery-refused` when the segment format can't carry
+  it. A copied stream takes none of the targets that would change it
+  (`maxHeight` on video, `audioChannels` on audio); `burnSubtitle` with
+  video `copy` is refused, `409` `delivery-refused`. A transcode whose
+  video is `copy` counts as a transcode (playback 2.6, 6) only when its
+  audio is converted.
+- **`range`** (new target, closed): `sdr` (the default: tone-mapped to
+  SDR, 8-bit, BT.709) or `keep` (the copy's transfer and primaries kept,
+  10-bit; HDR10+ kept where the codec carries it). Dolby Vision is
+  dropped unless the video is `copy`; with video `copy`, `range` is
+  ignored. An owning server that can't make the range asked: `409`
+  `delivery-refused`.
+- **Sample entries in `mp4` segments**: HEVC is written `hvc1`, Dolby
+  Vision `dvh1` (`dav1` on AV1), parameter sets out of band, in a remux
+  and a transcode alike.
+- **The master playlist** (media 3.1): each `#EXT-X-STREAM-INF` carries
+  `BANDWIDTH`, `CODECS` and `RESOLUTION`; `VIDEO-RANGE` (`PQ` or `HLG`)
+  when the picture served is PQ or HLG; `SUPPLEMENTAL-CODECS` when Dolby
+  Vision is kept. An audio rendition's `CHANNELS` may be `"16/JOC"` for
+  an E-AC-3 track whose `objects` is `dolby-atmos`. It is the only place
+  the served stream is described.
 - **Audio renditions**: a request, never refused; the answer's
   `audioRenditions` says whether they were made.
 - **No ceiling of its own**: the 120,000 kbit/s default is gone.
@@ -652,7 +724,15 @@ moves to "Decoding safely". The answer carries the ticket (section 5.4).
   section 3; `durationMs` exact; no `name`, `added` or `bitrateKbps`.
 - **`ids`**: none on `local` titles; on `mb` titles, `mbreleasegroup`
   (albums) and `mbrecording` (tracks) only.
-- **Queue entries**: as section 5.4.
+- **Queue entries**: in the request, each entry is `{"title",
+  "versionId", "delivery"}`, `versionId` and `delivery` optional; an
+  entry's `delivery` comes with its own `mediaType` or `transcode`
+  targets as the request's would. Absent, an entry takes the request's
+  (and without `versionId`, its first copy). The answer's entries as
+  section 5.4.
+- **Audiobooks**: `secondaryTypes` has `audiobook`, but a music copy
+  carries no chapters, which an m4b has. Out of scope; music's open
+  questions (music 9) note it.
 - **Lyrics**: `offset`, `synced`, `displayArtist` and `displayTitle` go.
   A set whose every line carries `start` is synced; one where no line
   does is plain; a set mixing them is skipped. The owner applies any
@@ -674,11 +754,12 @@ moves to "Decoding safely". The answer carries the ticket (section 5.4).
 
 - **Scope: the lists that describe media**: codecs, subtitle formats,
   container media types IANA lacks (with aliases) and the brand table,
-  `hdr`, `edition`, `extraType`, segment `kind`, audio `role` (a pointer
-  to the DASH scheme), `objects`, `threeD`, music types, and the key and
-  `ids` schemes. Protocol mechanics (`method`, `protocol`, `delivery`,
-  `purpose`, the subtitle `form`, title kinds, group event and message
-  kinds) stay closed, in their parts.
+  `hdr`, `edition`, `extraType`, segment `kind`, audio and subtitle
+  `role` (a pointer to the DASH scheme), `objects`, `threeD`, music
+  types, and the key and `ids` schemes. Protocol mechanics (`method`,
+  `protocol`, `delivery`, `purpose`, the subtitle `form`, `copy`,
+  `range`, title kinds, group event and message kinds) stay closed, in
+  their parts.
 - **The token column is normative; the crosswalk is informative.** MP4RA,
   Matroska, IANA and ffmpeg names say where each token comes from, and
   name products only as sources. Borrowed lists say their origin
@@ -698,7 +779,10 @@ moves to "Decoding safely". The answer carries the ticket (section 5.4).
 `fullRange`, `objects`, `refFrames`, `endMs`, `parts` as a count,
 `previewLayout`, `ticket`, `protocol` at the answer's top level,
 `subtitles` with `form` and `ass`, `fontCount`, `scanBytes` on scan
-answers, `etag` in `previews`' answer. Kept from the first version:
+answers, `etag` in `previews`' answer, `copy` as a value of `videoCodec`
+and `audioCodec`, the `range` target, subtitle `role`, `versionId` and
+`delivery` on queue entries; in the registry, `sbs-rl`, `tab-rl` and
+`video/vnd.dlna.mpeg-tts`. Kept from the first version:
 `sampleAspect`, `rotation`, `el`, `primaryType`, `secondaryTypes`,
 `themesong`, `themevideo`, `audioRenditions`.
 
@@ -748,24 +832,31 @@ late reports); the `previews` call's request; the tiled sheets; the
   codecs; H.273 numbers and `fullRange`; `objects`, `refFrames`,
   `endMs`, `parts` as a count; the dropped fields gone; answers with
   `ticket`, `subtitles` and `fontCount`; `previewLayout`; `scanBytes` in
-  scan answers; remux media types; the choice tables' vectors removed.
-  High: the copies' cases touch many vectors.
+  scan answers; remux media types; the choice tables' vectors removed;
+  `copy` and `range` in transcode requests, subtitle `role`, queue
+  entries with their own copy and delivery, the Dolby Vision `codecs`
+  and the required HEVC constraint bytes and long forms. High: the
+  copies' cases touch many vectors.
 - **Conformance suite** (on main). Checks that unknown tokens and media
   types are kept in facts and get `409` in delivery requests; that a
   remux names an `mp2t` or `mp4` media type; that `codecs` is required
   for the six; that answers carry no URLs, and that the owner serves the
   built names and `404`s past the counts; that scans stop at the
   answer's `scanBytes`; that `audioRenditions` matches the playlist;
-  that a playback's ticket opens its copy's sheets. The choice checks
-  go. Med.
+  that a playback's ticket opens its copy's sheets; that the master
+  playlist carries its required attributes and `mp4` segments `hvc1`;
+  that a `copy` stream is unchanged and a `range` `sdr` transcode is SDR;
+  that video 5.4's formats come in their forms. The choice checks go.
+  Med.
 - **msfp-go** (branch `revision`). On the first version's work: ffmpeg
   names out, `mediaType` and the registry's tables in; `codecs` checks;
   colour as numbers; the dropped fields; URLs built from the ticket (the
   URL checks become URL building); previews on demand (the sheet
   prefetch goes; a lazy sheet fetch with a cache keyed by `etag` and
   layout); the scan cap from the answer; the choice code out of the
-  engine. The copy-name and track-title filters go with the fields. Med
-  to high.
+  engine; `copy`, `range` and per-entry queue deliveries in requests;
+  the master playlist's attributes checked. The copy-name and
+  track-title filters go with the fields. Med to high.
 - **msfp-dotnet** (branch `revision`). The same as msfp-go. No
   ffprobe-names helper; a small record parser if it helps hosts build
   `codecs`, since no maintained .NET library builds RFC 6381 strings.
@@ -774,10 +865,12 @@ late reports); the `previews` call's request; the tiled sheets; the
   its media server's names; a `codecs` builder in Go for the six codecs,
   its index keeping the level, codec tag, pixel format, reference frames
   and Dolby Vision fields its media server reports (about 150 lines);
-  H.273 numbers; `previewLayout`; the scan cap per pool. As a viewer's
-  server: always choose the copy and send `delivery`; build labels from
-  facts; "recently added" from first sight; keep unknown values. Most of
-  the rest is proposal 16's migration. Med.
+  H.273 numbers; `previewLayout`; the scan cap per pool; the baseline's
+  picture, a stream copied, tone mapping for `range` `sdr`, `hvc1` in
+  `mp4` segments and the playlist attributes in its transcoder. As a
+  viewer's server: always choose the copy and send `delivery`; build
+  labels from facts; "recently added" from first sight; keep unknown
+  values. Most of the rest is proposal 16's migration. Med.
 - **Jellyfin plugin.** As an owning server: a `codecs` helper on
   Jellyfin's stream data, correcting its known gaps (H.264 High 10,
   4:2:2 and 4:4:4; HE-AAC v2) and using `hev1` when the codec tag says so
@@ -787,7 +880,10 @@ late reports); the `previews` call's request; the tiled sheets; the
   100 lines); choose `delivery` from Jellyfin's device profile; map open
   values to Jellyfin's (unknown segment kinds to a plain skip); themes as
   Jellyfin theme songs and videos behind a setting; previews fetched for
-  opened copies only. Med; most of the rest is proposal 16's migration.
+  opened copies only; Jellyfin's DirectStream as a transcode with video
+  `copy`, its HDR and Dolby Vision fallbacks through `range`; subtitle
+  delivery methods from video 5.4's table before play; subtitle `role`
+  into track labels. Med; most of the rest is proposal 16's migration.
 
 The engine work the reviews list beyond this proposal (a `RemoteFile`
 helper, .NET's headers and image encoder, peer-catalog helpers, API
@@ -820,3 +916,14 @@ release.
   themes 1 to 11), research on `codecs` (required for six codecs,
   `refFrames` added) and the registry's first tables. This text replaces
   both earlier versions.
+- **Viewer review** (2026-11-22): can a viewer's server still do
+  everything a local title allows (25 findings: 2 blockers, 11 should
+  fix, 12 minor). The owner's answers: `copy` for `videoCodec` and
+  `audioCodec`; the baseline's picture defined and the `range` target;
+  `role` on subtitle tracks, `forced` the only forced flag; queue
+  entries with their own `versionId` and `delivery`; video 5.4's table a
+  must. Its technical fixes applied: the Dolby Vision `codecs`, the
+  chroma format and the ignored parts of `codecs`, audio-only extras,
+  `hvc1` in `mp4` segments, the master playlist's attributes, the
+  audio-or-video rule for the listed pairs, the narrower unknown-value
+  rule, M2TS's media type, and the minor ones.
