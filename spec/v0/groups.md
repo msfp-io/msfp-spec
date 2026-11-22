@@ -549,15 +549,29 @@ newcomer that used `pair`.
   each of its relations offers (their union). On the wire nothing changes:
   `libraries` answers what the caller is offered
   ([catalog section 2](catalog.md#2-libraries)).
-- **Limits for a group as a whole.** A member sets, per group, a pool of
-  streams, transcodes and a bitrate cap it lends that group, shared by all
-  the group's other members. A playback counts against the **first pool
-  with room**: the individual relation's own limits first, then its
-  groups' pools; it is refused only when all are full, and counts against exactly
-  one. The `limits` member of `libraries` gives the most generous
-  source's limits ([playback section 5](playback.md#5-limits)); since a
-  pool is shared, a peer may be refused before reaching them. A server's
-  own users are never refused for a peer.
+- **`local` titles for a group.** A member chooses, per group, whether it
+  shares its `local` titles with that group: off by default, as for a
+  pairing. A link shares them when one of its relations allows it and
+  offers the library that holds them
+  ([catalog section 5](catalog.md#5-what-is-shared)).
+- **Limits for a group as a whole.** A member sets, per group, a pool it
+  lends that group, shared by all the group's other members, with every
+  member of `limits` ([playback section 5](playback.md#5-limits)):
+  - counts, for the whole group together: `streams` and `transcodes`,
+    `downloads` at once, and the day's `downloadsPerDay` and
+    `scansPerDay` (and the members a content part adds, such as music's
+    `audioStreams` and `audioTranscodes`);
+  - caps, for each playback counted in the pool: `bitrateKbps`, and
+    `downloadKbps` for each download.
+
+  Downloads and scans are off for a group (0) unless the member allows
+  them. A playback counts against the **first pool with room** for its
+  purpose: the individual relation's own limits first, then its groups'
+  pools; it is refused only when all are full, and counts against exactly
+  one, its day's count included. The `limits` member of `libraries` gives
+  the most generous source's limits; since a pool is shared, a peer may
+  be refused (`409` `stream-limit-reached`) before reaching them. A
+  server's own users are never refused for a peer.
 
 ## 10. What members see
 

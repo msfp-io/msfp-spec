@@ -1222,12 +1222,13 @@ statuses are in section 8.4.
 |--------|--------|---------|-------|---------|----------------------|
 | 200 | (none) | | every call | done; the body is the answer | uses it |
 | 202 | (none) | | `rotate` | accepted, waiting for the receiver's operator (section 9.3) | waits |
-| 400 | `invalid-request` | `Invalid request` | `rotate`, `revoke`, `play`, `progress`, `stop` | the body is malformed, or a value is out of range | gives up; a correct caller never gets it |
+| 400 | `invalid-request` | `Invalid request` | `rotate`, `revoke`, `play`, `progress`, `stop`, `previews`, `lyrics` | the body is malformed, or a value is out of range | gives up; a correct caller never gets it |
 | 404 | `not-found` | `Not found` | every call | not heard, not known, not paired yet, no such code, or no such title for this peer; signed or not tells them apart (section 6.6) | as section 6.6 says |
 | 404 | `not-supported` | `Not supported` | a call of a part that is off; every call but `hello` when no core is common | the receiver doesn't speak that part, or no core, with the caller (sections 10.3, 10.4) | makes no more calls of that part (or none but `hello`) until a newer `hello` |
 | 409 | (no body) | | `pair` | the caller's key is already a peer of the maker (section 9.1) | tells its operator |
 | 409 | `rotation-refused` | `Rotation refused` | `rotate` | the new key isn't accepted (section 9.3) | as section 12.4 says |
-| 409 | `stream-limit-reached` | `Too many streams on this account` | `play` | the pairing's streams are all in use, or its limit is 0 | tells the viewer "busy now" |
+| 409 | `stream-limit-reached` | `Too many streams on this account` | `play` | the limits of the `play`'s purpose are all in use or reached, or the limit is 0: streams for watching, downloads at once or in a day for a download, scans in a day for a scan ([playback section 2.2](playback.md#22-what-the-owning-server-does)) | tells the viewer "busy now" |
+| 409 | `delivery-refused` | `This delivery is refused` | `play` | the owning server won't serve the `delivery` asked, for reasons of its own (bandwidth, policy), or can't make it of that copy (`file` of a copy of several parts, a subtitle it can't burn) | asks again with another delivery, or without `delivery`; when no delivery it can use is left, tells the viewer "not playable" (for a download, "download not available") ([playback section 2.5](playback.md#25-refusals)) |
 | 409 | `not-playable` | `This item can't be played` | `play` | the owning server has no way to play its copy | tells the viewer "not playable" |
 | 410 | `playback-stopped` | `Playback was stopped` | `progress` | the playback isn't live, or isn't this pairing's | stops the viewer's player |
 | 429 | `rate-limited` | `Too many requests` | every call | this peer is over its own limit (section 8.3) | waits, as section 8.3 says |
@@ -1375,8 +1376,9 @@ answers aren't signed either. Their statuses:
 |--------|---------|-------------------------------|
 | 200 | the whole resource | relays it, after the checks of media section 3 |
 | 206 | the range asked for | checks `Content-Range` (media section 2), relays it |
-| 404 | no such file, a query string, browser headers, or a ticket that isn't live | for a playlist, the file or a segment: treats the playback as ended; for a subtitle part or a sheet: goes without it |
-| 416 | the `Range` header is malformed or out of the file | answers `416` to the viewer |
+| 404 | no such file, a query string, browser headers, a ticket that isn't live, or a URL its ticket's kind doesn't open | for a playlist, the file or a segment: treats the playback as ended; for a subtitle part, a font, a sheet or an image: goes without it |
+| 405 | a `HEAD`, or any other method but `GET`, with `Allow: GET`; never `404` (media section 2.2) | not expected: the viewer's server sends `GET` only; it answers its own clients' `HEAD` itself |
+| 416 | the `Range` header is malformed or out of the file; under a scan ticket, a fetch without `Range`, or one that starts once the scan's 32 MiB are spent (media section 4.2) | answers `416` to the viewer; for a scan, a failed read of its media server |
 | 503 | the owning server is busy | answers `503` to the viewer, who may try again |
 | anything else | not expected | as a failed fetch: the viewer's server answers `404` to the viewer |
 
@@ -1637,9 +1639,9 @@ suspended, since its current key is the new one.
 | core | encodings, transport, keys, the code, signatures, pairing, states, rotation, addresses, versions | `pair`, `hello`, `rotate`, `revoke` | — |
 | `catalog` | libraries, titles, the general rules of title keys | `libraries`, `titles` | the core |
 | `playback` | starting, keeping and stopping a playback; limits | `play`, `progress`, `stop` | `catalog` and `media` |
-| `media` | what the stream URLs serve: HLS, the file | plain `GET`s under the stream root | the core |
-| `video` | films and series by TMDB: title keys, episode order, subtitles, PGS, WebVTT, skip markers, previews | none: it adds to `titles`, `play` and the media | `catalog`, `playback` and `media` |
-| `music` | artists, albums and tracks by MusicBrainz: keys, descriptions, cover art, audio-only playback | none: it adds to `titles`, `play` and `limits` | `catalog`, `playback` and `media` |
+| `media` | what the stream URLs serve: HLS, the file by byte ranges, subtitles, fonts, sheets and images; the kinds of ticket | plain `GET`s under the stream root | the core |
+| `video` | films, series and extras by TMDB, TheTVDB or the owner's own keys: title keys, episode order, copies, subtitles (WebVTT, ASS, PGS), fonts, skip markers, previews | `previews` (answered for `music`'s `local` images too); it adds to `titles`, `play` and the media | `catalog`, `playback` and `media` |
+| `music` | artists, albums and tracks by MusicBrainz or the owner's own keys: keys, descriptions, copies, cover art, lyrics, audio-only playback, queues | `lyrics`; it adds to `titles`, `play`, `progress`, `stop` and `limits` | `catalog`, `playback` and `media` |
 | `groups` | groups of servers: events, mail, pairing through a group | `group-sync`, `group-push`, `group-pair`, `group-join` | the core |
 
 The core and each part have their own version, an integer. Version 0 of
@@ -2557,9 +2559,13 @@ the owner on 2026-11-17; they may still change as implementations show)
        schemes are identifier namespaces.
     2. Optional descriptions for video titles (name, year), as music
        titles carry ([proposal 11](../../proposals/0011-music.md), open
-       point 2, now [music open question 2](music.md#8-open-questions)
-       and [video open question 4](video.md#8-open-questions)), so that
+       point 2, now settled in
+       [video open question 4](video.md#8-open-questions) and
+       [music's open questions](music.md#9-open-questions)), so that
        a viewer's server can list a peer's titles without TMDB.
+       Proposal 16 took this answer for `local` titles only (a name, a
+       year, one image); titles of a public database still carry keys
+       only.
     3. Wikidata (CC0, a nonprofit) as a later neutral scheme: it links
        TMDB, IMDb, TVDB and MusicBrainz identifiers, a way out if TMDB
        ever became a problem.
@@ -2641,7 +2647,7 @@ question above; they settle points the text left unclear or got wrong.
     title ([catalog section 3.2](catalog.md#32-whole-list-or-changes)),
     the relayed media type ([media section 3](media.md#3-what-is-fetched)),
     empty PGS parts, progress in a copy of several episodes, and `ids`
-    ([video sections 4.3, 5.2, 6.2 and 6.4](video.md#64-pgs)).
+    ([video sections 4.3, 5.2, 6.2 and 6.5](video.md#65-picture-subtitles)).
 
 **Also decided by the owner on 2026-11-18**, points the text left
 unclear while the engine's API was written down:
@@ -2690,6 +2696,11 @@ check of how Plex and Emby map onto MSFP
     [media section 1](media.md#1-the-urls)). Only the subtitle tracks the
     owning server can serve are listed, and a title's `subtitles` follow
     the same rule ([video sections 3 and 5.4](video.md#54-choosing-the-subtitles)).
+    Revised by proposal 16: a `delivery` `file` of a copy of several
+    parts is refused (`409` `delivery-refused`); a copy lists all its
+    subtitle tracks, giving URLs to those the owning server can serve
+    apart; the title summary `subtitles` is gone
+    ([video section 3.3](video.md#33-streams-and-tracks)).
 44. Nine points stated: episodes keyed by their TMDB episode ID, looked
     up with the owning server's own TMDB access, a media server's numbers
     not being TMDB's by default ([video sections 4.1 and 7](video.md#41-episode-order));
