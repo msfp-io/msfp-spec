@@ -26,6 +26,8 @@ media formats more often.
 | [groups.md](groups.md) | `groups` 0 | groups of servers: owner, admins and members, the signed list every member keeps, codes for a group, requests and answers encrypted for each member, pairing through a group, offers and limits per group |
 | [video.md](video.md) | `video` 0 | films, series and extras by TMDB, TheTVDB or the owner's own keys: title keys and their identity rules (TMDB's numbering, several episodes in one copy, other identifiers), copies (streams, tracks, chapters, skip markers), the description of `local` titles, `previews`, subtitles (WebVTT, ASS, PGS), fonts, seek-bar previews |
 | [music.md](music.md) | `music` 0 | artists, albums (by release) and tracks (by release track) by MusicBrainz or the owner's own keys: descriptions, copies, cover art, `lyrics`, audio-only playback, queues |
+| [implementers.md](implementers.md) | not normative | notes for implementers: what the parts would say of particular media servers and implementations, suggested numbers, advice on mapping names, decoding safely |
+| [registry.md](../registry.md) | for every version | the schemes of title keys and of `ids`, with their forms; a new scheme is an entry there |
 
 Read the core first. Each part says what it needs from the core, and
 refers to it by section.
