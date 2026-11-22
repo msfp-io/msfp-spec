@@ -8,6 +8,7 @@ import (
 	"encoding/base32"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -163,6 +164,49 @@ func openTokenReason(s string) error {
 		if !openToken(string(c)) {
 			return fmt.Errorf("byte %q outside a-z 0-9 . _ -", c)
 		}
+	}
+	return nil
+}
+
+// openMediaType tells a media type (spec/v0/core.md section 8.5): an
+// IANA-form media type, lowercase, exactly one /, no parameters, each
+// half starting with a letter or a digit, at most 127 characters of
+// a-z 0-9 . + - _ /. Fields that take one follow the rules of tokens:
+// kept when unknown, dropped as malformed otherwise. Every part's
+// media-type fields check their values with it.
+func openMediaType(s string) bool {
+	return openMediaTypeReason(s) == nil
+}
+
+// openMediaTypeValue is v when it is a string and a media type
+// (openMediaType), else "".
+func openMediaTypeValue(v any) string {
+	if s, ok := v.(string); ok && openMediaType(s) {
+		return s
+	}
+	return ""
+}
+
+// openMediaTypeReason is openMediaType with the reason a value isn't a
+// media type.
+func openMediaTypeReason(s string) error {
+	if len(s) < 1 || len(s) > 127 {
+		return fmt.Errorf("%d bytes, not 1 to 127", len(s))
+	}
+	for _, c := range []byte(s) {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '+' || c == '-' || c == '_' || c == '/') {
+			return fmt.Errorf("byte %q outside a-z 0-9 . + - _ /", c)
+		}
+	}
+	top, sub, ok := strings.Cut(s, "/")
+	if !ok || strings.Contains(sub, "/") {
+		return errors.New("not exactly one /")
+	}
+	alnum := func(h string) bool {
+		return h != "" && (h[0] >= 'a' && h[0] <= 'z' || h[0] >= '0' && h[0] <= '9')
+	}
+	if !alnum(top) || !alnum(sub) {
+		return errors.New("a half that doesn't start with a letter or a digit")
 	}
 	return nil
 }

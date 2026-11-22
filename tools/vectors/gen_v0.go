@@ -285,15 +285,7 @@ type v1StrictFile struct {
 	Opaque    []verdict          `json:"opaqueKeyParts"`
 	Images    []catalogImageCase `json:"localImages"`
 	Tokens    []verdict          `json:"openTokens"`
-	Kinds     []libraryKindCase  `json:"libraryKinds"`
-}
-
-// libraryKindCase is a library, as JSON, and the kind a caller keeps of
-// it; kind is absent when the caller keeps none.
-type libraryKindCase struct {
-	Name    string  `json:"name"`
-	Library string  `json:"library"`
-	Kind    *string `json:"kind,omitempty"`
+	Types     []verdict          `json:"openMediaTypes"`
 }
 
 // openTokenVerdicts are values of open fields (spec/v0/core.md section
@@ -312,32 +304,22 @@ func openTokenVerdicts() []verdict {
 	return out
 }
 
-// libraryKindCases are libraries and the kind a caller keeps of each
-// (spec/v0/catalog.md sections 2 and 2.2).
-func libraryKindCases() []libraryKindCase {
-	var out []libraryKindCase
-	lib := func(name, kind string) {
-		body := `{"id":"L1","name":"Films"` + kind + `}`
-		k, err := catalogLibraryKind([]byte(body))
-		if err != nil {
-			panic(err)
+// openMediaTypeVerdicts are values of media-type fields (spec/v0/core.md
+// section 8.5): kept (valid) when they are media types, known or not.
+func openMediaTypeVerdicts() []verdict {
+	var out []verdict
+	for _, t := range []string{"video/mp4", "video/matroska", "audio/mp4", "video/mp2t", "video/vnd.dlna.mpeg-tts",
+		"application/ttml+xml", "audio/vnd.dolby.mlp", "video/x-msvideo", "video/new-format_2", "a/b", "0/9",
+		"x/" + strings.Repeat("a", 125), "x/" + strings.Repeat("a", 126),
+		"", "video", "video/", "/mp4", "video/mp4/x", "Video/MP2T", "video/mp4; codecs=avc1", "video/mp4;codecs=avc1",
+		"video/ mp4", " video/mp4", "video/.mp4", "+video/mp4", "video/-mp4", "video/mp4 ", "vidéo/mp4", "video\\mp4",
+		"video/mp4,audio/mp4", "*/*", "video/*"} {
+		ok, r := reason(openMediaTypeReason(t))
+		if ok != openMediaType(t) {
+			panic("openMediaType and openMediaTypeReason differ on " + t)
 		}
-		out = append(out, libraryKindCase{Name: name, Library: body, Kind: k})
+		out = append(out, verdict{Text: t, Valid: ok, Reason: r})
 	}
-	lib("a kind the part gives", `,"kind":"movies"`)
-	lib("mixed", `,"kind":"mixed"`)
-	lib("a kind no part reads, kept", `,"kind":"photos"`)
-	lib("an unknown kind, kept", `,"kind":"audiobooks"`)
-	lib("an unknown kind with . _ -, kept", `,"kind":"x.live_tv-2"`)
-	lib("other is a token like any, kept", `,"kind":"other"`)
-	lib("32 characters, kept", `,"kind":"`+strings.Repeat("k", 32)+`"`)
-	lib("absent", ``)
-	lib("empty: absent", `,"kind":""`)
-	lib("33 characters: absent", `,"kind":"`+strings.Repeat("k", 33)+`"`)
-	lib("another case: absent", `,"kind":"Movies"`)
-	lib("a space: absent", `,"kind":"home videos"`)
-	lib("not a string: absent", `,"kind":1`)
-	lib("an array: absent", `,"kind":["movies"]`)
 	return out
 }
 
@@ -456,35 +438,34 @@ func catalogImageCases() []catalogImageCase {
 	const proot = "https://a.example.org/media/api/v1/stream/"
 	ticket := strings.Repeat("Tk7_-", 4) + "Q"
 	ans := func(name, r, body string) {
-		t, err := catalogImageAnswer(r, []byte(body))
+		t, err := catalogImageAnswer([]byte(body))
 		ok, why := reason(err)
-		out = append(out, catalogImageCase{Name: name, Side: "answer", StreamRoot: r, Body: body, Valid: &ok, Ticket: t, Reason: why})
+		u := ""
+		if ok {
+			u = catalogImageURL(r, t)
+		}
+		out = append(out, catalogImageCase{Name: name, Side: "answer", StreamRoot: r, Body: body, Valid: &ok, Ticket: t, URL: u, Reason: why})
 	}
-	url := func(u string) string { return fmt.Sprintf(`{"url":%q}`, u) }
-	ans("the exact form", root, url(root+ticket+"/image"))
-	ans("a stream root with a prefix", proot, url(proot+ticket+"/image"))
-	ans("a ticket of 1 character", root, url(root+"x/image"))
-	ans("a ticket of 64 characters", root, url(root+strings.Repeat("A", 64)+"/image"))
-	ans("a ticket of 65 characters", root, url(root+strings.Repeat("A", 65)+"/image"))
-	ans("an empty ticket", root, url(root+"/image"))
-	ans("a ticket with a dot", root, url(root+"a.b/image"))
-	ans("a ticket with a percent", root, url(root+"a%41/image"))
-	ans("another host", root, url("https://b.example.org/api/v1/stream/"+ticket+"/image"))
-	ans("http, not https", root, url("http://a.example.org/api/v1/stream/"+ticket+"/image"))
-	ans("the host in another case", root, url("https://A.example.org/api/v1/stream/"+ticket+"/image"))
-	ans("without the stream root's prefix", proot, url(root+ticket+"/image"))
-	ans("another name", root, url(root+ticket+"/file"))
-	ans("Image in another case", root, url(root+ticket+"/Image"))
-	ans("a slash after image", root, url(root+ticket+"/image/"))
-	ans("a query", root, url(root+ticket+"/image?x=1"))
-	ans("a fragment", root, url(root+ticket+"/image#x"))
-	ans("a part between ticket and image", root, url(root+ticket+"/x/image"))
-	ans("a relative url", root, url(ticket+"/image"))
-	ans("url absent", root, `{}`)
-	ans("url not a string", root, `{"url":1}`)
-	ans("url null", root, `{"url":null}`)
+	tk := func(t string) string { return fmt.Sprintf(`{"ticket":%q}`, t) }
+	ans("the exact form", root, tk(ticket))
+	ans("a stream root with a prefix: the URL under it", proot, tk(ticket))
+	ans("a ticket of 1 character", root, tk("x"))
+	ans("a ticket of 64 characters", root, tk(strings.Repeat("A", 64)))
+	ans("a ticket of 65 characters", root, tk(strings.Repeat("A", 65)))
+	ans("an empty ticket", root, tk(""))
+	ans("a ticket with a dot", root, tk("a.b"))
+	ans("a ticket with a percent", root, tk("a%41"))
+	ans("a ticket with a slash", root, tk("a/b"))
+	ans("a URL in place of a ticket", root, tk(root+ticket+"/image"))
+	ans("a url member only, as before: refused", root, fmt.Sprintf(`{"url":%q}`, root+ticket+"/image"))
+	ans("a url beside the ticket: ignored, the URL built", root, fmt.Sprintf(`{"ticket":%q,"url":%q}`, ticket, "https://b.example.org/x"))
+	ans("ticket absent", root, `{}`)
+	ans("ticket not a string", root, `{"ticket":1}`)
+	ans("ticket null", root, `{"ticket":null}`)
 	ans("not an object", root, `[]`)
-	ans("an unknown member ignored", root, `{"url":"`+root+ticket+`/image","expires":600}`)
+	ans("not JSON", root, `{"ticket":"`+ticket+`"`)
+	ans("ticket twice", root, `{"ticket":"`+ticket+`","ticket":"x"}`)
+	ans("an unknown member ignored", root, `{"ticket":"`+ticket+`","expires":600}`)
 
 	img := func(name string, head []byte, size int) {
 		f, err := catalogCheckImage(head, size)
@@ -585,9 +566,9 @@ func genV0Strict() []byte {
 			"languageCodes: a media server's language code (text) and the tag a server sends for it (output), or none (valid false): an ISO 639-2 code, /B or /T, of a language with an ISO 639-1 code sent as that code, the rest kept, in BCP 47's case conventions; und, mul, zxx and mis not sent (spec/v0/catalog.md section 3, language tags; spec/v0/core.md section 2.5).",
 			"titlePages: pages of titles (spec/v0/catalog.md section 3.1). Input: changes (a changes answer or a whole-list one), titles and gone (how many keys the page holds), bytes (the answer body's size), remain (whole list: whether titles remain after the page on the owning server), after (the request's), lastKey (the page's last title key), next (absent when the answer has none). Output: valid (the owning server may send it: at most 5,000 keys, titles and gone together; at most 3 MiB, 3,145,728 bytes, of JSON; in a whole list, next is the last key exactly when titles remain), and caller: what the caller does with it whatever valid says: fail (past the core's 4 MiB, 4,194,304 bytes: core section 3), stop (next absent, empty, or not greater than after in byte order), or ask on.",
 			"opaqueKeyParts: the opaque parts of title keys, a local title's identifier or an extra's part after x/ (spec/v0/catalog.md section 4.2): 1 to 64 characters of A-Z a-z 0-9 _ -, compared byte for byte.",
-			"localImages: the image of a local title (spec/v0/catalog.md section 4.4), on three sides. request: the owning server's answer (status, type: the problem's type) to the image request body, given parts (the content parts on between the two servers) and offered (the titles it offers the caller, with whether their description says image true): 404 not-supported with no content part with local titles on; 400 invalid-request for a malformed body; 404 not-found for a title not offered, not local, of a part that is off, of a kind without an image (only films, series, artists and albums have one), or without an image; else 200. answer: the viewer's server's check of the answer body (body) against the owning server's stream root (streamRoot, spec/v0/media.md section 1): url exactly <stream root><ticket>/image, the ticket 1 to 64 characters of A-Z a-z 0-9 _ -; valid with the ticket, or dropped (valid false). image: the image's first bytes (hex) and its whole length (size): valid when size is at most 1 MiB (1,048,576 bytes), the content is a JPEG (FF D8 FF) or a PNG (the 8-byte signature), whatever any Content-Type, and the header gives a width and a height of 1 to 4,096 pixels (a PNG's IHDR, a JPEG's frame header SOF0 to SOF15 but DHT, JPG and DAC); format jpeg or png.",
+			"localImages: the image of a local title (spec/v0/catalog.md section 4.4), on three sides. request: the owning server's answer (status, type: the problem's type) to the image request body, given parts (the content parts on between the two servers) and offered (the titles it offers the caller, with whether their description says image true): 404 not-supported with no content part with local titles on; 400 invalid-request for a malformed body; 404 not-found for a title not offered, not local, of a part that is off, of a kind without an image (only films, series, artists and albums have one), or without an image; else 200. answer: the viewer's server's check of the answer body (body), {\"ticket\"}, the ticket 1 to 64 characters of A-Z a-z 0-9 _ -: valid with the ticket and the URL it builds from it and the owning server's stream root (streamRoot, spec/v0/media.md section 1), <stream root><ticket>/image; or refused (valid false), no image. The answer carries no URL: a url member is unknown, ignored. image: the image's first bytes (hex) and its whole length (size): valid when size is at most 1 MiB (1,048,576 bytes), the content is a JPEG (FF D8 FF) or a PNG (the 8-byte signature), whatever any Content-Type, and the header gives a width and a height of 1 to 4,096 pixels (a PNG's IHDR, a JPEG's frame header SOF0 to SOF15 but DHT, JPG and DAC); format jpeg or png.",
 			"openTokens: values of open fields (spec/v0/core.md section 8.5). A token is 1 to 32 characters of a-z 0-9 . _ -. In a fact (titles, play's answer) a token is kept as it is, known or not (valid true), never turned into another value; a value that isn't a token is malformed (valid false): dropped alone when the member is optional, with the entry holding it (a copy, a track, an extra) when the member is required. In a request, an unknown token is ignored where the field is a hint and refused with 409 delivery-refused where it names what to serve; only a value that isn't a token gets 400.",
-			"libraryKinds: a library (library, its JSON object) and the kind a caller keeps of it (spec/v0/catalog.md sections 2 and 2.2): the kind when it is a token, known or not; absent when the library has none, or its kind isn't a string or isn't a token.",
+			"openMediaTypes: values of media-type fields (spec/v0/core.md section 8.5): an IANA-form media type, lowercase, exactly one /, no parameters, each half starting with a letter or a digit, at most 127 characters of a-z 0-9 . + - _ /. Kept as it is, known or not (valid true); otherwise malformed (valid false), handled as openTokens says. Libraries and titles carry no kind (spec/v0/catalog.md sections 2 and 3): a kind member is unknown, ignored.",
 		},
 		Addresses: addressVerdicts(false),
 		Codes:     codeVerdicts(core0, false),
@@ -601,6 +582,6 @@ func genV0Strict() []byte {
 		Opaque:    catalogOpaqueVerdicts(),
 		Images:    catalogImageCases(),
 		Tokens:    openTokenVerdicts(),
-		Kinds:     libraryKindCases(),
+		Types:     openMediaTypeVerdicts(),
 	})
 }

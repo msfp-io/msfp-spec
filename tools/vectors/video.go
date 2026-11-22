@@ -710,19 +710,18 @@ func keepVideoTitle(raw []byte, libraries []string) ([]byte, error) {
 	if !ok {
 		return nil, errors.New("not an object")
 	}
+	// A title carries no kind (catalog section 3): the key names it, and
+	// a kind member is unknown, ignored.
 	key, ok1 := o["key"].(string)
-	kind, ok2 := o["kind"].(string)
 	lib, ok3 := o["library"].(string)
-	if !ok1 || !ok2 || !ok3 {
-		return nil, errors.New("key, kind or library isn't a string")
+	if !ok1 || !ok3 {
+		return nil, errors.New("key or library isn't a string")
 	}
 	k, err := parseVideoKey(key)
 	if err != nil {
 		return nil, fmt.Errorf("key: %v", err)
 	}
-	if kind != k.Kind {
-		return nil, fmt.Errorf("kind %q, but the key names a %s", kind, k.Kind)
-	}
+	kind := k.Kind
 	if !videoIn(lib, libraries) {
 		return nil, fmt.Errorf("library %q wasn't asked for", lib)
 	}

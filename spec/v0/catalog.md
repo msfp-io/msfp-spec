@@ -32,8 +32,8 @@ specifications.
 
 ## 1. Terms
 
-- **Library**: a collection of titles on a server, with an ID, a name and
-  a kind.
+- **Library**: a collection of titles on a server, with an ID and a
+  name.
 - **Offer**: the libraries a server lets one peer see. Each server sets
   its own offers, per peer, or per group: a peer is then offered what
   each of its link's relations offers ([groups section 9](groups.md#9-sharing-and-limits)).
@@ -76,16 +76,10 @@ Library:
 |-------|------|---------|
 | `id` | string | the library's ID: 1 to 64 characters of `A–Z a–z 0–9 _ -` |
 | `name` | string | its name, text |
-| `kind` | string, optional | what the library holds: an open token ([core section 8.5](core.md#85-unknown-values)), such as `movies`, `tvshows`, `music`, `mixed`; absent when the owning server has no kind for it |
 
-`kind` is open: a server sends the kind its media server gives the
-library, as a token, and a caller keeps a kind it doesn't know. `mixed`
-is for a library that holds several kinds. Which titles a kind holds is
-said by the content parts: `movies` and `tvshows` by
-[video](video.md#2-libraries), `music` by [music](music.md#7-libraries),
-`mixed` by both. Other kinds are labels: a caller shows them as it sees
-fit, and reads the library's titles all the same, by the kinds of their
-keys (section 3).
+A library has no kind: the keys of its titles say what it holds
+(section 3). A viewer's server types an empty library by its first
+titles.
 
 ### 2.1 Library IDs
 
@@ -127,20 +121,14 @@ for identifiers applies to them.
 - names cleaned as in [core section 9.1](core.md#91-pair) (`?` when
   empty). Names are text, never markup: a receiver treats them as text
   wherever it shows them, and may clean further;
-- a `kind` that is a token is kept as it is, known or not; one that
-  isn't a token (`""`, too long, other characters) counts as absent
-  ([core section 8.5](core.md#85-unknown-values));
 - members of the wrong JSON type ([core section 2.3](core.md#23-json)): a
   `libraries` that isn't an array, or a top-level `name` that isn't a
   string, fails the answer (the caller treats the peer as unreachable and
   keeps what it had); an entry of `libraries` that isn't an object, or
-  whose `id` isn't a string, is skipped; a library's `name` or `kind`
-  that isn't a string counts as absent (`?`, no kind); a `limits` that isn't
+  whose `id` isn't a string, is skipped; a library's `name` that isn't a
+  string counts as absent (`?`); a `limits` that isn't
   an object, or whose members aren't integers, is ignored, as are limits
   out of range.
-
-Test cases: `libraryKinds` in
-[vectors/v0/strict.json](../../vectors/v0/strict.json).
 
 Refusals: signed `404` when the caller isn't `paired`, or when the body
 isn't a JSON object; signed `404` `not-supported` when `catalog` is off;
@@ -174,12 +162,11 @@ Title:
 
 | Field | Type | Content |
 |-------|------|---------|
-| `key` | string | the title key (section 4) |
-| `kind` | string | the kind its key names, one a content part defines |
+| `key` | string | the title key (section 4); the kind of title is the one it names |
 | `library` | string | one of the requested libraries that holds it: when several do, the one whose ID comes first in byte order |
 
-A title carries, besides, the members its content part defines for its
-kind: [video section 3](video.md#3-titles) for films, series and extras,
+A title carries, besides, the members its content part defines for the
+kind its key names: [video section 3](video.md#3-titles) for films, series and extras,
 [music section 3](music.md#3-what-a-title-carries) for artists, albums
 and tracks.
 
@@ -262,8 +249,7 @@ Test cases: `titlePages` in
   that fails halfway (a failed answer, no answer, its time used up)
   changes nothing: the caller keeps the list of its last complete reading
   and drops the pages it read.
-- A title has changed when anything sent for it changes: its `kind` or
-  `library`, its description (section 4.3), or any member its content
+- A title has changed when anything sent for it changes: its `library`, its description (section 4.3), or any member its content
   part adds (video's `copies`, `place`, `with` and `ids`, music's
   descriptions and copies). A change of its copies is a change of the
   title (section 3.4). A changes reading sends it again, whole.
@@ -283,7 +269,6 @@ Anything else is skipped, title by title:
 - the key parses as a title key of a content part on between the two
   servers, is in canonical form (section 4), and its kind and scheme are
   ones that part defines;
-- `kind` matches the kind the key names;
 - `library` is one of the libraries it asked for;
 - the members the content part defines are kept as that part says
   ([video section 3.1](video.md#31-what-the-caller-keeps),
@@ -298,8 +283,8 @@ Members of the wrong JSON type ([core section 2.3](core.md#23-json)):
   the answer: the caller treats the peer as unreachable and keeps what it
   had. Skipping one of them could end a reading early or mix the kinds of
   reading, and the caller would then drop titles the peer still holds.
-- An entry of `titles` that isn't an object, or whose `key`, `kind` or
-  `library` isn't a string, is skipped.
+- An entry of `titles` that isn't an object, or whose `key` or `library`
+  isn't a string, is skipped.
 - A member a content part defines, of the wrong type, is read as that
   part says.
 - An entry of `gone` that isn't a string is skipped.
@@ -312,7 +297,7 @@ signed `404` `not-supported` when `catalog` is off; `500`.
 ### 3.4 Copies
 
 A film, an episode, an extra (section 3.5) or a music track describes its
-copies in `titles`: their length, container, streams and tracks, as its
+copies in `titles`: their length, media type, streams and tracks, as its
 content part defines them ([video section 3.2](video.md#32-copies) for
 films, episodes and extras, [music section 3.3](music.md#33-a-tracks-copies)
 for tracks). A viewer's server
@@ -400,15 +385,18 @@ has, or to carry watched state across.
   its `ids`: other identifiers of the same title, by scheme, in the forms
   the [registry](../registry.md#ids-schemes) gives. One title may have
   two keys on two servers, `tmdb` on one and `tvdb` on the other; `ids`
-  join them. A series one server keys under `tmdb` with `ids.tvdb` *n*,
-  and one another server keys `series/tvdb/<n>`, are the same show; so
-  are a series keyed `series/tvdb/<n>` with `ids.tmdb` *m* and one keyed
-  `series/tmdb/<m>`. `tmdb` is in `ids` so that a title keyed under
-  another scheme can name its TMDB ID once TMDB has it. They are still
-  two titles, each played from its own key. The content parts say which
-  of their kinds carry `ids`
+  join them. A series keyed `series/tvdb/<n>` with `ids.tmdb` *m* and
+  one keyed `series/tmdb/<m>` are the same show. `tmdb` is in `ids` so
+  that a title keyed under another scheme can name its TMDB ID once TMDB
+  has it. They are still two titles, each played from its own key.
+- **Which titles carry `ids`.** On video, only episodes and titles keyed
+  under `tvdb`; not films and series keyed under `tmdb`, whose other
+  identifiers TMDB's lookup by key gives, nor `local` titles. On music,
+  only `mb` titles: `mbreleasegroup` on albums and `mbrecording` on
+  tracks. The content parts give the details
   ([video section 4.3](video.md#43-other-identifiers),
-  [music section 3.1](music.md#31-other-identifiers)).
+  [music section 3.1](music.md#31-other-identifiers)), the
+  [registry](../registry.md#ids-schemes) the forms.
 - **A `local` key never matches** another server's title, even an equal
   key: it is equal only to the same key from the same owning server. A
   viewer's server never matches a `local` title through `ids` either,
@@ -447,9 +435,9 @@ server, beside the members of section 3:
   without one, where one is required, or whose `name` is empty once
   cleaned, is skipped.
 - `name` is untrusted text, cleaned as [core section 9.1](core.md#91-pair)
-  cleans a server's name (with 128 instead of 80), never markup. It is
-  never a file name: an owning server that has no other name for the
-  title doesn't send it.
+  cleans a server's name (with 128 instead of 80), never markup. What
+  protects it is the switch of section 5: `local` titles are off by
+  default, shared per pairing and per group.
 - `image` is asked for with the `image` call (section 4.4), and fetched
   under that answer's short ticket, no playback, as
   [media section 3.4](media.md#34-subtitles-fonts-sheets-and-images)
@@ -488,12 +476,14 @@ Answer `200`:
 
 | Field | Type | Content | What the viewer's server requires or does |
 |-------|------|---------|-------------------------------------------|
-| `url` | string | the image's URL, `<stream root><ticket>/image` ([media section 1](media.md#1-the-urls)) | exactly that form; otherwise the answer is dropped |
+| `ticket` | string | a ticket of the answer's own, made as every ticket is ([media section 1](media.md#1-the-urls)) | `^[A-Za-z0-9_-]{1,64}$`; otherwise the answer is refused, and there is no image |
 
-- The URL carries a ticket of the answer's own, made as every ticket is
-  ([media section 1](media.md#1-the-urls)). It works for 10 minutes from
-  the answer, for that URL only, and is no playback: it doesn't count
-  against `streams` and gets no `progress` or `stop`.
+- The answer carries no URL. The viewer's server builds it from the
+  owning server's stream root and the ticket:
+  `<stream root><ticket>/image` ([media section 1](media.md#1-the-urls)),
+  so that it never fetches an address a peer wrote. The ticket works for
+  10 minutes from the answer, for that URL only, and is no playback: it
+  doesn't count against `streams` and gets no `progress` or `stop`.
 - The owning server answers `404` `not-supported` when no content part
   with `local` titles is on between the two, checked before the body;
   `400` when the body isn't I-JSON, isn't an object, or its `title` is
@@ -542,9 +532,9 @@ anything.
   isn't shared as `local`, is not sent.
 - Of the owning server, a peer never learns files, paths or its media
   server's item IDs, not even inside library IDs (section 2.1), version
-  IDs ([playback section 2.3](playback.md#23-the-answer)), the opaque
-  parts of keys (section 4.2), or the names of copies and tracks
-  ([video section 3.6](video.md#36-what-names-and-titles-may-say)).
+  IDs ([playback section 2.3](playback.md#23-the-answer)), or the opaque
+  parts of keys (section 4.2). Copies, tracks and extras carry no names
+  ([video section 3](video.md#3-titles)).
 
 ## 6. Security considerations
 
@@ -562,8 +552,9 @@ anything.
   give advice), and serves its people a copy of its own, never
   the owning server's URL.
 - **Copies** describe the owning server's files closely (sizes, tracks,
-  lengths). They are what a viewer would learn by playing; the content
-  parts keep file names and release groups out of them.
+  lengths). They are what a viewer would learn by playing. They carry
+  no names, so no file name or release group reaches a peer through
+  them.
 - **Library IDs** give a peer nothing about the owning server's layout
   (section 2.1). The same holds of every ID the parts define.
 
@@ -627,7 +618,8 @@ gave no bound for them):
 
 12. **A library's `kind` is open** (section 2): a token, kept when
     unknown; absent when the owning server has none. `""` is no longer
-    sent, and counts as absent.
+    sent, and counts as absent. Dropped by the whole of proposal 17
+    (item 15).
 13. **Schemes in a registry** ([spec/registry.md](../registry.md)): a
     new scheme is an entry there. `tmdb` joins `ids`, and `ids` join one
     title keyed under two schemes (section 4.1). The order of schemes is
@@ -637,3 +629,16 @@ gave no bound for them):
     [implementers' notes](implementers.md#catalog). The image's bounds
     are unchanged: a JPEG whose header gives a height of 0 is still
     refused, being under 1 pixel tall.
+
+**The whole of proposal 17, as frozen** (2026-11-22):
+
+15. **No library `kind`** (section 2): the titles' keys say what a
+    library holds. **No title `kind`** (section 3): the key says it.
+    Both, sent, are unknown members, ignored.
+16. **`ids` only where they add something** (section 4.1): on video,
+    episodes and titles keyed under `tvdb`; on music, `mbreleasegroup`
+    and `mbrecording` on `mb` titles; never on `local` titles.
+17. **`image`'s answer is `{"ticket"}`** (section 4.4): the viewer's
+    server builds the URL from the stream root and the ticket. The
+    `local` title's "never a file name" guidance went; the switch of
+    section 5 protects it.

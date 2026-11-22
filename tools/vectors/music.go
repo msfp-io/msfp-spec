@@ -274,18 +274,16 @@ func keepMusicTitle(raw []byte, libraries []string) ([]byte, error) {
 		return nil, errors.New("not an object")
 	}
 	text := func(k string) (string, bool) { s, ok := o[k].(string); return s, ok }
+	// A title carries no kind (catalog section 3): the key names it, and
+	// a kind member is unknown, ignored.
 	key, ok1 := text("key")
-	kind, ok2 := text("kind")
 	lib, ok3 := text("library")
-	if !ok1 || !ok2 || !ok3 {
-		return nil, errors.New("key, kind or library isn't a string")
+	if !ok1 || !ok3 {
+		return nil, errors.New("key or library isn't a string")
 	}
-	keyKind, scheme, err := musicParseKey(key)
+	kind, scheme, err := musicParseKey(key)
 	if err != nil {
 		return nil, fmt.Errorf("key: %v", err)
-	}
-	if kind != keyKind {
-		return nil, fmt.Errorf("kind %q, but the key names a %s", kind, keyKind)
 	}
 	if !kindIn(lib, libraries...) {
 		return nil, fmt.Errorf("library %q wasn't asked for", lib)

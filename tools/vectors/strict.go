@@ -547,8 +547,8 @@ type catalogPageCase struct {
 
 // catalogImageCase is a case of localImages, of one of three sides:
 // "request" (the owning server's answer to an image request: status and
-// type), "answer" (the viewer's server's check of the answer's url:
-// valid and the ticket), "image" (its checks of the image's bytes: valid
+// type), "answer" (the viewer's server's check of the answer: valid, the
+// ticket and the URL it builds from it), "image" (its checks of the image's bytes: valid
 // and the format).
 type catalogImageCase struct {
 	Name       string           `json:"name"`
@@ -563,6 +563,7 @@ type catalogImageCase struct {
 	Type       string           `json:"type,omitempty"`
 	Valid      *bool            `json:"valid,omitempty"`
 	Ticket     string           `json:"ticket,omitempty"`
+	URL        string           `json:"url,omitempty"`
 	Format     string           `json:"format,omitempty"`
 	Reason     string           `json:"reason,omitempty"`
 }
@@ -748,10 +749,11 @@ func catalogImageRequest(parts []string, offered []catalogOffered, body []byte) 
 }
 
 // catalogImageAnswer applies the viewer's server's check of an image
-// answer (catalog section 4.4): url is exactly <stream root><ticket>/image,
-// the ticket as media section 1 gives it. It returns the ticket, or an
-// error when the answer is dropped.
-func catalogImageAnswer(root string, body []byte) (string, error) {
+// answer (catalog section 4.4): {"ticket"}, the ticket as media section 1
+// gives it. It returns the ticket, or an error when the answer is
+// refused. The URL is built from the stream root and the ticket
+// (catalogImageURL), never read from the answer.
+func catalogImageAnswer(body []byte) (string, error) {
 	if checkIJSON(body) != nil {
 		return "", errors.New("not I-JSON")
 	}
@@ -759,19 +761,11 @@ func catalogImageAnswer(root string, body []byte) (string, error) {
 	if json.Unmarshal(body, &m) != nil || m == nil {
 		return "", errors.New("not a JSON object")
 	}
-	raw, ok := m["url"]
-	var u string
-	if !ok || len(raw) == 0 || raw[0] != '"' || json.Unmarshal(raw, &u) != nil {
-		return "", errors.New("url absent or not a string")
+	raw, ok := m["ticket"]
+	var t string
+	if !ok || len(raw) == 0 || raw[0] != '"' || json.Unmarshal(raw, &t) != nil {
+		return "", errors.New("ticket absent or not a string")
 	}
-	if !strings.HasPrefix(u, root) {
-		return "", errors.New("url not under the owning server's stream root")
-	}
-	rest := u[len(root):]
-	if !strings.HasSuffix(rest, "/image") {
-		return "", errors.New("url not ending in /image")
-	}
-	t := strings.TrimSuffix(rest, "/image")
 	if len(t) < 1 || len(t) > 64 {
 		return "", errors.New("a ticket not 1 to 64 characters")
 	}
@@ -782,6 +776,10 @@ func catalogImageAnswer(root string, body []byte) (string, error) {
 	}
 	return t, nil
 }
+
+// catalogImageURL is the URL a viewer's server builds for an image's
+// ticket (catalog section 4.4, media section 1).
+func catalogImageURL(root, ticket string) string { return root + ticket + "/image" }
 
 // catalogImageBytes is the bound on a local title's image, and
 // catalogImageSide the bound on its width and height (catalog section 4.4).
@@ -895,24 +893,4 @@ func catalogJPEGSize(b []byte) (int, int, error) {
 		}
 		i += n
 	}
-}
-
-// catalogLibraryKind is what a caller keeps of a library's kind
-// (catalog section 2.2): the kind when it is a token, known or not
-// (core section 8.5); nil when it is absent, not a string, or not a
-// token. library is the library's JSON object.
-func catalogLibraryKind(library []byte) (*string, error) {
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(library, &m); err != nil || m == nil {
-		return nil, errors.New("not a JSON object")
-	}
-	raw, ok := m["kind"]
-	if !ok || len(raw) == 0 || raw[0] != '"' {
-		return nil, nil
-	}
-	var k string
-	if json.Unmarshal(raw, &k) != nil || !openToken(k) {
-		return nil, nil
-	}
-	return &k, nil
 }

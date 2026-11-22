@@ -181,13 +181,13 @@
       "name": "a key that isn't a string: skipped",
       "text": "{\"key\":949,\"kind\":\"movie\",\"library\":\"v1\",\"copies\":[{\"id\":\"v1\",\"durationMs\":8160000,\"container\":\"matroska\",\"size\":1000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\",\"language\":\"en\"}]}]}",
       "valid": false,
-      "reason": "key, kind or library isn't a string"
+      "reason": "key or library isn't a string"
     },
     {
-      "name": "a kind that doesn't match the key: skipped",
+      "name": "a kind member, not the key's: no title kind (catalog section 3), ignored",
       "text": "{\"key\":\"movie/tmdb/949\",\"kind\":\"series\",\"library\":\"v1\",\"copies\":[{\"id\":\"v1\",\"durationMs\":8160000,\"container\":\"matroska\",\"size\":1000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\",\"language\":\"en\"}]}]}",
-      "valid": false,
-      "reason": "kind \"series\", but the key names a movie"
+      "valid": true,
+      "output": "{\"key\":\"movie/tmdb/949\",\"kind\":\"movie\",\"library\":\"v1\",\"copies\":[{\"id\":\"v1\",\"durationMs\":8160000,\"container\":\"matroska\",\"size\":1000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"language\":\"en\",\"codec\":\"aac\"}]}]}"
     },
     {
       "name": "a library not asked for: skipped",
@@ -1940,16 +1940,16 @@
       "reason": "key: a tmdb ID that isn't 1 to 9,999,999,999 without leading zeros"
     },
     {
-      "name": "kind trailer: skipped (the kind is extra)",
+      "name": "a kind member trailer, ignored: skipped for its missing extraType",
       "text": "{\"key\":\"movie/tmdb/348/x/Tr7aQ1\",\"kind\":\"trailer\",\"library\":\"v1\",\"copies\":[{\"id\":\"v1\",\"durationMs\":8160000,\"container\":\"matroska\",\"size\":1000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\",\"language\":\"en\"}]}]}",
       "valid": false,
-      "reason": "kind \"trailer\", but the key names a extra"
+      "reason": "an extra whose extraType is missing or isn't a token"
     },
     {
-      "name": "kind movie for an extra's key: skipped",
+      "name": "a kind member movie on an extra's key, ignored: skipped for its missing extraType",
       "text": "{\"key\":\"movie/tmdb/348/x/Tr7aQ1\",\"kind\":\"movie\",\"library\":\"v1\",\"copies\":[{\"id\":\"v1\",\"durationMs\":8160000,\"container\":\"matroska\",\"size\":1000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\",\"language\":\"en\"}]}]}",
       "valid": false,
-      "reason": "kind \"movie\", but the key names a extra"
+      "reason": "an extra whose extraType is missing or isn't a token"
     }
   ],
   "localTitles": [

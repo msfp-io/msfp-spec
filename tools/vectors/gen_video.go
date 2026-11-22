@@ -408,7 +408,7 @@ func videoTitleCases() []videoCase {
 		{"a key ending in /: skipped", key("movie/tmdb/949/", "movie")},
 		{"a music key: skipped", `{"key":"track/mb/0c000000-0000-4000-8000-000000000003","kind":"track","library":"v1"}`},
 		{"a key that isn't a string: skipped", `{"key":949,"kind":"movie","library":"v1"` + cs + `}`},
-		{"a kind that doesn't match the key: skipped", `{"key":"movie/tmdb/949","kind":"series","library":"v1"` + cs + `}`},
+		{"a kind member, not the key's: no title kind (catalog section 3), ignored", `{"key":"movie/tmdb/949","kind":"series","library":"v1"` + cs + `}`},
 		{"a library not asked for: skipped", `{"key":"movie/tmdb/949","kind":"movie","library":"v3"` + cs + `}`},
 		{"not an object: skipped", `"movie/tmdb/949"`},
 
@@ -505,8 +505,8 @@ func videoExtraCases() []videoCase {
 		{"an empty extra part: skipped", x("movie/tmdb/348/x/", `,"extraType":"trailer"`)},
 		{"x without an extra part: skipped", x("movie/tmdb/348/x", `,"extraType":"trailer"`)},
 		{"an extra under a bad key: skipped", x("movie/tmdb/0348/x/Tr1", `,"extraType":"trailer"`)},
-		{"kind trailer: skipped (the kind is extra)", `{"key":"movie/tmdb/348/x/Tr7aQ1","kind":"trailer","library":"v1"` + cs + `}`},
-		{"kind movie for an extra's key: skipped", `{"key":"movie/tmdb/348/x/Tr7aQ1","kind":"movie","library":"v1"` + cs + `}`},
+		{"a kind member trailer, ignored: skipped for its missing extraType", `{"key":"movie/tmdb/348/x/Tr7aQ1","kind":"trailer","library":"v1"` + cs + `}`},
+		{"a kind member movie on an extra's key, ignored: skipped for its missing extraType", `{"key":"movie/tmdb/348/x/Tr7aQ1","kind":"movie","library":"v1"` + cs + `}`},
 	}
 	return videoTitleSet(in)
 }

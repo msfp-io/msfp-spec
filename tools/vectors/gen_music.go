@@ -214,7 +214,7 @@ func musicTitleCases() []titleCase {
 		{"a null name: skipped", `{` + mArtistHead + `,"name":null}`},
 
 		// Catalog section 3.3.
-		{"a kind that doesn't match the key: skipped", `{"key":"artist/mb/` + mbArtist + `","kind":"album","library":"m1","name":"x"}`},
+		{"a kind member, not the key's: no title kind (catalog section 3), ignored", `{"key":"artist/mb/` + mbArtist + `","kind":"album","library":"m1","name":"x"}`},
 		{"a library not asked for: skipped", `{"key":"artist/mb/` + mbArtist + `","kind":"artist","library":"m3","name":"x"}`},
 		{"a key in uppercase: skipped", `{"key":"artist/mb/0A000000-0000-4000-8000-000000000001","kind":"artist","library":"m1","name":"x"}`},
 		{"an unknown scheme: skipped", `{"key":"artist/discogs/123","kind":"artist","library":"m1","name":"x"}`},
@@ -386,7 +386,7 @@ func musicLocalTitleCases() []titleCase {
 		{"an empty opaque part: skipped", `{"key":"album/local/","kind":"album","library":"m1","name":"x"}`},
 		{"a local title without a name: skipped", `{"key":"artist/local/Ar7","kind":"artist","library":"m1","image":true}`},
 		{"a local track without copies: skipped", `{"key":"track/local/T-6","kind":"track","library":"m1","name":"x"}`},
-		{"a local key whose kind doesn't match: skipped", `{"key":"album/local/Al_1","kind":"artist","library":"m1","name":"x"}`},
+		{"a local key with a kind member not its own: ignored", `{"key":"album/local/Al_1","kind":"artist","library":"m1","name":"x"}`},
 	}
 	return musicKeep(in)
 }

@@ -330,10 +330,10 @@
       "reason": "no name, once cleaned"
     },
     {
-      "name": "a kind that doesn't match the key: skipped",
+      "name": "a kind member, not the key's: no title kind (catalog section 3), ignored",
       "text": "{\"key\":\"artist/mb/0a000000-0000-4000-8000-000000000001\",\"kind\":\"album\",\"library\":\"m1\",\"name\":\"x\"}",
-      "valid": false,
-      "reason": "kind \"album\", but the key names a artist"
+      "valid": true,
+      "output": "{\"key\":\"artist/mb/0a000000-0000-4000-8000-000000000001\",\"kind\":\"artist\",\"library\":\"m1\",\"name\":\"x\"}"
     },
     {
       "name": "a library not asked for: skipped",
@@ -363,13 +363,13 @@
       "name": "a key that isn't a string: skipped",
       "text": "{\"key\":7,\"kind\":\"artist\",\"library\":\"m1\",\"name\":\"x\"}",
       "valid": false,
-      "reason": "key, kind or library isn't a string"
+      "reason": "key or library isn't a string"
     },
     {
       "name": "a library that isn't a string: skipped",
       "text": "{\"key\":\"artist/mb/0a000000-0000-4000-8000-000000000001\",\"kind\":\"artist\",\"library\":[\"m1\"],\"name\":\"x\"}",
       "valid": false,
-      "reason": "key, kind or library isn't a string"
+      "reason": "key or library isn't a string"
     },
     {
       "name": "not an object: skipped",
@@ -1208,10 +1208,10 @@
       "reason": "copies isn't an array"
     },
     {
-      "name": "a local key whose kind doesn't match: skipped",
+      "name": "a local key with a kind member not its own: ignored",
       "text": "{\"key\":\"album/local/Al_1\",\"kind\":\"artist\",\"library\":\"m1\",\"name\":\"x\"}",
-      "valid": false,
-      "reason": "kind \"artist\", but the key names a album"
+      "valid": true,
+      "output": "{\"key\":\"album/local/Al_1\",\"kind\":\"album\",\"library\":\"m1\",\"name\":\"x\"}"
     }
   ],
   "queue": [

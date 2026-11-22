@@ -1319,7 +1319,7 @@ answers aren't signed either. Their statuses:
 | 206 | the range asked for | checks `Content-Range` (media section 2), relays it |
 | 404 | no such file, a query string, browser headers, a ticket that isn't live, or a URL its ticket's kind doesn't open | for a playlist, the file or a segment: treats the playback as ended; for a subtitle part, a font, a sheet or an image: goes without it |
 | 405 | a `HEAD`, or any other method but `GET`, with `Allow: GET`; never `404` (media section 2.2) | not expected: the viewer's server sends `GET` only; it answers its own clients' `HEAD` itself |
-| 416 | the `Range` header is malformed or out of the file; under a scan ticket, a fetch without `Range`, or one that starts once the bytes the scan may read are spent (its `scanBytes`, [playback section 5](playback.md#5-limits); media section 4.2) | answers `416` to the viewer; for a scan, a failed read of its media server |
+| 416 | the `Range` header is malformed or out of the file; under a scan ticket, a fetch without `Range`, or one that starts once the bytes the scan may read are spent (the scan answer's `scanBytes`, [playback section 8](playback.md#8-scan-access); media section 4.2) | answers `416` to the viewer; for a scan, a failed read of its media server |
 | 503 | the owning server is busy | answers `503` to the viewer, who may try again |
 | anything else | not expected | as a failed fetch: the viewer's server answers `404` to the viewer |
 
@@ -1328,37 +1328,47 @@ never shown.
 
 ### 8.5 Unknown values
 
-Many fields take a value from a list that grows: a codec, a container,
-the kind of a library. The fields a part calls **open** follow one rule,
-in every part, so that a new value needs no new version and no change of
-the specification.
+Many fields take a value from a list that grows: a codec, a container's
+media type, an edition. The fields a part calls **open** follow one
+rule, in every part, so that a new value needs no new version and no
+change of the specification.
 
 - A **token** is 1 to 32 characters of `a–z 0–9 . _ -`. An open field
-  takes a token, unless its part says otherwise (a few take plain text,
-  with a bound of their own).
-- **In a fact** (what `titles` says of a title, what `play`'s answer says
-  of what plays): a token the receiver doesn't know is **kept** as it is.
-  It is never turned into another value, and never dropped. A value that
-  isn't a token (of another JSON type, empty, too long, with other
-  characters) is malformed, and handled as any malformed member is: an
-  optional member is dropped alone, and the entry that holds it stays; a
-  required member is dropped with the entry that holds it (a copy, a
-  track, an extra), as when it is missing.
-- **In a request**: a token the receiver doesn't know is ignored where
+  takes a token, unless its part says otherwise (a few take a class of
+  their own, with a bound of their own).
+- A **media type** is an IANA-form media type: lowercase, exactly one
+  `/`, no parameters, each half starting with a letter or a digit, at
+  most 127 characters (the bound of RFC 6838) of `a–z 0–9 . + - _ /`:
+  `video/mp4`, `application/ttml+xml`. Fields that take a media type
+  follow the rules below, as tokens do.
+- **In a fact** (what `titles` says of a title, what an answer says): a
+  token or a media type the receiver doesn't know is **kept** as it is.
+  It is never turned into another value, and never dropped. A malformed
+  value (of another JSON type, empty, too long, with other characters)
+  is handled as any malformed member is: an optional member is dropped
+  alone, and the entry that holds it stays; a required member is
+  dropped with the entry that holds it (a copy, a stream, a track, an
+  extra), as when it is missing.
+- **In a request**: a value the receiver doesn't know is ignored where
   the field is a hint, and refused with a signed `409`
-  `delivery-refused` where it names what to serve (a remux's container,
-  a transcode's codec). Only a value that isn't a token gets `400`.
-- A viewer's server that doesn't know a value of a copy treats the copy
-  as one it can't play as it is: it asks for a `remux` or a `transcode`
-  ([playback section 2.7](playback.md#27-delivery)), or doesn't offer
-  the copy.
-- No open field has a value meaning "other". A sender with no value for
-  an optional open field leaves it out.
-- The values a part lists beside an open field are examples, not the
-  list. Where values come from an outside vocabulary (ffmpeg's names, a
-  public database's types), the part names it.
+  `delivery-refused` where it names what to serve (a remux's media
+  type, a transcode's codec). Only a malformed value gets `400`.
+- A viewer's server that doesn't know a copy's `mediaType`, a stream's
+  `codec` or its `threeD`, or can't parse a `codecs` string, treats the
+  copy as one it can't play as it is: it asks for a `remux` or a
+  `transcode` ([playback section 2.7](playback.md#27-delivery)), or
+  doesn't offer the copy. An unknown subtitle `format` affects that
+  track only. Other unknown values (`edition`, `role`, an `hdr` token,
+  `objects`, `extraType`, a segment `kind`) don't stop the copy from
+  playing as it is; the content parts say how some are shown.
+- No list has a value meaning "other". A sender with no value for an
+  optional field leaves it out.
+- The values a part gives beside an open field are examples, not the
+  list. The lists are the [registry](../registry.md)'s, or an outside
+  vocabulary's (IANA media types, RFC 6381, ITU-T H.273, the DASH role
+  scheme, MusicBrainz), which the part names.
 
-Test cases: `openTokens` in
+Test cases: `openTokens` and `openMediaTypes` in
 [vectors/v0/strict.json](../../vectors/v0/strict.json).
 
 ## 9. The core's calls
@@ -2264,7 +2274,7 @@ generator also checks them.
 | `strict.json`, `uncallableAddresses` | addresses of a server that can't be called, `https://msfp-<26>.invalid`, with their verdicts (section 5.2) |
 | `strict.json`, `languageCodes` | media servers' language codes and the tag sent for each, or none ([catalog section 3](catalog.md#3-titles)) |
 | `strict.json`, `openTokens` | values of open fields, kept as tokens or dropped as malformed (section 8.5) |
-| `strict.json`, `libraryKinds` | libraries' `kind`, and what the caller keeps of it ([catalog section 2.2](catalog.md#22-what-the-caller-keeps)) |
+| `strict.json`, `openMediaTypes` | values of media-type fields, kept as media types or dropped as malformed (section 8.5) |
 | `strict.json`, `helloVersions` | `hello` bodies and the versions a receiver keeps of them, or a bad body: `"core":[0,2.5]` lists core 0, and an unknown member or part of `null` is ignored (sections 2.3 and 10.2) |
 | `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([media section 3](media.md#3-what-is-fetched), [video section 6](video.md#6-media)) |
 | `music.json` | music title keys and music titles, with their verdicts and what the caller keeps of each title ([music sections 2 and 3](music.md#2-title-keys)) |
@@ -2711,3 +2721,11 @@ check of how Plex and Emby map onto MSFP
     schemes of title keys and of `ids` are listed in a
     [registry](../registry.md); a new scheme is an entry there, not a
     new version.
+47. The whole of proposal 17, as frozen: media types join tokens as a
+    class of open value (section 8.5), kept in a fact and refused with
+    `409` `delivery-refused` where they name what to serve; a viewer's
+    server that doesn't know a copy's `mediaType`, `codec` or `threeD`,
+    or can't parse its `codecs`, doesn't play it as it is; the lists are
+    the [registry](../registry.md)'s or an outside vocabulary's, and
+    ffmpeg is no longer one. A scan's read cap is the `scanBytes` of the
+    scan's answer (section 8.4).
