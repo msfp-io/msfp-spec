@@ -10,8 +10,9 @@ carry besides, is said by the content parts,
 [video](video.md#5-playing-a-film-an-episode-or-an-extra) and
 [music](music.md#5-playing-a-track) (section 2.4). It needs the
 [core](core.md), [catalog](catalog.md) (it plays title keys from
-`titles`) and [media](media.md) (its answers point at media URLs). If either is off between two servers, `playback` is off
-too ([core section 10.3](core.md#103-choosing)). Its calls follow
+`titles`) and [media](media.md) (the viewer's server builds media URLs
+from its answers' tickets). If either is off between two servers,
+`playback` is off too ([core section 10.3](core.md#103-choosing)). Its calls follow
 [core section 8](core.md#8-common-rules-for-every-call): signed `POST`s
 under the peer's base path, answered only to peers in state `paired`. A
 server that doesn't speak `playback` with the caller answers its calls
@@ -46,14 +47,15 @@ specifications.
   several files played one after the other as one (parts). A title may
   have several copies (versions). Positions, `durationMs` and the
   content parts' markers are in the whole copy. The catalog describes
-  each copy before any playback: its version ID, length, container,
+  each copy before any playback: its version ID, length, media type,
   exact size, `etag` and tracks ([video section 3.2](video.md#32-copies),
   [music section 3.3](music.md#33-a-tracks-copies)). A copy's
   `etag` changes whenever its bytes change.
 - **Playback**: one stream the owning server runs for the viewer's
   server. It has a playback ID and a ticket.
-- **Ticket**: an opaque string in the stream URLs. It is the only
-  credential for fetching the media ([media](media.md)).
+- **Ticket**: an opaque string in `play`'s answer, from which the
+  viewer's server builds the media URLs. It is the only credential for
+  fetching the media ([media section 1](media.md#1-the-urls)).
 - **Delivery**: what the viewer's server asks to be served: the file as
   it is, a remux, or a transcode (section 2.7). Absent, the baseline
   every viewer's server plays (section 2.7).
@@ -74,34 +76,37 @@ server to start a playback of a title for one viewer session.
 | `title` | string | yes | the key of a title `play` takes (section 2.4), as the owning server sent it in `titles` |
 | `purpose` | string | no | `play`, `download` (section 7) or `scan` (section 8); absent means `play` |
 | `delivery` | string | no | `file`, `remux` or `transcode` (section 2.7); absent: the baseline (section 2.7) |
-| `container` | string | with `delivery` `remux` only, and then required | the container to remux into: `mpegts` or `mp4` (section 2.7) |
+| `mediaType` | string | with `delivery` `remux` only, and then required | the remux's media type: subtype `mp2t` or `mp4` (section 2.7) |
 | `transcode` | transcode object | no; with `delivery` `transcode` only | the targets of the transcode (section 2.7) |
 | `audioRenditions` | boolean | no | `true`: when served as HLS, every audio track of the copy as a rendition ([media section 3.1](media.md#31-hls-playlists)), so that switching tracks needs no new playback; the answer says whether the owning server made them (section 2.3) |
 | `startPositionMs` | integer | no | where to start, in milliseconds; 0 to 8,640,000,000 (100 days) |
 | `maxBitrateKbps` | integer | no | the viewer's bitrate cap, kbit/s; 0 to 10,000,000; 0 means none |
-| `audioLanguage` | string | no | the viewer's audio language, a valid tag ([catalog section 3](catalog.md#3-titles)); another string, an empty one included, is refused (`400`) |
-| `audioTrack` | string | no | an audio track ID from a former answer or from the copy in the catalog, `a` and a number from 0 to 999 without leading zeros (`a01` is invalid) |
-| `versionId` | string | no | a version ID: a copy's `id` in the catalog, or one from a former answer of the same title (section 2.3) |
+| `versionId` | string | no | the copy to play: a copy's `id` in the catalog; without it, the first copy (section 2.6) |
+| `audioTrack` | string | no | the audio track to play: a track ID of that copy in the catalog, `a` and a number from 0 to 999 without leading zeros (`a01` is invalid); without it, the file's default audio (section 2.6) |
 
-The content parts may add members ([video section 5.1](video.md#51-the-request));
-[music](music.md#5-playing-a-track) adds the next tracks of a queue, at
-most 5, which the owning server prepares under the same playback, and
-which count once against `streams`.
+The request carries no language and names a subtitle only to burn it
+in (`transcode.burnSubtitle`, [video section 5.1](video.md#51-the-request)).
+The content parts may add members: video the subtitle burned in;
+[music](music.md#5-playing-a-track) the next tracks of a queue, at most
+5, each with its own `versionId` and `delivery` if it wants, which the
+owning server prepares under the same playback, and which count once
+against `streams`.
 
 The request says nothing of the viewer's device. The viewer's server has
 every copy's facts in the catalog, and knows what its device plays: it
-asks for what it wants with `delivery`, or leaves it out for the
-baseline that every viewer's server plays (section 2.7).
+chooses the copy and the audio track, and asks for what it wants with
+`delivery`, or leaves `delivery` out for the baseline that every
+viewer's server plays (section 2.7).
 
 **Values.** Requests follow the rule for unknown values of
 [core section 8.5](core.md#85-unknown-values). `purpose` and `delivery`
 name MSFP's own steps: a `purpose` not of its list is refused (`400`); a
 `delivery` that is a token but not of its list is refused with `409`
-`delivery-refused`, since it names what to serve. So are a `container`,
-and a transcode codec, that are tokens the owning server doesn't make
-(section 2.7). A value that isn't a token (another type, capitals, too
-long) is malformed, and refused (`400`). A token is 1 to 32 characters
-of `a–z 0–9 . _ -`.
+`delivery-refused`, since it names what to serve. So are a remux's media
+type, a transcode codec and a `range` that are well-formed but that the
+owning server doesn't make (section 2.7). A value that isn't a token, or
+a `mediaType` that isn't a media type (core 8.5), is malformed, and
+refused (`400`).
 
 Test cases: `requests` in
 [vectors/v0/playback.json](../../vectors/v0/playback.json) (members,
@@ -111,9 +116,9 @@ combinations of `purpose` and `delivery`, unknown values).
 
 1. It refuses the request (`400`) when `title` isn't the key of a kind
    `play` takes in a content part on between the two servers
-   (section 2.4), or a number or tag is out of range: a negative
-   number, or one above its range. It refuses (`400`) too a `purpose`
-   not of its list, a `delivery` or `container` that isn't a token
+   (section 2.4), or a number is out of range: a negative number, or one
+   above its range. It refuses (`400`) too a `purpose` not of its list,
+   a `delivery` that isn't a token, a `mediaType` that isn't a media type
    (section 2.1), a `transcode` object that breaks section 2.7's forms,
    and a combination of `purpose` and `delivery` that section 2.7
    doesn't allow.
@@ -122,15 +127,12 @@ combinations of `purpose` and `delivery`, unknown values).
    `scansPerDay` for `scan` (section 5).
 3. It looks for its copies of that exact key in the libraries it offers
    the caller. None: `404`.
-4. It takes the copy `versionId` names, if it is one of them; else it
-   chooses one (section 2.6). Then it refuses (`400`) a malformed
-   `audioTrack` or `subtitleTrack` ([video section 5.1](video.md#51-the-request)),
-   and a malformed `transcode.burnSubtitle`.
-   `subtitleTrack` is checked for form as `audioTrack` is: `s` and a
-   number from 0 to 999 without leading zeros, or `off`. A
-   `transcode.burnSubtitle` is `s<n>` as above, never `off`.
-   A track ID's number has no leading zeros, like other numbers of MSFP:
-   `a01` and `s007` are malformed, and so is an empty string.
+4. It takes the copy `versionId` names, if it is one of them; else the
+   first copy (section 2.6). Then it refuses (`400`) a malformed
+   `audioTrack`, and a malformed `transcode.burnSubtitle`: `s` and a
+   number from 0 to 999 without leading zeros. A track ID's number has
+   no leading zeros, like other numbers of MSFP: `a01` and `s007` are
+   malformed, and so is an empty string.
 5. It refuses (`409` `stream-limit-reached`) when the purpose's limits
    are used: for `play`, the pairing's streams all in use; for
    `download`, its downloads all in use, or `downloadsPerDay` reached;
@@ -141,8 +143,9 @@ combinations of `purpose` and `delivery`, unknown values).
    `play` only; a download's speed is capped by `downloadKbps`
    (section 7), and a scan's reads by section 8.
 7. With `delivery`, it does what is asked, or refuses (`409`
-   `delivery-refused`): a `delivery`, a `container` or a transcode codec
-   it doesn't make (section 2.1), bandwidth (the copy's bitrate above
+   `delivery-refused`): a `delivery`, a remux's media type, a transcode
+   codec, a `copy` or a `range` it doesn't make (sections 2.1 and 2.7),
+   bandwidth (the copy's overall rate, `size` × 8 / `durationMs`, above
    the cap of step 6, for `file` or `remux`), its policy, or a delivery
    it can't make of that copy. It never serves another delivery than the
    one asked. Without `delivery`, it serves the baseline (section 2.7).
@@ -157,60 +160,47 @@ A copy that holds several episodes starts where
 
 ### 2.3 The answer
 
-Answer `200`: the playback object. The viewer's server checks and cleans
-every field, as listed.
+Answer `200`: the playback object. It says only what the catalog can't:
+the playback, its ticket, and what plays. It carries no URLs: the
+viewer's server builds every media URL from the owning server's stream
+root, the ticket and a fixed name
+([media section 1](media.md#1-the-urls)), so that it never fetches an
+address a peer wrote. The viewer's server checks and cleans every field,
+as listed.
 
 | Field | Type | Content | What the viewer's server requires or does |
 |-------|------|---------|-------------------------------------------|
 | `id` | string | the playback ID | must match `^[A-Za-z0-9_-]{1,64}$` |
+| `ticket` | string | the playback's ticket | must match `^[A-Za-z0-9_-]{1,64}$` |
+| `protocol` | string | `hls` or `file` | anything else: refused; without `delivery`, or with `remux` or `transcode`, must be `hls`; with `file`, `file` |
 | `method` | string | `direct`, `remux` or `transcode` | anything else: refused; with `delivery`, must be the one asked (`direct` for `file`) |
-| `stream` | object | `url`, `protocol`, `mimeType` (optional) | [media section 1](media.md#1-the-urls); without `delivery`, `protocol` must be `hls` (section 2.7) |
 | `etag` | string | the `etag` of the copy playing, as the catalog gives it | must be 1 to 64 characters of `A–Z a–z 0–9 - _` |
 | `positionMs` | integer | where the playback starts, in the copy | required, an integer from 0 to 8,640,000,000 (100 days) |
-| `durationMs` | integer, optional | the copy's length | outside 0 to 100 days: set to 0 |
-| `versionId` | string, optional | the version playing | IDs as below |
-| `audioTracks` | array of track, optional | the audio tracks | IDs as below |
-| `audioTrack` | string, optional | the one playing, `a<n>` | |
+| `versionId` | string | the copy playing | required, must match `^[A-Za-z0-9_-]{1,64}$` |
+| `audioTrack` | string, optional | the audio track playing, `a<n>` | another form: cleared |
 | `audioRenditions` | boolean, optional | `true`: the playlist carries every audio track as a rendition ([media section 3.1](media.md#31-hls-playlists)); `false` or absent: the owning server made none | anything but a boolean: refused; `true` with `protocol` `file`: dropped |
-| `maxBitrateKbps` | integer, optional | the cap in effect | |
+| `maxBitrateKbps` | integer, optional | the cap in effect | not an integer: refused; out of 0 to 10,000,000: dropped |
+| `scanBytes` | integer | scans only: the bytes the scan's ticket may read in all (section 8) | with `purpose` `scan`: 4,194,304 to 1,073,741,824; missing, not an integer or out of range: 4,194,304 (4 MiB); with another purpose: ignored |
 
 The content parts may add members: [video section 5.3](video.md#53-the-answer)
-adds subtitles, forced subtitles and seek-bar previews.
+adds `subtitles`, the subtitle tracks served apart, and `fontCount`, the
+copy's fonts. Nothing else of the copy is in the answer: its tracks,
+length and seek-bar previews are the catalog's.
 
 **The playback ID** follows the form of other opaque IDs. The owning
 server makes it from at least 128 bits of a cryptographically secure
 random source, as it makes tickets ([media section 1](media.md#1-the-urls)),
 so that nobody can guess another pairing's playback.
 
-**The answer wins.** When the answer and the catalog disagree about the
-copy playing (another `etag`, other tracks, another length: the copy
-changed since the catalog was read), the viewer's server goes by the
-answer for this playback, and reads the title again from `titles`.
+**The answer wins.** When the answer's `etag` differs from the
+catalog's (the copy changed since the catalog was read), the viewer's
+server goes by the answer for this playback, and reads the title again
+from `titles`.
 
 **Audio renditions.** The owning server makes renditions only when the
 request asks for them (`audioRenditions`), and may make none: a request
 for them is never refused. The answer's `audioRenditions` says which.
 With `false`, switching the audio track means a new playback.
-
-Track:
-
-| Field | Type | Content |
-|-------|------|---------|
-| `id` | string | `a<n>` for audio, `s<n>` for subtitles ([video section 5.3](video.md#53-the-answer)); *n* has no leading zeros |
-| `language` | string, optional | a valid language tag ([catalog section 3](catalog.md#3-titles)); another value is dropped |
-| `channels` | integer, optional | audio channels, 1 to 64 ([video section 3.3](video.md#33-streams-and-tracks)); another value is dropped |
-| `role` | string, optional | the track's role, a token ([core section 8.5](core.md#85-unknown-values)), from the DASH role scheme ([video section 3.3](video.md#33-streams-and-tracks)): `main`, `alternate`, `supplementary`, `commentary`, `dub`, `description`…; an unknown role is kept, a value that isn't a token dropped |
-| `default`, `forced`, `hearingImpaired` | boolean, optional | flags |
-
-A track carries no label: a viewer's server names languages in its own
-people's words, from `language`. The content parts may add members to a
-track: [video section 3.3](video.md#33-streams-and-tracks) describes a track in full (codec, profile,
-title and so on), with the same IDs, and a track of an answer may carry
-those members, cleaned as the catalog's are.
-
-**IDs.** IDs of tracks and versions must match `^[A-Za-z0-9_-]{1,64}$`
-(or be `off`). The viewer's server drops tracks with another ID, and
-clears other IDs.
 
 **Version IDs** (`versionId`) are the `id`s of the title's copies in
 the catalog, which lists every version. They follow the rule of library
@@ -218,16 +208,8 @@ IDs ([catalog section 2.1](catalog.md#21-library-ids)): opaque, chosen
 by the owning server, not derived from its media server's IDs without a
 key. They need to be stable only for the life of a title's copies, since
 a viewer's server passes them back only in a later `play` of the same
-title. Track IDs (`a<n>`, `s<n>`) are positions, not identifiers, and are
-not concerned. *n* is the owning server's own number for the track in
-that copy, the same at every `play` of it and in the catalog: its media
-server's stream index, for example, so that a film whose video is stream
-0 has its first audio track at `a1`. A viewer's server reads nothing into
-*n*: it only sends back an ID a former answer or the catalog gave it.
-
-**Roles are best effort.** `role` is absent when the owning server
-doesn't know it. A viewer's server treats an absent role as the title's
-own sound, and never takes an unknown role for it.
+title. Track IDs (`a<n>`, `s<n>`) are those of the copy in the catalog
+([video section 3.3](video.md#33-streams-and-tracks)).
 
 When the answer breaks a "must" above, the viewer's server sends `stop`
 for that `id` and gives up.
@@ -250,8 +232,8 @@ section 2.7), and which members it adds to the request and the answer:
 
 | Content part | `play` takes | Baseline | Adds |
 |--------------|--------------|----------|------|
-| `video` | films, episodes and extras | H.264 video and AAC audio in complete HLS | subtitles and forced subtitles, seek-bar previews, a subtitle burned in as a transcode target ([video section 5](video.md#5-playing-a-film-an-episode-or-an-extra)) |
-| `music` | tracks | AAC in complete HLS, audio only | the next tracks of a queue; audio limits in `limits` ([music section 5](music.md#5-playing-a-track)) |
+| `video` | films, episodes and extras | H.264 video and AAC audio in complete HLS; for a copy with no `video` (an extra such as a theme song), AAC alone (section 2.7) | a subtitle burned in as a transcode target; the subtitle tracks served apart and the copy's fonts in the answer ([video section 5](video.md#5-playing-a-film-an-episode-or-an-extra)) |
+| `music` | tracks | AAC in complete HLS, audio only | the next tracks of a queue, each with its own copy and delivery if it wants; audio limits in `limits` ([music section 5](music.md#5-playing-a-track)) |
 
 A viewer's server ignores the members a content part adds when the title
 played isn't of that part.
@@ -266,7 +248,7 @@ refusals, told apart by the problem `type` of its signed body:
 | Status | `type` | Meaning | The viewer's server tells the viewer |
 |--------|--------|---------|--------------------------------------|
 | 409 | `stream-limit-reached` | the limits of the purpose are all in use or reached, or the limit is 0 (section 2.2, steps 2 and 5) | busy now |
-| 409 | `delivery-refused` | the owning server won't serve the delivery asked, or doesn't make the delivery, container or codec it names (section 2.2, step 7) | nothing yet: the viewer's server asks again with another delivery, or without `delivery`; when no delivery it can use is left, not playable (for a download: download not available) |
+| 409 | `delivery-refused` | the owning server won't serve the delivery asked, or doesn't make the delivery, media type, codec, `copy` or `range` it names (section 2.2, step 7) | nothing yet: the viewer's server asks again with another delivery, or without `delivery`; when no delivery it can use is left, not playable (for a download: download not available) |
 | 409 | `not-playable` | the owning server has no way to play its copy | not playable |
 | 503 | `server-busy` | the server's transcodes are all in use | busy now |
 
@@ -283,60 +265,24 @@ refusal (`400`, `404`, `500`) means not playable.
 
 ### 2.6 Choosing the copy and the tracks
 
-The owning server chooses in this order: the copy, then the audio, then
-the subtitles ([video section 5.4](video.md#54-choosing-the-subtitles)),
-then how to serve it. A track ID (`a<n>`, `s<n>`) names a
-track of the copy chosen. Section 2.2 already refused a malformed ID
-(`400`).
-
-**What every owning server does.**
+The viewer's server chooses: it has every copy's facts in the catalog
+and knows its device. The owning server only plays what it is asked.
 
 - The catalog lists a title's `copies` in the owning server's order of
-  preference ([video section 3.7](video.md#37-the-order-of-copies)).
-- A `versionId` that names one of the title's copies wins: that copy
-  plays. An `audioTrack`, and a `subtitleTrack`, that name a track of
-  that copy win: that track plays (or, with `subtitleTrack` `off`, no
-  subtitles). One that isn't a track of the copy counts as absent.
-- Otherwise the owning server chooses, and the answer says what plays
-  (`versionId`, `audioTrack`, `subtitleTrack`). The viewer's server shows
-  that, not what it asked for.
-- It doesn't refuse for lack of a language.
-
-A viewer's server that wants a given copy or track names it: it has
-every copy's facts in the catalog.
-
-**Recommended defaults.** How the owning server chooses, when the request
-names no copy or track, is its own. These are the recommended defaults;
-an owning server that chooses otherwise still conforms.
-
-"The default audio" is the track the copy's file marks as default, else
-its first audio track; never a choice a person of the owning server
-saved. "The title's own sound" is a track with no `role`, or `main` or
-`dub`; never a commentary, a description or a role the owning server
-doesn't know. Language matching takes the same tag first (`fr-CA` for
-`fr-CA`), then the same base language (`fr` for `fr-CA`), and for audio
-only the title's own sound. Tags are compared without case. For the
-copy, the same tag is looked for in every copy first, and the base
-language only when no copy has the same tag: with `fr-CA` asked, a later
-copy with `fr-CA` wins over an earlier one with `fr`.
-
-The copy (recommended):
-
-| `versionId` | `audioLanguage` | Copy chosen |
-|-------------|-----------------|-------------|
-| one of the title's copies | any | that copy (required, above) |
-| absent, or no copy has it | a copy's audio matches | the first copy whose audio matches |
-| absent, or no copy has it | absent, or no copy matches | the first copy |
-| no copies offered to the peer | any | refused: `404` (required, section 2.2) |
-
-The audio (recommended):
-
-| `audioTrack` | `audioLanguage` | Audio played |
-|--------------|-----------------|--------------|
-| a track of the copy | any (ignored) | that track (required, above) |
-| not a track of the copy | any | as if `audioTrack` were absent |
-| absent | a track matches | that track |
-| absent | absent, or no track matches | the default audio |
+  preference, best first ([video section 3.7](video.md#37-the-order-of-copies)).
+- **The copy.** A `versionId` that names one of the title's copies: that
+  copy plays. Without one, or with one that names none of them, the
+  first copy plays.
+- **The audio.** An `audioTrack` that names an audio track of that copy:
+  that track plays. Without one, or with one that isn't a track of the
+  copy, the file's default audio plays: the track the file marks
+  default, else its first audio track; never a choice a person of the
+  owning server saved.
+- **The subtitles** are the viewer's server's own choice, among the
+  catalog's tracks and those the answer serves apart
+  ([video section 5.3](video.md#53-the-answer)). The request names a
+  subtitle only to burn it in (`transcode.burnSubtitle`).
+- The answer says what plays (`versionId`, `audioTrack`).
 
 With `delivery` `file`, the copy comes with all its tracks, and the
 viewer's player selects the audio itself; the answer's `audioTrack` is
@@ -344,8 +290,9 @@ the one chosen as above, which the player starts with.
 
 **How it's served.** With `delivery`, as asked (section 2.7). Without
 it, the baseline (section 2.7): `method` is `direct` or `remux` when the
-copy's streams already are the baseline's, and `transcode` otherwise.
-The limits then decide:
+copy's streams already are within the baseline, and `transcode`
+otherwise. A transcode whose video is `copy` counts as a transcode only
+when its audio is converted (section 2.7). The limits then decide:
 
 | What the copy and track need | Limits (section 6) | Result |
 |------------------------------|--------------------|--------|
@@ -357,15 +304,14 @@ The limits then decide:
 
 A `play` with `delivery` `file` or `remux` never transcodes: it is how a
 viewer's server forbids a transcode. One with `delivery` `transcode`
-needs a transcode free, as the second and third rows say.
+needs a transcode free, as the second and third rows say, unless its
+video and its audio are both `copy`.
 
 The owning server doesn't fall back to another copy, track or quality to
 avoid a transcode.
 
-Test cases: `requests` in
-[vectors/v0/playback.json](../../vectors/v0/playback.json). An outcome
-with `defaults` `true` took its copy or audio from the recommended
-defaults: it tests those, not conformance.
+Test cases: `requests` and `deliveries` in
+[vectors/v0/playback.json](../../vectors/v0/playback.json).
 
 ### 2.7 Delivery
 
@@ -374,15 +320,21 @@ defaults: it tests those, not conformance.
 | `delivery` | What is served | `method` in the answer | How it is fetched |
 |------------|----------------|------------------------|-------------------|
 | `file` | the copy as it is, all its tracks | `direct` | by byte ranges ([media section 3.2](media.md#32-the-file)) |
-| `remux` | the copy's streams, unchanged, in the `container` the request names | `remux` | as complete HLS ([media section 3.1](media.md#31-hls-playlists)) |
+| `remux` | the copy's streams, unchanged, in the media type the request names | `remux` | as complete HLS ([media section 3.1](media.md#31-hls-playlists)) |
 | `transcode` | the copy converted to the targets of `transcode` | `transcode` | as complete HLS ([media section 3.1](media.md#31-hls-playlists)) |
 | absent | the baseline (below) | any | as complete HLS ([media section 3.1](media.md#31-hls-playlists)) |
 
 **The baseline.** Without `delivery`, the owning server serves what
-every viewer's server must be able to play: for a film, an episode or an
-extra, H.264 video and AAC audio, at most 2 channels, in complete HLS;
-for a track, AAC in complete HLS, audio only (section 2.4). It may leave
-the copy's streams unchanged when they already are H.264 and AAC; it
+every viewer's server must be able to play, in complete HLS:
+
+- for a copy with video (a film, an episode, an extra): H.264 at most
+  High profile and level 4.1, 8-bit 4:2:0, progressive, SDR in BT.709
+  (H.273 primaries, transfer and matrix 1); and AAC-LC, at most 2
+  channels, at most 48 kHz;
+- for a copy with no `video` (a track, or an extra such as a theme
+  song): the same AAC, audio only.
+
+It may leave a stream unchanged only when it is already within that; it
 never serves the file without `delivery`.
 
 **A copy made of several parts** (section 1) is never delivered as
@@ -405,37 +357,60 @@ whatever the purpose:
 | `download` | `file`; `transcode` with `transcode.maxHeight` or `transcode.maxBitrateKbps` (section 7) |
 | `scan` | `file` only (section 8) |
 
-**Remux.** The `container` is `mpegts` (MPEG-TS segments) or `mp4`
-(fragmented MP4 segments), the two segment formats of HLS, written as
-ffmpeg names them. Another token is refused with `409`
-`delivery-refused`; a value that isn't a token, `400`. A remux is always
-served as complete HLS.
+**Remux.** `mediaType`, required with `delivery` `remux` and only
+there, is a media type ([core 8.5](core.md#85-unknown-values)) of
+subtype `mp2t` (MPEG-TS segments) or `mp4` (fragmented MP4 segments),
+the two segment formats of HLS: `video/mp2t` or `video/mp4`, or, for a
+copy with no `video`, `audio/mp2t` or `audio/mp4`. A value that isn't a
+media type is refused (`400`); a well-formed one the owning server
+doesn't make, another subtype or the wrong top-level type among them,
+gets `409` `delivery-refused`. A remux is always served as complete HLS.
 
 **Transcode targets.** The `transcode` object, with `delivery`
 `transcode` only (with any other `delivery`, or none, it is refused,
 `400`). All members are optional; one left out takes the baseline's
-value (below).
+value.
 
 | Field | Type | Values | Left out | The owning server serves |
 |-------|------|--------|----------|--------------------------|
-| `videoCodec` | string | a token: the encoder's codec as ffmpeg names it (`h264`, `hevc`, `av1`, `vp9`) | `h264` | the picture in that codec; ignored for a title without a picture (a track) |
-| `maxHeight` | integer | 480, 720, 1080, 1440, 2160 or 4320 | the copy's own height | a picture at most that tall, never scaled up; ignored for a title without a picture |
+| `videoCodec` | string | a codec token of the [registry](../registry.md) (`h264`, `hevc`, `av1`, `vp9`), or `copy` | `h264` | the picture in that codec, or unchanged with `copy`; ignored for a copy with no `video` |
+| `maxHeight` | integer | 480, 720, 1080, 1440, 2160 or 4320 | the copy's own height | a picture at most that tall, never scaled up; ignored with video `copy` and for a copy with no `video` |
 | `maxBitrateKbps` | integer | 1,000 to 10,000,000, a whole 1,000 | no cap but step 6's | at most that overall bitrate (with the cap of section 2.2, step 6, the lower wins) |
-| `audioCodec` | string | a token, as ffmpeg names it (`aac`, `ac3`, `eac3`, `opus`, `flac`) | `aac` | the audio in that codec |
-| `audioChannels` | integer | 2, 6 or 8 | 2 | at most that many channels, never upmixed |
+| `audioCodec` | string | a codec token of the registry (`aac`, `ac3`, `eac3`, `opus`, `flac`), or `copy` | `aac` | the audio in that codec, or unchanged with `copy` |
+| `audioChannels` | integer | 2, 6 or 8 | 2 | at most that many channels, never upmixed; ignored with audio `copy` |
+| `range` | string | `sdr` or `keep` | `sdr` | `sdr`: tone-mapped to SDR, 8-bit, BT.709; `keep`: the copy's transfer and primaries kept, 10-bit, HDR10+ kept where the codec carries it; ignored with video `copy` and for a copy with no `video` |
 
-A codec that is a token the owning server doesn't encode is refused with
-`409` `delivery-refused`; a value that isn't a token, or a number not of
-its values, is refused (`400`). The video part may add targets
-([video](video.md#51-the-request): one subtitle track burned into the
-picture). The owning server converts to exactly the targets given, and
-the baseline's values for those left out, or refuses with
-`delivery-refused`; it never serves something close.
+- **Values.** A codec that is a token the owning server doesn't encode,
+  or doesn't know, and a `range` that is a token not of its list, are
+  refused with `409` `delivery-refused`; a value that isn't a token, or
+  a number not of its values, is refused (`400`). The video part adds
+  one target ([video](video.md#51-the-request): `burnSubtitle`, one
+  subtitle track burned into the picture).
+- **`copy`** (a value of `videoCodec` and `audioCodec`, like `delivery`
+  a step of MSFP's own, not a registry token): that stream is served
+  unchanged. `409` `delivery-refused` when the segment format can't
+  carry it. A copied stream takes none of the targets that would change
+  it (`maxHeight` on video, `audioChannels` on audio). `burnSubtitle`
+  with video `copy` is refused, `409` `delivery-refused`. A transcode
+  whose video is `copy` counts as a transcode (sections 2.6 and 6) only
+  when its audio is converted.
+- **`range`.** Dolby Vision is dropped unless the video is `copy`. An
+  owning server that can't make the range asked: `409`
+  `delivery-refused`.
+- **Exactly as asked.** The owning server converts to exactly the
+  targets given, and the baseline's values for those left out, or
+  refuses with `delivery-refused`; it never serves something close.
+  It has no bitrate ceiling of its own beyond step 6's caps.
+
+**Segments.** In `mp4` segments, of a remux or a transcode alike, HEVC
+is written with the `hvc1` sample entry, and Dolby Vision with `dvh1`
+(`dav1` on AV1), parameter sets out of band. The master playlist
+describes the stream served ([media section 3.1](media.md#31-hls-playlists)).
 
 **A playback may start on the first read.** A viewer's server may present
 a peer's copy to its media server and clients as a plain file, at an
-address of its own, before anyone plays it, with the length, container,
-tracks and size the catalog gives. It calls `play` when its media server
+address of its own, before anyone plays it, with the length, media
+type, tracks and size the catalog gives. It calls `play` when its media server
 or a client first reads that address, not before: presenting a file, and
 listing it, start nothing on the owning server. Reads of the address
 then go to that playback's `file`.
@@ -473,7 +448,6 @@ Request:
 |-------|------|----------|---------|
 | `id` | string | yes | the playback ID from `play`, `^[A-Za-z0-9_-]{1,64}$` |
 | `positionMs` | integer | no | where the viewer is; 0 to 8,640,000,000 |
-| `paused` | boolean | no | whether the viewer paused |
 | `at` | integer | no | when the viewer was there, Unix seconds; at most 30 days before the owning server's clock and at most 5 minutes after it; absent means now |
 
 Answer `200`: `{}`.
@@ -522,8 +496,7 @@ Answer `200`: `{}`, whether or not the playback was live. A playback ID
 of another pairing changes nothing.
 
 Refusals: `400` for a malformed body, a position or an `at` out of range
-included. Members of `progress` that `stop` doesn't have (`paused`) are
-unknown members there, and ignored whatever they hold.
+included.
 
 ## 5. Limits
 
@@ -540,11 +513,11 @@ it. It sends `limits` only when `playback` is on between the two.
 | `downloadsPerDay` | integer | 0 to 10,000 | downloads started in any 24 hours; 0 means no daily cap besides `downloads` |
 | `downloadKbps` | integer | 0 to 1,000,000 | the speed cap of each download, kbit/s (section 7); 0 means none |
 | `scansPerDay` | integer | 0 to 1,000,000 | scans started in any 24 hours (section 8); 0: no scan access |
-| `scanBytes` | integer | 4,194,304 (4 MiB) to 1,073,741,824 (1 GiB) | the bytes one scan ticket may read in all (section 8) |
 
 Absent, `downloads`, `downloadsPerDay`, `downloadKbps` and `scansPerDay`
-are 0: no downloads, no scan access. Absent, or out of its range,
-`scanBytes` is taken as its floor, 4 MiB. A content part may add members:
+are 0: no downloads, no scan access. The bytes one scan may read are not
+a limit here: each scan's answer states them (`scanBytes`, section 8). A
+content part may add members:
 [music section 5.1](music.md#51-limits) adds `audioStreams` and
 `audioTranscodes`, in the same bounds as `streams` and `transcodes`.
 
@@ -552,7 +525,7 @@ The caller uses the limits only to avoid offering its people what the
 owning server would refuse: it shows Download (section 7) only for a
 peer whose `downloads` is above 0, asks for scans (section 8) only
 of a peer whose `scansPerDay` is above 0, and lets its media server read
-no more than `scanBytes` in one scan. The owning server enforces them
+no more than the scan answer's `scanBytes` in one scan. The owning server enforces them
 itself (section 6). A caller ignores limits out of range. A server that doesn't
 enforce limits sends none.
 
@@ -618,9 +591,9 @@ anything.
   - of the owning server: never files, paths, or its media server's item
     IDs, not even inside version IDs (section 2.3).
 
-  What a peer does learn: the title, the purpose, the delivery, the start
-  position, the language tags wanted, the transcode targets and the
-  bitrate cap, and progress over time (with `at`, the times of
+  What a peer does learn: the title, the purpose, the copy and audio
+  track asked, the delivery, the start position, the transcode targets
+  and the bitrate cap, and progress over time (with `at`, the times of
   offline viewing too), for one unnamed viewer session of the other
   server.
 
@@ -768,27 +741,30 @@ pairing and per group, with a number of scans a day.
   and never converts anything. Over it: `409` `stream-limit-reached`.
   Scan `play`s count against the `play` limit of
   [core section 8.3](core.md#83-limits-and-overload) like any `play`.
-- **The cap.** The owning server serves a scan's reads up to its
-  `scanBytes` (section 5) per scan ticket in all (one scan, one copy),
-  4 MiB (4,194,304 bytes) when it sends none, counting every byte it
-  sends under that ticket, a byte read twice counted twice; `scansPerDay`
-  bounds the total. A read that would go past the cap is cut at the cap
-  (a `206` ending there); any later read is refused (`416`), as
-  [media section 4.2](media.md#42-scans) says. The recommended
-  `scanBytes` is 32 MiB (33,554,432 bytes).
+- **The cap.** A scan's answer states `scanBytes` (section 2.3): the
+  bytes its ticket may read in all (one scan, one copy), 4,194,304
+  (4 MiB) to 1,073,741,824 (1 GiB). It is required with `purpose`
+  `scan`; a caller that finds it missing or out of range counts on
+  4 MiB. Only the owning server knows which pool counted the scan, so
+  the cap is that pool's ([groups section 9](groups.md#9-sharing-and-limits)).
+  The owning server serves the scan's reads up to the answer's
+  `scanBytes`, counting every byte it sends under that ticket, a byte
+  read twice counted twice; `scansPerDay` bounds the total. A read that
+  would go past the cap is cut at the cap (a `206` ending there); any
+  later read is refused (`416`), as
+  [media section 4.2](media.md#42-scans) says.
 - **Rate-limited.** The owning server serves a scan's reads at most 2 at
   once (more: `503`), and may pace them as it paces downloads.
 - **The ticket** lasts 10 minutes from the answer, and the 2-minute idle
   rule holds. The viewer's server sends `stop` when its media server is
   done reading. It sends no `progress` for a scan.
-- **What a media server reading this way needs.** A viewer's server uses
-  `scan` only for its media server's reads to list a file, and a `play`
-  with `purpose` `play` for reads to watch it, like any other playback;
-  how it tells them apart is its own. A media server reading a peer's
-  copies this way must not make whole-file analyses of them. Scan access
-  is the one case where a viewer's server lets its media server read a
-  peer's file to learn what it is; everywhere else, media info comes from
-  the catalog only.
+- **What reads are for.** A viewer's server uses `scan` only for reads
+  to list a file, and a `play` with `purpose` `play` for reads to watch
+  it, like any other playback; how it tells them apart is its own. No
+  whole-file analysis is made of a peer's copies. Scan access is the one
+  case where a viewer's server lets its media server read a peer's file
+  to learn what it is; everywhere else, media info comes from the
+  catalog only.
 
 Test cases: `scans` in
 [vectors/v0/playback.json](../../vectors/v0/playback.json).
@@ -801,8 +777,10 @@ Test cases: `scans` in
   download's ticket lives 24 hours: the viewer's server keeps it as it
   keeps its own credentials, and never passes it to a device.
 - **Hostile answers.** Treat every field of a `play` answer as untrusted:
-  check IDs, URLs against the owning server's stream root, numbers
-  against their bounds, and clean text.
+  check the ticket and IDs against their forms and numbers against their
+  bounds. The answer carries no URLs: the viewer's server builds them
+  ([media section 1](media.md#1-the-urls)), and never fetches an address
+  a peer wrote.
 - **The viewer's privacy.** A viewer's server never passes a peer's URLs
   to a browser, never sends anything that names a person, and says
   nothing of devices but the delivery it asks (sections 2.1 and 2.7).
@@ -811,8 +789,8 @@ Test cases: `scans` in
   what was read. That is why downloads are off by default.
 - **Late reports can't be checked.** `at` is the viewer's server's word;
   the owning server bounds it (section 3) and trusts nothing else to it.
-- **Scans are bounded,** by size (`scanBytes`, at most 1 GiB), time and
-  count (section 8), so that scan access can't be used to copy a file.
+- **Scans are bounded,** by size (the scan answer's `scanBytes`, at most
+  1 GiB), time and count (section 8), so that scan access can't be used to copy a file.
 
 ## 10. Open questions
 
@@ -832,8 +810,9 @@ in one copy, moved to [video](video.md#8-open-questions).
 
 Choices of the review round of 2026-11-16, confirmed on 2026-11-17:
 
-2. **An `audioTrack` or `subtitleTrack` the copy doesn't have** is read
-   as absent (section 2.6), not refused with `400`.
+2. **An `audioTrack` the copy doesn't have** is read as absent
+   (section 2.6), not refused with `400`. (`subtitleTrack` left the
+   request with proposal 17.)
 3. ~~**No member to forbid transcoding**~~ Superseded by proposal 16:
    `delivery` `file` or `remux` forbids a transcode (section 2.6).
 4. **The three states** of section 6.1, where started and active differ
@@ -846,24 +825,22 @@ Choices of the review round of 2026-11-16, confirmed on 2026-11-17:
 **Choices this draft made, confirmed by the owner on 2026-11-17** (when the video rules were moved
 out of this part on 2026-11-17):
 
-6. **The track object stays here** (section 2.3), with its `forced` and
-   `hearingImpaired` flags and the `s<n>` IDs; the subtitle members
-   (`format`, `url`, `assUrl`) are [video](video.md#53-the-answer)'s.
+6. ~~**The track object stays here**~~ Superseded by proposal 17: the
+   answer carries no tracks; the catalog describes them.
 7. **Section 2.4 keeps its number** for what the content parts add, so
    that sections 2.5 and 2.6 keep theirs.
 8. **Members of another content part** in an answer are ignored
    (section 2.4); music already says so for a track's subtitles, skip
    markers and previews.
-9. **`subtitleTrack` is still named here** (sections 2.2 and 2.6): the
-   order of the choice and the tables of the copy and the audio stay
-   here; the subtitles' table moved to video.
+9. ~~**`subtitleTrack` is still named here**~~ Superseded by proposal 17:
+   the viewer's server chooses; the choice tables left the protocol.
 
 **Decided by the owner on 2026-11-18** (platform neutrality,
 [core open questions 43 and 44](core.md#18-open-questions)):
 
 10. **A copy may be several files** (section 1), played as one; the
     default audio is the file's, never a person's saved choice
-    (section 2.6); `role` is best effort (section 2.3).
+    (section 2.6).
 
 **Proposal 16** (adopted 2026-11-22): delivery, restarts, one playback
 per viewer session, capabilities and transcode targets, downloads and
@@ -872,8 +849,9 @@ confirmed:
 
 11. **`etag` in the answer** (section 2.3), required, so that a restart
     and "the answer wins" can compare it with the catalog's.
-12. **`container`** names the remux's container, and **`audioRenditions`**
-    asks for every audio track in HLS (section 2.1).
+12. **`mediaType`** (`container` before proposal 17) names the remux's
+    segment format, and **`audioRenditions`** asks for every audio track
+    in HLS (section 2.1).
 13. ~~**Steps of the new capabilities**~~ Superseded by proposal 17: no
     capabilities.
 14. **A download's size** is named by `transcode.maxHeight` or
@@ -890,33 +868,49 @@ confirmed:
     downloads and scans as for streams; `delivery-refused` is new.
 
 **Proposal 17** (adopted 2026-11-22, [neutrality](../../proposals/0017-neutrality.md)):
-no capabilities, the baseline without `delivery`, the rule for unknown
-values, remux into `mpegts` or `mp4`, `audioRenditions` in the answer,
-the choice of copy and tracks as recommended defaults, opaque playback
-IDs, no default bitrate ceiling, limits up to 1,000 and `scanBytes`.
-Choices this draft made where it was silent, to be confirmed:
+no capabilities, the baseline without `delivery` and its picture,
+remux to an `mp2t` or `mp4` media type, `copy` and `range` in a
+transcode, `audioRenditions` in the answer, the copy and tracks chosen
+by the viewer's server, answers without URLs (the ticket), opaque
+playback IDs, no default bitrate ceiling, limits up to 1,000, no
+`paused`, and `scanBytes` in the scan's answer. Choices this draft made
+where it was silent, to be confirmed:
 
 19. **`purpose` stays closed**: one not of its list is `400`; an unknown
-    `delivery` token is `409` `delivery-refused`, like a container or a
-    codec, since it names what to serve (section 2.1).
+    `delivery` token is `409` `delivery-refused`, like a remux's media
+    type or a codec, since it names what to serve (section 2.1).
 20. **The baseline is HLS** (section 2.7): without `delivery`, an answer
     with `protocol` `file` is refused, and the baseline's audio has at
     most 2 channels, as a transcode with `audioChannels` left out.
 21. **The answer's `audioRenditions`**: absent means `false`; `true`
     with `protocol` `file` is dropped (section 2.3).
-22. **The title's own sound**, for the recommended defaults, is a track
-    with no `role`, or `main` or `dub` (section 2.6).
-23. **An owning server without `scanBytes`** cuts scans at the floor,
-    4 MiB, the value its callers count on (section 8).
+22. ~~**The title's own sound**~~ Superseded: the recommended defaults
+    left the protocol for the notes.
+23. ~~**An owning server without `scanBytes`**~~ Superseded: a scan's
+    answer states its `scanBytes`; a caller counts on 4 MiB when it is
+    missing (section 8).
 
 Settled while msfp-go was written (2026-11-22), as the text reads:
 
 24. **`burnSubtitle`'s form** is checked at step 4, with the track IDs,
     not at step 1 (section 2.2).
-25. **Empty strings**: an empty `audioTrack` or `subtitleTrack` is
-    malformed (`400`, step 4); an empty `title` in `progress` or `stop`
+25. **Empty strings**: an empty `audioTrack` is malformed (`400`, step 4); an empty `title` in `progress` or `stop`
     is a title that is neither the request's nor of its queue (`400`).
-26. **`paused` on a `stop`** is an unknown member there, ignored whatever
-    it holds, `null` included (section 4).
-27. **An answer track's `channels`** is 1 to 64, as in the catalog;
-    another value is dropped (section 2.3).
+26. ~~**`paused` on a `stop`**~~ Superseded: `paused` left `progress`
+    with proposal 17, and is an unknown member everywhere.
+27. ~~**An answer track's `channels`**~~ Superseded: the answer carries
+    no tracks.
+
+Proposal 17, written in on 2026-11-22: choices where its text gave no
+form, to be confirmed:
+
+28. **`versionId` in the answer** is required, as proposal 17's table
+    gives it without "optional"; one of another form refuses the answer
+    (section 2.3).
+29. **A scan answer's `scanBytes`** that isn't an integer counts as
+    missing: 4 MiB (section 2.3).
+30. **A `range` that is a token not of its list** gets `409`
+    `delivery-refused`, as an unknown `delivery` does, since it names
+    what to serve (section 2.7).
+31. **A transcode of a track with audio `copy`** still counts as a
+    transcode: the rule that frees one is for video `copy` (section 2.6).
