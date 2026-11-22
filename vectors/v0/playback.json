@@ -612,12 +612,48 @@
       "output": "{\"title\":\"movie/tmdb/949\",\"purpose\":\"play\",\"capabilities\":{\"maxBitrateKbps\":15000},\"versionId\":\"Hd8kQ2mZ\",\"audioTrack\":\"a1\",\"startPositionMs\":0,\"bitrateCapKbps\":15000,\"counts\":\"streams\",\"idleSeconds\":120}"
     },
     {
-      "name": "audioLanguage of 12 characters",
+      "name": "audioLanguage of 12 characters, a valid tag",
       "call": "play",
       "text": "{\"title\":\"movie/tmdb/949\",\"audioLanguage\":\"abcdefgh-ijk\"}",
       "valid": true,
       "status": 200,
       "output": "{\"title\":\"movie/tmdb/949\",\"purpose\":\"play\",\"versionId\":\"Hd8kQ2mZ\",\"audioTrack\":\"a1\",\"startPositionMs\":0,\"bitrateCapKbps\":120000,\"counts\":\"streams\",\"idleSeconds\":120}"
+    },
+    {
+      "name": "audioLanguage fre, not the form a server sends: 400",
+      "call": "play",
+      "text": "{\"title\":\"movie/tmdb/949\",\"audioLanguage\":\"fre\"}",
+      "valid": false,
+      "status": 400,
+      "type": "invalid-request",
+      "reason": "audioLanguage isn't a valid tag (catalog section 3)"
+    },
+    {
+      "name": "audioLanguage fr-ca, not the form a server sends: 400",
+      "call": "play",
+      "text": "{\"title\":\"movie/tmdb/949\",\"audioLanguage\":\"fr-ca\"}",
+      "valid": false,
+      "status": 400,
+      "type": "invalid-request",
+      "reason": "audioLanguage isn't a valid tag (catalog section 3)"
+    },
+    {
+      "name": "audioLanguage of one character: 400",
+      "call": "play",
+      "text": "{\"title\":\"movie/tmdb/949\",\"audioLanguage\":\"e\"}",
+      "valid": false,
+      "status": 400,
+      "type": "invalid-request",
+      "reason": "audioLanguage isn't a valid tag (catalog section 3)"
+    },
+    {
+      "name": "subtitleLanguage und: 400",
+      "call": "play",
+      "text": "{\"title\":\"movie/tmdb/949\",\"subtitleLanguage\":\"und\"}",
+      "valid": false,
+      "status": 400,
+      "type": "invalid-request",
+      "reason": "subtitleLanguage isn't a valid tag (catalog section 3)"
     },
     {
       "name": "audioLanguage of 13 characters: 400",
@@ -626,7 +662,7 @@
       "valid": false,
       "status": 400,
       "type": "invalid-request",
-      "reason": "audioLanguage isn't 1 to 12 characters of A-Z a-z 0-9 -"
+      "reason": "audioLanguage isn't a valid tag (catalog section 3)"
     },
     {
       "name": "audioLanguage with an underscore: 400",
@@ -635,7 +671,7 @@
       "valid": false,
       "status": 400,
       "type": "invalid-request",
-      "reason": "audioLanguage isn't 1 to 12 characters of A-Z a-z 0-9 -"
+      "reason": "audioLanguage isn't a valid tag (catalog section 3)"
     },
     {
       "name": "an empty audioLanguage: 400",
@@ -644,7 +680,7 @@
       "valid": false,
       "status": 400,
       "type": "invalid-request",
-      "reason": "audioLanguage isn't 1 to 12 characters of A-Z a-z 0-9 -"
+      "reason": "audioLanguage isn't a valid tag (catalog section 3)"
     },
     {
       "name": "subtitleLanguage of 13 characters: 400",
@@ -653,7 +689,7 @@
       "valid": false,
       "status": 400,
       "type": "invalid-request",
-      "reason": "subtitleLanguage isn't 1 to 12 characters of A-Z a-z 0-9 -"
+      "reason": "subtitleLanguage isn't a valid tag (catalog section 3)"
     },
     {
       "name": "audioTrack a0, not a track of the copy: the default audio",
@@ -930,12 +966,13 @@
       "output": "{\"title\":\"movie/tmdb/949\",\"purpose\":\"play\",\"versionId\":\"Uk4nR7vT\",\"audioTrack\":\"a2\",\"startPositionMs\":0,\"bitrateCapKbps\":120000,\"counts\":\"streams\",\"idleSeconds\":120}"
     },
     {
-      "name": "audioLanguage: the same tag in another case",
+      "name": "audioLanguage in another case than a server sends: 400",
       "call": "play",
       "text": "{\"title\":\"movie/tmdb/949\",\"audioLanguage\":\"FR-ca\"}",
-      "valid": true,
-      "status": 200,
-      "output": "{\"title\":\"movie/tmdb/949\",\"purpose\":\"play\",\"versionId\":\"Hd8kQ2mZ\",\"audioTrack\":\"a2\",\"startPositionMs\":0,\"bitrateCapKbps\":120000,\"counts\":\"streams\",\"idleSeconds\":120}"
+      "valid": false,
+      "status": 400,
+      "type": "invalid-request",
+      "reason": "audioLanguage isn't a valid tag (catalog section 3)"
     },
     {
       "name": "audioLanguage: then the same base language (fr-FR: fr-CA of the first)",
@@ -1665,6 +1702,13 @@
       "text": "{\"id\":\"play_abcdefghijklmnopqrstuvwxyz\",\"method\":\"transcode\",\"stream\":{\"url\":\"https://a.example.org/api/v1/stream/Tk3vQ9xY_-a/master.m3u8\",\"protocol\":\"hls\",\"mimeType\":\"application/vnd.apple.mpegurl\"},\"etag\":\"9c1e4f70\",\"positionMs\":0,\"audioTracks\":[{\"id\":\"a 1\"},{\"id\":\"off\"},{\"id\":\"a1\",\"label\":\"English\",\"codec\":\"aac\",\"role\":\"director\",\"channels\":\"6\",\"default\":\"true\",\"forced\":false,\"hearingImpaired\":true},{\"id\":\"a2\",\"language\":\"not_a_tag\"},\"a3\",{\"id\":1}]}",
       "valid": true,
       "output": "{\"id\":\"play_abcdefghijklmnopqrstuvwxyz\",\"method\":\"transcode\",\"stream\":{\"url\":\"https://a.example.org/api/v1/stream/Tk3vQ9xY_-a/master.m3u8\",\"protocol\":\"hls\",\"mimeType\":\"application/vnd.apple.mpegurl\"},\"etag\":\"9c1e4f70\",\"positionMs\":0,\"audioTracks\":[{\"id\":\"off\"},{\"id\":\"a1\",\"forced\":false,\"hearingImpaired\":true},{\"id\":\"a2\"}]}"
+    },
+    {
+      "name": "track languages kept only as valid tags",
+      "catalogEtag": "9c1e4f70",
+      "text": "{\"id\":\"play_abcdefghijklmnopqrstuvwxyz\",\"method\":\"transcode\",\"stream\":{\"url\":\"https://a.example.org/api/v1/stream/Tk3vQ9xY_-a/master.m3u8\",\"protocol\":\"hls\",\"mimeType\":\"application/vnd.apple.mpegurl\"},\"etag\":\"9c1e4f70\",\"positionMs\":0,\"audioTracks\":[{\"id\":\"a1\",\"language\":\"fr-CA\"},{\"id\":\"a2\",\"language\":\"fre\"},{\"id\":\"a3\",\"language\":\"fr-ca\"},{\"id\":\"a4\",\"language\":\"e\"},{\"id\":\"a5\",\"language\":\"zh-Hant-TW\"}]}",
+      "valid": true,
+      "output": "{\"id\":\"play_abcdefghijklmnopqrstuvwxyz\",\"method\":\"transcode\",\"stream\":{\"url\":\"https://a.example.org/api/v1/stream/Tk3vQ9xY_-a/master.m3u8\",\"protocol\":\"hls\",\"mimeType\":\"application/vnd.apple.mpegurl\"},\"etag\":\"9c1e4f70\",\"positionMs\":0,\"audioTracks\":[{\"id\":\"a1\",\"language\":\"fr-CA\"},{\"id\":\"a2\"},{\"id\":\"a3\"},{\"id\":\"a4\"},{\"id\":\"a5\",\"language\":\"zh-Hant-TW\"}]}"
     },
     {
       "name": "audioTracks that isn't an array: refused",
@@ -3213,6 +3257,96 @@
       "valid": true,
       "status": 200,
       "output": "{\"effect\":\"recorded and ended\",\"state\":\"ended\",\"title\":\"track/local/Tl5Kp2\",\"positionMs\":30000,\"at\":1795132800}"
+    },
+    {
+      "name": "music: stop with the request's title",
+      "call": "stop",
+      "playback": {
+        "state": "active",
+        "purpose": "play",
+        "title": "track/mb/0c000000-0000-4000-8000-000000000003",
+        "queue": [
+          "track/mb/0c000000-0000-4000-8000-000000000004",
+          "track/local/Tl5Kp2"
+        ],
+        "playedAt": 1795132500
+      },
+      "text": "{\"id\":\"play_abcdefghijklmnopqrstuvwxyz\",\"title\":\"track/mb/0c000000-0000-4000-8000-000000000003\",\"positionMs\":30000}",
+      "valid": true,
+      "status": 200,
+      "output": "{\"effect\":\"recorded and ended\",\"state\":\"ended\",\"title\":\"track/mb/0c000000-0000-4000-8000-000000000003\",\"positionMs\":30000,\"at\":1795132800}"
+    },
+    {
+      "name": "music: stop without title, the request's",
+      "call": "stop",
+      "playback": {
+        "state": "active",
+        "purpose": "play",
+        "title": "track/mb/0c000000-0000-4000-8000-000000000003",
+        "queue": [
+          "track/mb/0c000000-0000-4000-8000-000000000004",
+          "track/local/Tl5Kp2"
+        ],
+        "playedAt": 1795132500
+      },
+      "text": "{\"id\":\"play_abcdefghijklmnopqrstuvwxyz\",\"positionMs\":30000}",
+      "valid": true,
+      "status": 200,
+      "output": "{\"effect\":\"recorded and ended\",\"state\":\"ended\",\"title\":\"track/mb/0c000000-0000-4000-8000-000000000003\",\"positionMs\":30000,\"at\":1795132800}"
+    },
+    {
+      "name": "music: stop with a title neither the request's nor of the queue: 400",
+      "call": "stop",
+      "playback": {
+        "state": "active",
+        "purpose": "play",
+        "title": "track/mb/0c000000-0000-4000-8000-000000000003",
+        "queue": [
+          "track/mb/0c000000-0000-4000-8000-000000000004",
+          "track/local/Tl5Kp2"
+        ],
+        "playedAt": 1795132500
+      },
+      "text": "{\"id\":\"play_abcdefghijklmnopqrstuvwxyz\",\"title\":\"track/local/Other1\"}",
+      "valid": false,
+      "status": 400,
+      "type": "invalid-request",
+      "reason": "title is neither the playback's title nor one of its queue"
+    },
+    {
+      "name": "music: stop with a title that isn't a string: 400",
+      "call": "stop",
+      "playback": {
+        "state": "active",
+        "purpose": "play",
+        "title": "track/mb/0c000000-0000-4000-8000-000000000003",
+        "queue": [
+          "track/mb/0c000000-0000-4000-8000-000000000004",
+          "track/local/Tl5Kp2"
+        ],
+        "playedAt": 1795132500
+      },
+      "text": "{\"id\":\"play_abcdefghijklmnopqrstuvwxyz\",\"title\":null}",
+      "valid": false,
+      "status": 400,
+      "type": "invalid-request",
+      "reason": "title is null"
+    },
+    {
+      "name": "stop of a film with another title: 400",
+      "call": "stop",
+      "playback": {
+        "state": "active",
+        "purpose": "play",
+        "title": "movie/tmdb/949",
+        "playedAt": 1795129200,
+        "lastAt": 1795132740
+      },
+      "text": "{\"id\":\"play_abcdefghijklmnopqrstuvwxyz\",\"title\":\"movie/tmdb/603\"}",
+      "valid": false,
+      "status": 400,
+      "type": "invalid-request",
+      "reason": "title is neither the playback's title nor one of its queue"
     }
   ],
   "downloads": [

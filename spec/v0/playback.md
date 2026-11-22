@@ -80,7 +80,7 @@ server to start a playback of a title for one viewer session.
 | `capabilities` | capabilities object | no | what the viewer's device plays, coarsened (below) |
 | `startPositionMs` | integer | no | where to start, in milliseconds; 0 to 8,640,000,000 (100 days) |
 | `maxBitrateKbps` | integer | no | the viewer's bitrate cap, kbit/s; 0 to 10,000,000; 0 means none |
-| `audioLanguage` | string | no | the viewer's audio language, a tag; at most 12 characters of `A–Z a–z 0–9 -` |
+| `audioLanguage` | string | no | the viewer's audio language, a valid tag ([catalog section 3](catalog.md#3-titles)); another string, an empty one included, is refused (`400`) |
 | `audioTrack` | string | no | an audio track ID from a former answer or from the copy in the catalog, `a` and a number from 0 to 999 without leading zeros (`a01` is invalid) |
 | `versionId` | string | no | a version ID: a copy's `id` in the catalog, or one from a former answer of the same title (section 2.3) |
 
@@ -115,7 +115,8 @@ core, when the codec has one.
 another, the viewer's server must coarsen what it sends: only the values
 listed above (and by the content parts), lowercase, each once, sorted;
 the content parts' own steps ([video](video.md#51-the-request):
-`maxHeight`); `maxAudioChannels` stepped down to 2, 6 or 8 (below 2
+`maxHeight`); a capability of 0 (not said) left out, never stepped
+up; `maxAudioChannels` stepped down to 2, 6 or 8 (below 2, but above 0,
 becomes 2); `maxAudioSampleRate` stepped down to 44,100, 48,000, 96,000
 or 192,000 (below 44,100 becomes 44,100); `maxAudioBitDepth` stepped
 down to 16, 24 or 32 (below 16 becomes 16); `capabilities.maxBitrateKbps`
@@ -169,6 +170,10 @@ Its own apps' API, which is not MSFP, still lowercases.
    copy whose audio has `audioLanguage` (same tag first, then same base
    language); else the first. Then it refuses (`400`) a malformed
    `audioTrack` or `subtitleTrack` ([video section 5.1](video.md#51-the-request)).
+   `subtitleTrack` is checked for form as `audioTrack` is: `s` and a
+   number from 0 to 999 without leading zeros, or `off`. A
+   `transcode.burnSubtitle` of another form (`s<n>` as above, never
+   `off`) is refused (`400`) too.
    A track ID's number has no leading zeros, like other numbers of MSFP:
    `a01` and `s007` are malformed.
 5. It refuses (`409` `stream-limit-reached`) when the purpose's limits
@@ -206,7 +211,7 @@ every field, as listed.
 | `method` | string | `direct`, `remux` or `transcode` | anything else: refused; with `delivery`, must be the one asked (`direct` for `file`) |
 | `stream` | object | `url`, `protocol`, `mimeType` (optional) | [media section 1](media.md#1-the-urls) |
 | `etag` | string | the `etag` of the copy playing, as the catalog gives it | must be 1 to 64 characters of `A–Z a–z 0–9 - _` |
-| `positionMs` | integer | where the playback starts, in the copy | |
+| `positionMs` | integer | where the playback starts, in the copy | required, an integer from 0 to 8,640,000,000 (100 days) |
 | `durationMs` | integer, optional | the copy's length | outside 0 to 100 days: set to 0 |
 | `versions` | array, optional | `{id, name}` of the title's versions | IDs as below; names as a copy's `name` ([video section 3.6](video.md#36-what-names-and-titles-may-say)): made plain text, at most 32 characters |
 | `versionId` | string, optional | the version playing | IDs as below |
@@ -228,7 +233,7 @@ Track:
 | Field | Type | Content |
 |-------|------|---------|
 | `id` | string | `a<n>` for audio, `s<n>` for subtitles ([video section 5.3](video.md#53-the-answer)); *n* has no leading zeros |
-| `language` | string, optional | a language tag |
+| `language` | string, optional | a valid language tag ([catalog section 3](catalog.md#3-titles)); another value is dropped |
 | `channels` | integer, optional | audio channels |
 | `role` | string, optional | `commentary` or `description` |
 | `default`, `forced`, `hearingImpaired` | boolean, optional | flags |
@@ -240,8 +245,8 @@ title and so on), with the same IDs, and a track of an answer may carry
 those members, cleaned as the catalog's are.
 
 **IDs.** IDs of tracks and versions must match `^[A-Za-z0-9_-]{1,64}$`
-(or be `off`). The viewer's server drops tracks with another ID, and
-clears other IDs. It drops the playback object's members `title` and
+(or be `off`). The viewer's server drops tracks, and entries of
+`versions`, with another ID, and clears other IDs. It drops the playback object's members `title` and
 `next` whatever they hold.
 
 **Version IDs** (`versionId`, `versions[].id`) are the `id`s of the
@@ -325,7 +330,10 @@ its first audio track; never a choice a person of the owning server
 saved. Language matching takes the same tag first
 (`fr-CA` for `fr-CA`), then the same base language (`fr` for `fr-CA`),
 and for audio only the title's own sound, never a commentary or a
-description.
+description. Tags are compared without case. For the copy, the same tag
+is looked for in every copy first, and the base language only when no
+copy has the same tag: with `fr-CA` asked, a later copy with `fr-CA`
+wins over an earlier one with `fr`.
 
 **The copy.**
 
@@ -544,6 +552,19 @@ of a peer whose `scansPerDay` is above 0. The owning server enforces them
 itself (section 6). A caller ignores limits out of range. A server that doesn't
 enforce limits sends none.
 
+What the caller keeps of `limits`:
+
+- a member that isn't an integer makes the caller ignore the whole
+  `limits` object, as [catalog section 2.2](catalog.md#22-what-the-caller-keeps)
+  says of members of the wrong type;
+- a member out of its range is ignored alone, the others kept;
+- `transcodes` is bounded by `streams` only when `streams` is kept:
+  with `streams` ignored or absent, `transcodes` is checked against 0 to
+  50 alone. `audioTranscodes` and `audioStreams` likewise.
+
+Test cases: `limits` in
+[vectors/v0/playback.json](../../vectors/v0/playback.json).
+
 **Shared limits.** Limits may be shared with other peers: a group's pool
 is shared by all its members ([groups section 9](groups.md#9-sharing-and-limits)),
 downloads and scans as streams. A peer linked through a group is sent the most generous of its relations'
@@ -706,7 +727,9 @@ Downloads are the owning server's choice, off by default
 - **Limits.** It counts against `downloads` (at once) and
   `downloadsPerDay` (started in any 24 hours), never against `streams`
   or `transcodes`; a transcode takes one from the server's budget
-  (section 6). Over them: `409` `stream-limit-reached`.
+  (section 6). Over `downloads` or `downloadsPerDay`: `409`
+  `stream-limit-reached`. A transcode with the server's budget used:
+  `503` `server-busy`, as for a `play`.
 - **The ticket** lasts 24 hours from the answer, without the 2-minute
   idle rule: the viewer's server may read, stop reading and read again,
   by byte ranges, within those 24 hours. It sends `stop` when the
@@ -723,8 +746,9 @@ Downloads are the owning server's choice, off by default
   and headers still hold.
 - **Late reports.** `progress` and `stop` carry `at` (sections 3 and 4)
   for what the viewer watched offline. For a download, the owning server
-  accepts them for 30 days after its `play`, even once the playback has
-  ended: it answers `200` and records the position, and the playback
+  accepts them for 30 days after its `play` (while now is at most the
+  time of the `play` plus 30 days, that last second included), even once
+  the playback has ended: it answers `200` and records the position, and the playback
   stays ended. A late report without `at`, or after those 30 days, is
   answered as for any ended playback: `410` to `progress`, `200` to
   `stop`.

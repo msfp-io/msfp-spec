@@ -87,8 +87,10 @@ Every media URL is absolute, under the owning server's stream root:
 - A content part adds URLs of its own under `<stream root><ticket>/`,
   with a `<track>` name (the track's ID) where it needs one:
   [video](video.md#6-media) adds subtitle, picture subtitle, font and
-  preview sheet URLs, and the image of a `local` title. Their shapes,
-  which this part fetches as section 3.4 says:
+  preview sheet URLs, and the image of a `local` title;
+  [music](music.md#52-the-queue) adds a stream for each track of a
+  queue, fetched as the main stream is (section 3). Their shapes, which
+  this part fetches as section 3.4 says (the queue's as section 3):
 
 | URL | What it serves |
 |-----|----------------|
@@ -100,6 +102,8 @@ Every media URL is absolute, under the owning server's stream root:
 | `<stream root><ticket>/fonts/<n>` | font *n* of the copy, `<n>` from 0 to 7 |
 | `<stream root><ticket>/trickplay/<n>` | preview sheet *n*, `<n>` from 0 to 999 |
 | `<stream root><ticket>/image` | the image of a `local` title, under an `image` ticket |
+| `<stream root><ticket>/queue/<n>/file` | queue entry *n*'s stream as `file`, under the playback's ticket, `<n>` from 0 to 4 |
+| `<stream root><ticket>/queue/<n>/master.m3u8` | queue entry *n*'s stream as `hls`; the files its playlists name are under `<stream root><ticket>/queue/<n>/` |
 
 A content part's answer gives a subtitle track by its **track URL**,
 without the last part: `<stream root><ticket>/subtitles/<track>`,
@@ -160,6 +164,8 @@ no other:
   reading the file. It answers a well-formed one that can't be satisfied
   with `416` too: one whose *first* is at or past the end. A *last* past
   the end means the end; a *count* above the length means the whole.
+  On an empty file (size 0) no range is satisfiable, `bytes=-<count>`
+  included.
 - A `416` for the file carries `Content-Range: bytes */<size>`, with the
   copy's exact `size` (section 3.2).
 - `Range` is meant for the file and for segments. On a playlist, a
@@ -184,10 +190,16 @@ answers the range asked for:
 
 On a segment, a `200` to a request with `Range` is the whole segment,
 and is accepted. On the file, the owning server must answer a
-satisfiable `Range` with `206`, and a `200` to one is a failed fetch. A
+satisfiable `Range` with `206`, and a `200` to one is a failed fetch; so
+is a `200` to an unsatisfiable one, which must be answered `416`. A
 `206` to a request without `Range`, or a `206` that fails these checks,
 is a failed fetch. A server never trusts the body to stop at
 `Content-Length`: it stops reading there.
+
+Test cases: `ranges` (a `Range` header against a size: well-formed,
+satisfiable, the bytes it names) and `fileAnswers` (the owning server's
+answers for the file, as the viewer's server checks them, sections 2.1,
+2.3 and 3.2) in [vectors/v0/media.json](../../vectors/v0/media.json).
 
 ### 2.2 Methods
 
@@ -265,9 +277,11 @@ peer's `HEAD`, the file's headers and the new sizes are still to build.
 - **HLS.** Fetch `master.m3u8`, then the playlists it names, then their
   files: every URI in them is a bare file name of the same stream (it
   matches `^[A-Za-z0-9._-]{1,64}$`, and is not `.` or `..`), relative to
-  `<stream root><ticket>/`. Fetch each the same way. Section 3.1 says
-  what a playlist may hold.
-- **File.** Fetch `file`, with ranges (section 3.2).
+  the folder of the `master.m3u8`: `<stream root><ticket>/`, or
+  `<stream root><ticket>/queue/<n>/` for a queue entry's stream. Fetch
+  each the same way. Section 3.1 says what a playlist may hold.
+- **File.** Fetch `file` (or a queue entry's `queue/<n>/file`), with
+  ranges (section 3.2).
 - **What a content part adds.** Fetched as section 3.4 says, with the
   same plain `GET`s and the ticket of the URL; what the bytes must be is
   the content part's to say ([video section 6](video.md#6-media): the
@@ -290,7 +304,9 @@ of any other.
 
 Test cases for sections 3.1 to 3.4 are in
 [vectors/v0/media.json](../../vectors/v0/media.json), beside video's
-subtitle cases.
+subtitle cases. The largest sizes and counts (a 2 MiB playlist, 50,000
+URIs, cues or events, a 10 MiB font) aren't exercised there, for the
+size of the file.
 
 ### 3.1 HLS playlists
 
@@ -368,12 +384,14 @@ refuses the whole playlist:
 8. It holds at most 50,000 URIs, counting URI lines and `URI=` values.
 9. A media playlist (one with an `#EXTINF` line) has exactly one
    `#EXT-X-PLAYLIST-TYPE:VOD` line, exactly one `#EXT-X-ENDLIST` line,
-   after its last URI line, and `#EXT-X-TARGETDURATION` and `#EXTINF`
-   values within the bounds above. A playlist with neither
+   after its last URI line, at least one `#EXT-X-TARGETDURATION` line,
+   and `#EXT-X-TARGETDURATION` and `#EXTINF` values within the bounds
+   above; each `#EXTINF` is checked against the first
+   `#EXT-X-TARGETDURATION`. A playlist with neither
    `#EXT-X-STREAM-INF` nor `#EXTINF` is refused.
 10. In a master playlist, every `#EXT-X-MEDIA` line has `TYPE=AUDIO` and
-    a `NAME` that is an audio track ID of the playback; at most 32 of
-    them.
+    a `NAME`, quoted (`NAME="a1"`), that is an audio track ID of the
+    playback; at most 32 of them.
 
 Then:
 
@@ -422,7 +440,7 @@ remuxed or converted.
   `ETag` is the `etag` it knows for the copy (the catalog's, or the
   `play` answer's when they disagree, as
   [playback section 2.3](playback.md#23-the-answer) says), and `Content-Range`'s *total* (or, for a `200`,
-  `Content-Length`) is its `size`. Either one different means the copy
+  `Content-Length`, which a `200` must carry) is its `size`. Either one different means the copy
   changed: a failed fetch, and the viewer's server reads the title
   again. It never joins bytes of two `etag`s in one read.
 
@@ -576,6 +594,8 @@ part of a copy, outside a watched playback
   it does a download's.
 - The viewer's server passes a `416` past the cap to its reader as a
   failed read.
+
+Test cases: `scans` in [vectors/v0/media.json](../../vectors/v0/media.json).
 
 ## 5. Security considerations
 

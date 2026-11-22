@@ -61,7 +61,6 @@ var (
 	playbackIDForm     = regexp.MustCompile(`^play_[a-z2-7]{26}$`)
 	playbackEtagForm   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 	playbackObjIDForm  = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
-	playbackTagForm    = regexp.MustCompile(`^[A-Za-z0-9-]{1,12}$`)
 	playbackAudioForm  = regexp.MustCompile(`^a(0|[1-9][0-9]{0,2})$`)
 	playbackSubForm    = regexp.MustCompile(`^s(0|[1-9][0-9]{0,2})$`)
 	playbackTicketForm = `[A-Za-z0-9_-]{1,64}`
@@ -699,8 +698,8 @@ func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw 
 		if err != nil {
 			return nil, err
 		}
-		if present && !playbackTagForm.MatchString(v) {
-			return nil, pbBad("%s isn't 1 to 12 characters of A-Z a-z 0-9 -", name)
+		if present && !validTag(v) {
+			return nil, pbBad("%s isn't a valid tag (catalog section 3)", name)
 		}
 		if name == "audioLanguage" {
 			lang = v
@@ -1013,7 +1012,7 @@ func playbackKeepAnswer(raw []byte, delivery, catalogEtag, root string) ([]byte,
 				continue
 			}
 			t := playbackTrack{ID: id}
-			if l, ok := eo["language"].(string); ok && playbackTagForm.MatchString(l) {
+			if l, ok := eo["language"].(string); ok && validTag(l) {
 				t.Language = l
 			}
 			if n, ok := playbackInt(eo["channels"]); ok && n >= 0 {
