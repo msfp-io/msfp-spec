@@ -621,26 +621,27 @@ mark all of them watched together.
 
 Titles of kind `movie`, `series` and `episode`, keyed under `tmdb` or
 `tvdb`, may carry `ids`: other identifiers of the same title, by scheme.
+The schemes and their forms are the
+[registry's](../registry.md#ids-schemes); those of video are:
 
-| Scheme | Form | Example |
-|--------|------|---------|
-| `imdb` | `tt` and 7 to 10 digits | `tt0133093` |
-| `tvdb` | 1 to 10 digits, no leading zero | `81189` |
-| `tmdb` | 1 to 10 digits, no leading zero; on titles of the `tvdb` scheme only | `1396` |
+| Scheme | Kinds | Form | Example |
+|--------|-------|------|---------|
+| `imdb` | `movie`, `series`, `episode` | `tt` and 7 to 10 digits | `tt0133093` |
+| `tvdb` | `movie`, `series`, `episode` | 1 to 10 digits, no leading zero | `81189` |
+| `tmdb` | `series`, `episode`, keyed under another scheme than `tmdb` (`tvdb`) | 1 to 10 digits, no leading zero | `1396` |
 
 Example: `"ids":{"imdb":"tt0133093"}`.
 
 - Each value is a string. Unknown schemes are ignored. A value that
-  breaks its form is ignored, as is `tmdb` on a title of the `tmdb`
-  scheme. The [registry](../registry.md) lists these schemes with the
-  others.
+  breaks its form is ignored, as is a scheme on a kind the table doesn't
+  give it, and `tmdb` on a title of the `tmdb` scheme.
 - `ids` never replaces the key: two titles are the same when their keys
   are equal ([catalog section 4.1](catalog.md#41-same-title-same-key)).
   `ids` only helps a receiver find a title it holds under another
   identifier.
 - A film's or series' `imdb` names it; an episode's names the episode.
-  A series' `tvdb` is TheTVDB's series ID; an episode's, TheTVDB's
-  episode ID. A series' `tmdb` is TMDB's series ID, sent once TMDB has
+  A film's `tvdb` is TheTVDB's movie ID; a series', TheTVDB's series ID;
+  an episode's, TheTVDB's episode ID. A series' `tmdb` is TMDB's series ID, sent once TMDB has
   the series; an episode's, TMDB's episode ID.
 - **Across schemes.** A series one server keys under TMDB with
   `ids.tvdb` *n*, and one another server keys `series/tvdb/<n>`, are the

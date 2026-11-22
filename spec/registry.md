@@ -49,7 +49,7 @@ replaces the key. A `local` title of `video` carries no `ids`; one of
 | Scheme | Kinds | Form | Example | What it names |
 |--------|-------|------|---------|---------------|
 | `imdb` | `movie`, `series`, `episode` | `tt` and 7 to 10 digits | `tt0133093` | the IMDb title: the film, the series, or the episode |
-| `tvdb` | `series`, `episode` | 1 to 10 digits, no leading zero | `81189` | TheTVDB's series ID; for an episode, TheTVDB's episode ID |
+| `tvdb` | `movie`, `series`, `episode` | 1 to 10 digits, no leading zero | `81189` | TheTVDB's movie or series ID; for an episode, TheTVDB's episode ID |
 | `tmdb` | `series`, `episode` keyed under another scheme than `tmdb` | 1 to 10 digits, no leading zero (1 to 9,999,999,999) | `1399` | TMDB's series ID; for an episode, TMDB's episode ID |
 | `mbreleasegroup` | `album` | an MBID: `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}` | `5b11f4ce-a62d-471e-81fc-a69a8278c7da` | the release group the release belongs to |
 | `mbrecording` | `track` | an MBID | `b1a9c0e9-d987-4042-ae91-78d6a3267d69` | the recording the release track holds |

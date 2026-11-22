@@ -199,6 +199,9 @@ Example: an album, and a track on it:
 
 ### 3.1 Other identifiers
 
+The schemes and their forms are the
+[registry's](../registry.md#ids-schemes); those of music are:
+
 | Scheme | Kinds | Form |
 |--------|-------|------|
 | `mbreleasegroup` | album | the MBID of the release group the release belongs to |
