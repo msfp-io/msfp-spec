@@ -1,11 +1,13 @@
 package main
 
-// The video part's rules (spec/v0/video.md, as revised by proposal 16):
+// The video part's rules (spec/v0/video.md, as revised by proposals 16
+// and 17):
 // title keys of the tmdb, tvdb and local schemes and extras' keys
 // (section 4), what a caller keeps of a video title (section 3.1), of
 // its copies (sections 3.2 to 3.8), of an extra (section 3.9) and of a
 // local title's description (section 3.10), and the data checks of the
-// previews call (sections 5.5 and 5.6).
+// previews call (sections 5.5 and 5.6), and the fonts of a copy
+// (sections 5.3 and 6.6).
 //
 // Every helper here has a video prefix (or is a method of a video type),
 // so that this file depends on no other part's file.
@@ -17,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -35,26 +38,27 @@ var (
 	videoIMDbForm    = regexp.MustCompile(`^tt[0-9]{7,10}$`)          // ids.imdb
 	videoCodecTag    = regexp.MustCompile(`^[A-Za-z0-9]{1,8}$`)       // video codecTag
 	videoLayoutForm  = regexp.MustCompile(`^[A-Za-z0-9()._-]{1,32}$`) // audio layout
-	videoColourForm  = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)       // each colour member
+	videoTokenForm   = regexp.MustCompile(`^[a-z0-9._-]{1,32}$`)      // a token (core section 8.5)
+	videoCodecsForm  = regexp.MustCompile(`^[A-Za-z0-9.-]{1,64}$`)    // an RFC 6381 codecs string
+	videoFPSForm     = regexp.MustCompile(`^([1-9][0-9]{0,6})/([1-9][0-9]{0,6})$`)
+	videoAspectForm  = regexp.MustCompile(`^([1-9][0-9]{0,4}):([1-9][0-9]{0,4})$`)
 	videoIntegerForm = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
 	videoDateForm    = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 )
 
-// The names lists of section 3.5 (both columns), and the other lists of
-// sections 3.2, 3.3, 3.4 and 3.9.
-var (
-	videoContainers  = []string{"mp4", "m4v", "mov", "webm", "mkv", "ts", "mp3", "aac", "m4a", "flac", "ogg", "opus", "wav", "avi", "m2ts", "wmv", "flv", "3gp"}
-	videoCodecs      = []string{"h264", "hevc", "av1", "vp8", "vp9", "mpeg2video", "mpeg4", "vc1", "wmv3", "h263", "theora"}
-	videoAudioCodecs = []string{"aac", "mp3", "opus", "vorbis", "flac", "ac3", "eac3", "alac", "pcm_s16le", "dts", "truehd", "mp2", "wmav2", "pcm_s24le", "pcm_bluray"}
-	videoEditions    = []string{"theatrical", "directors", "extended", "unrated", "remastered", "special", "imax", "other"}
-	videoHDR         = []string{"hdr10", "hdr10plus", "hlg", "dv"}
-	videoThreeD      = []string{"sbs", "tab", "mvc"}
-	videoRoles       = []string{"commentary", "description"}
-	videoAudioProfs  = []string{"atmos", "dtsx", "dts-hd-ma", "dts-hd-hra", "dts-es", "he-aac", "lc"}
-	videoSubFormats  = []string{"subrip", "ass", "ssa", "webvtt", "mov_text", "ttml", "pgs", "vobsub", "dvb", "other"}
-	videoSegKinds    = []string{"intro", "outro", "recap", "preview", "commercial"}
-	videoExtraTypes  = []string{"trailer", "featurette", "behindthescenes", "deletedscene", "interview", "scene", "short", "clip"}
-)
+// The one closed list left (section 3.2). Every other list of sections
+// 3.2 to 3.9 is open: its values are tokens (videoToken).
+var videoThreeD = []string{"sbs", "tab", "mvc"}
+
+// videoToken is v when it is a token of core section 8.5 (1 to 32
+// characters of a-z 0-9 . _ -), else "". An open field keeps any token,
+// known or not.
+func videoToken(v any) string {
+	if s, ok := v.(string); ok && videoTokenForm.MatchString(s) {
+		return s
+	}
+	return ""
+}
 
 func videoIn(s string, list []string) bool {
 	for _, v := range list {
@@ -212,13 +216,57 @@ func videoTag(v any) string {
 	return ""
 }
 
-// videoRange is v when it is one of the values section 3.3 lists for
-// colour.range, tv or pc, else "".
-func videoRange(v any) string {
-	if s, ok := v.(string); ok && (s == "tv" || s == "pc") {
-		return s
+// videoText is a fact given as plain text (a profile, section 3.3):
+// made plain, and "" when empty or longer than max code points, never
+// cut.
+func videoText(v any, max int) string {
+	s, ok := v.(string)
+	if !ok {
+		return ""
 	}
-	return ""
+	t := videoPlain(s, max+1)
+	if len([]rune(t)) > max {
+		return ""
+	}
+	return t
+}
+
+// videoFPS is a frame rate in its rational form "<num>/<den>", each 1 to
+// 1,000,000 and the fraction reduced, else "".
+func videoFPS(v any) string {
+	s, ok := v.(string)
+	m := videoFPSForm.FindStringSubmatch(s)
+	if !ok || m == nil {
+		return ""
+	}
+	n, _ := strconv.ParseInt(m[1], 10, 64)
+	d, _ := strconv.ParseInt(m[2], 10, 64)
+	if n > 1_000_000 || d > 1_000_000 || videoGCD(n, d) != 1 {
+		return ""
+	}
+	return s
+}
+
+func videoGCD(a, b int64) int64 {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
+}
+
+// videoAspect is a sample aspect ratio "<w>:<h>", each 1 to 65,535, else "".
+func videoAspect(v any) string {
+	s, ok := v.(string)
+	m := videoAspectForm.FindStringSubmatch(s)
+	if !ok || m == nil {
+		return ""
+	}
+	w, _ := strconv.ParseInt(m[1], 10, 64)
+	h, _ := strconv.ParseInt(m[2], 10, 64)
+	if w > 65535 || h > 65535 {
+		return ""
+	}
+	return s
 }
 
 // videoForm is v when it is a string matching re, else "".
@@ -237,14 +285,6 @@ func videoOneOf(v any, list []string) string {
 	return ""
 }
 
-// videoNamed: a string of list kept, any other string "other".
-func videoNamed(s string, list []string) string {
-	if videoIn(s, list) {
-		return s
-	}
-	return "other"
-}
-
 // What the caller keeps, in the order the vectors write it.
 
 type videoPart struct {
@@ -256,6 +296,9 @@ type videoDV struct {
 	Profile       int64 `json:"profile"`
 	Level         int64 `json:"level"`
 	Compatibility int64 `json:"compatibility"`
+	EL            *bool `json:"el,omitempty"`
+	BL            *bool `json:"bl,omitempty"`
+	RPU           *bool `json:"rpu,omitempty"`
 }
 
 type videoColour struct {
@@ -266,18 +309,21 @@ type videoColour struct {
 }
 
 type videoStream struct {
-	Codec      string       `json:"codec"`
-	CodecTag   string       `json:"codecTag,omitempty"`
-	Profile    string       `json:"profile,omitempty"`
-	Level      json.Number  `json:"level,omitempty"`
-	Width      int64        `json:"width"`
-	Height     int64        `json:"height"`
-	BitDepth   *int64       `json:"bitDepth,omitempty"`
-	HDR        []string     `json:"hdr,omitempty"`
-	DV         *videoDV     `json:"dv,omitempty"`
-	FPS        json.Number  `json:"fps,omitempty"`
-	Interlaced *bool        `json:"interlaced,omitempty"`
-	Colour     *videoColour `json:"colour,omitempty"`
+	Codec        string       `json:"codec"`
+	CodecTag     string       `json:"codecTag,omitempty"`
+	Codecs       string       `json:"codecs,omitempty"`
+	Profile      string       `json:"profile,omitempty"`
+	Level        json.Number  `json:"level,omitempty"`
+	Width        int64        `json:"width"`
+	Height       int64        `json:"height"`
+	SampleAspect string       `json:"sampleAspect,omitempty"`
+	Rotation     *int64       `json:"rotation,omitempty"`
+	BitDepth     *int64       `json:"bitDepth,omitempty"`
+	Colour       *videoColour `json:"colour,omitempty"`
+	HDR          []string     `json:"hdr,omitempty"`
+	DV           *videoDV     `json:"dv,omitempty"`
+	FPS          string       `json:"fps,omitempty"`
+	Interlaced   *bool        `json:"interlaced,omitempty"`
 }
 
 type videoAudio struct {
@@ -289,6 +335,7 @@ type videoAudio struct {
 	Forced     *bool  `json:"forced,omitempty"`
 	FileIndex  *int64 `json:"fileIndex,omitempty"`
 	Codec      string `json:"codec"`
+	Codecs     string `json:"codecs,omitempty"`
 	Profile    string `json:"profile,omitempty"`
 	Layout     string `json:"layout,omitempty"`
 	SampleRate *int64 `json:"sampleRate,omitempty"`
@@ -303,7 +350,7 @@ type videoSubtitle struct {
 	Default         *bool  `json:"default,omitempty"`
 	Forced          *bool  `json:"forced,omitempty"`
 	HearingImpaired *bool  `json:"hearingImpaired,omitempty"`
-	Format          string `json:"format"`
+	Format          string `json:"format,omitempty"`
 	External        *bool  `json:"external,omitempty"`
 	FileIndex       *int64 `json:"fileIndex,omitempty"`
 	Title           string `json:"title,omitempty"`
@@ -365,7 +412,11 @@ type videoTitle struct {
 const (
 	videoMaxDuration = 8_640_000_000
 	videoMaxSize     = 999_999_999_999_999
-	videoMaxCopies   = 8
+	videoMaxCopies   = 16
+	videoMaxHDR      = 8
+	videoMaxFonts    = 64
+	videoMaxFont     = 10 << 20 // 10 MiB
+	videoMaxFontSet  = 64 << 20 // 64 MiB, a copy's fonts in all
 )
 
 // videoDecode reads one JSON value, numbers kept as their text.
@@ -414,58 +465,55 @@ func keepVideoStream(v any) *videoStream {
 	if !ok {
 		return nil
 	}
-	codec, ok := o["codec"].(string)
+	codec := videoToken(o["codec"])
 	w, h := videoInt(o["width"], 1, 100_000), videoInt(o["height"], 1, 100_000)
-	if !ok || w == nil || h == nil {
+	if codec == "" || w == nil || h == nil {
 		return nil
 	}
-	s := &videoStream{Codec: videoNamed(codec, videoCodecs), Width: *w, Height: *h}
+	s := &videoStream{Codec: codec, Width: *w, Height: *h}
 	s.CodecTag = videoForm(o["codecTag"], videoCodecTag)
-	if p, ok := o["profile"].(string); ok && p != "" && len([]rune(p)) <= 32 {
-		s.Profile = p
-	}
+	s.Codecs = videoForm(o["codecs"], videoCodecsForm)
+	s.Profile = videoText(o["profile"], 64)
 	if f, ok := videoNumber(o["level"]); ok && f >= 0 && f <= 1000 {
 		s.Level = videoNumText(f)
 	}
-	if b := videoInt(o["bitDepth"], 8, 12); b != nil && *b%2 == 0 {
-		s.BitDepth = b
+	s.SampleAspect = videoAspect(o["sampleAspect"])
+	if r := videoInt(o["rotation"], 0, 270); r != nil && *r%90 == 0 {
+		s.Rotation = r
 	}
-	if list, ok := o["hdr"].([]any); ok {
-		have := map[string]bool{}
-		for _, e := range list {
-			if f, ok := e.(string); ok {
-				have[f] = true
-			}
-		}
-		for _, f := range videoHDR {
-			if have[f] {
-				s.HDR = append(s.HDR, f)
-			}
-		}
-	}
-	if dv, ok := o["dv"].(map[string]any); ok && videoIn("dv", s.HDR) {
-		p, l, c := videoInt(dv["profile"], 0, 10), videoInt(dv["level"], 0, 13), videoInt(dv["compatibility"], 0, 15)
-		if p != nil && l != nil && c != nil {
-			s.DV = &videoDV{*p, *l, *c}
-		}
-	}
-	if f, ok := videoNumber(o["fps"]); ok {
-		if r := math.Round(f*100) / 100; r > 0 && r <= 1000 {
-			s.FPS = videoNumText(r)
-		}
-	}
-	s.Interlaced = videoBool(o["interlaced"])
+	s.BitDepth = videoInt(o["bitDepth"], 1, 16)
 	if c, ok := o["colour"].(map[string]any); ok {
 		col := videoColour{
-			Primaries: videoForm(c["primaries"], videoColourForm),
-			Transfer:  videoForm(c["transfer"], videoColourForm),
-			Matrix:    videoForm(c["matrix"], videoColourForm),
-			Range:     videoRange(c["range"]),
+			Primaries: videoToken(c["primaries"]),
+			Transfer:  videoToken(c["transfer"]),
+			Matrix:    videoToken(c["matrix"]),
+			Range:     videoToken(c["range"]),
 		}
 		if col != (videoColour{}) {
 			s.Colour = &col
 		}
 	}
+	if list, ok := o["hdr"].([]any); ok {
+		var hdr []string
+		for _, e := range list {
+			if t := videoToken(e); t != "" && !videoIn(t, hdr) {
+				hdr = append(hdr, t)
+			}
+		}
+		sort.Strings(hdr)
+		if len(hdr) > videoMaxHDR {
+			hdr = hdr[:videoMaxHDR]
+		}
+		s.HDR = hdr
+	}
+	if dv, ok := o["dv"].(map[string]any); ok && videoIn("dv", s.HDR) {
+		p, l, c := videoInt(dv["profile"], 0, 127), videoInt(dv["level"], 0, 63), videoInt(dv["compatibility"], 0, 15)
+		if p != nil && l != nil && c != nil {
+			s.DV = &videoDV{*p, *l, *c, videoBool(dv["el"]), videoBool(dv["bl"]), videoBool(dv["rpu"])}
+		}
+	}
+	s.FPS = videoFPS(o["fps"])
+	s.Interlaced = videoBool(o["interlaced"])
 	return s
 }
 
@@ -504,8 +552,8 @@ func keepVideoAudio(list []any) []videoAudio {
 			continue
 		}
 		id := videoForm(o["id"], videoAudioID)
-		codec, ok := o["codec"].(string)
-		if id == "" || seen[id] || !ok {
+		codec := videoToken(o["codec"])
+		if id == "" || seen[id] || codec == "" {
 			continue
 		}
 		seen[id] = true
@@ -513,16 +561,17 @@ func keepVideoAudio(list []any) []videoAudio {
 			ID:         id,
 			Language:   videoTag(o["language"]),
 			Channels:   videoInt(o["channels"], 1, 64),
-			Role:       videoOneOf(o["role"], videoRoles),
+			Role:       videoToken(o["role"]),
 			Default:    videoBool(o["default"]),
 			Forced:     videoBool(o["forced"]),
 			FileIndex:  videoInt(o["fileIndex"], 0, 999),
-			Codec:      videoNamed(codec, videoAudioCodecs),
-			Profile:    videoOneOf(o["profile"], videoAudioProfs),
+			Codec:      codec,
+			Codecs:     videoForm(o["codecs"], videoCodecsForm),
+			Profile:    videoText(o["profile"], 64),
 			Layout:     videoForm(o["layout"], videoLayoutForm),
 			SampleRate: videoInt(o["sampleRate"], 8_000, 768_000),
 			BitDepth:   videoInt(o["bitDepth"], 8, 32),
-			Title:      videoPlain(o["title"], 32),
+			Title:      videoPlain(o["title"], 64),
 			Original:   videoBool(o["original"]),
 		})
 	}
@@ -542,17 +591,16 @@ func keepVideoSubtitles(list []any) []videoSubtitle {
 			continue
 		}
 		seen[id] = true
-		format, _ := o["format"].(string)
 		out = append(out, videoSubtitle{
 			ID:              id,
 			Language:        videoTag(o["language"]),
 			Default:         videoBool(o["default"]),
 			Forced:          videoBool(o["forced"]),
 			HearingImpaired: videoBool(o["hearingImpaired"]),
-			Format:          videoNamed(format, videoSubFormats),
+			Format:          videoToken(o["format"]),
 			External:        videoBool(o["external"]),
 			FileIndex:       videoInt(o["fileIndex"], 0, 999),
-			Title:           videoPlain(o["title"], 32),
+			Title:           videoPlain(o["title"], 64),
 		})
 	}
 	return out
@@ -583,7 +631,7 @@ func keepVideoSegments(v any, duration int64) []videoSegment {
 		if !ok || len(out) == 32 {
 			continue
 		}
-		kind := videoOneOf(o["kind"], videoSegKinds)
+		kind := videoToken(o["kind"])
 		s, t := videoInt(o["startMs"], 0, duration), videoInt(o["endMs"], 0, duration)
 		if kind == "" || s == nil || t == nil || *s >= *t {
 			continue
@@ -608,9 +656,9 @@ func keepCopy(v any) (*videoCopy, error) {
 	if d == nil {
 		return nil, errors.New("durationMs isn't an integer from 0 to 8,640,000,000")
 	}
-	container, ok := o["container"].(string)
-	if !ok {
-		return nil, errors.New("container isn't a string")
+	container := videoToken(o["container"])
+	if container == "" {
+		return nil, errors.New("container isn't a token")
 	}
 	size := videoInt(o["size"], 1, videoMaxSize)
 	if size == nil {
@@ -624,17 +672,12 @@ func keepCopy(v any) (*videoCopy, error) {
 	if !ok {
 		return nil, errors.New("audioTracks isn't an array")
 	}
-	c := &videoCopy{ID: id, DurationMs: *d, Container: videoNamed(container, videoContainers), Size: *size, ETag: etag}
-	c.Name = videoPlain(o["name"], 32)
-	if e, ok := o["edition"].(string); ok {
-		c.Edition = videoNamed(e, videoEditions)
-	}
+	c := &videoCopy{ID: id, DurationMs: *d, Container: container, Size: *size, ETag: etag}
+	c.Name = videoPlain(o["name"], 64)
+	c.Edition = videoToken(o["edition"])
 	c.StartMs = videoInt(o["startMs"], 0, *d)
 	c.Parts = keepVideoParts(o["parts"], *size)
-	if b := videoInt(o["bitrateKbps"], 500, 10_000_000); b != nil {
-		r := *b / 500 * 500
-		c.BitrateKbps = &r
-	}
+	c.BitrateKbps = videoInt(o["bitrateKbps"], 1, 10_000_000)
 	c.Video = keepVideoStream(o["video"])
 	c.AudioTracks = keepVideoAudio(audio)
 	if subs, ok := o["subtitleTracks"].([]any); ok {
@@ -698,9 +741,8 @@ func keepVideoTitle(raw []byte, libraries []string) ([]byte, error) {
 
 	// Extras (section 3.9).
 	if kind == "extra" {
-		t.ExtraType = "clip"
-		if s, ok := o["extraType"].(string); ok && videoIn(s, videoExtraTypes) {
-			t.ExtraType = s
+		if t.ExtraType = videoToken(o["extraType"]); t.ExtraType == "" {
+			return nil, errors.New("an extra whose extraType is missing or isn't a token")
 		}
 		t.Name = videoPlain(o["name"], 64)
 	}
@@ -742,7 +784,8 @@ func keepVideoTitle(raw []byte, libraries []string) ([]byte, error) {
 	if ids, ok := o["ids"].(map[string]any); ok && k.Scheme != "local" && (kind == "movie" || kind == "series" || kind == "episode") {
 		for scheme, val := range ids {
 			s, ok := val.(string)
-			if !ok || !(scheme == "imdb" && videoIMDbForm.MatchString(s) || scheme == "tvdb" && videoIDForm.MatchString(s)) {
+			if !ok || !(scheme == "imdb" && videoIMDbForm.MatchString(s) || scheme == "tvdb" && videoIDForm.MatchString(s) ||
+				scheme == "tmdb" && k.Scheme == "tvdb" && videoIDForm.MatchString(s)) {
 				continue
 			}
 			if t.IDs == nil {
@@ -913,4 +956,82 @@ func keepVideoPreviewsAnswer(raw []byte, root string) ([]byte, error) {
 		}
 	}
 	return videoEncode(a)
+}
+
+// Fonts (sections 5.3 and 6.6).
+
+// keepVideoFonts is section 5.3's reading of the fonts member of play's
+// answer, given the owning server's stream root: the URLs kept, or why
+// the member is dropped. Each entry must be exactly the URL section 6.1
+// gives for its index, all under one ticket, at most 64.
+func keepVideoFonts(raw []byte, root string) ([]byte, error) {
+	v, err := videoDecode(raw)
+	if err != nil {
+		return nil, err
+	}
+	list, ok := v.([]any)
+	if !ok {
+		return nil, errors.New("fonts isn't an array")
+	}
+	if len(list) > videoMaxFonts {
+		return nil, fmt.Errorf("%d fonts, more than 64", len(list))
+	}
+	out := []string{}
+	ticket := ""
+	for i, e := range list {
+		s, ok := e.(string)
+		if !ok {
+			return nil, fmt.Errorf("fonts[%d] isn't a string", i)
+		}
+		rest, ok := strings.CutPrefix(s, root)
+		tk, tail, cut := strings.Cut(rest, "/")
+		if !ok || !cut || !videoOpaqueForm.MatchString(tk) || tail != "fonts/"+strconv.Itoa(i) {
+			return nil, fmt.Errorf("fonts[%d] isn't <stream root><ticket>/fonts/%d", i, i)
+		}
+		if ticket != "" && tk != ticket {
+			return nil, fmt.Errorf("fonts[%d] names another ticket", i)
+		}
+		ticket = tk
+		out = append(out, s)
+	}
+	return videoEncode(out)
+}
+
+// videoFontSet is what checkVideoFontSet finds in a set of fonts.
+type videoFontSet struct {
+	Fonts int   `json:"fonts"`
+	Bytes int64 `json:"bytes"`
+}
+
+// checkVideoFontSet is section 6.6's bounds on one copy's fonts, given
+// their sizes in bytes in the order of fonts: at most 64 fonts, each 1 to
+// 10 MiB, 64 MiB in all. It returns their count and total, or the first
+// bound broken; the owning server lists a set only within them, and a
+// viewer's server refuses the font that breaks one.
+func checkVideoFontSet(raw []byte) ([]byte, error) {
+	v, err := videoDecode(raw)
+	if err != nil {
+		return nil, err
+	}
+	list, ok := v.([]any)
+	if !ok {
+		return nil, errors.New("not an array of sizes")
+	}
+	var set videoFontSet
+	for i, e := range list {
+		n := videoInt(e, 1, 1<<53-1)
+		switch {
+		case n == nil:
+			return nil, fmt.Errorf("font %d: a size that isn't an integer from 1", i)
+		case i >= videoMaxFonts:
+			return nil, fmt.Errorf("font %d: more than 64 fonts", i)
+		case *n > videoMaxFont:
+			return nil, fmt.Errorf("font %d: over 10 MiB (10,485,760 bytes)", i)
+		case set.Bytes+*n > videoMaxFontSet:
+			return nil, fmt.Errorf("font %d: the copy's fonts over 64 MiB (67,108,864 bytes) in all", i)
+		}
+		set.Fonts++
+		set.Bytes += *n
+	}
+	return videoEncode(set)
 }
