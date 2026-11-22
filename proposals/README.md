@@ -37,6 +37,7 @@ read or assumed, it says so.
 | 15 | [Copies in the catalog](0015-copies-in-the-catalog.md): a film's or an episode's copies in `titles` (length, container, picture, tracks, version IDs), so a media server builds its library before anyone plays; pages bounded by size too | Absorbed into 16 (2026-11-22) |
 | 16 | [The revision of version 0](0016-version-0-revision.md): one batch from an audit, a survey of six platforms and a test phase: copies described in the catalog (required, with streams, tracks, chapters, markers, editions, size and etag), copies served as files (delivery, lazy playback, restarts, complete HLS), extras, `tvdb` and `local` keys, music keyed by edition and release track, the viewer choosing the method, styled subtitles and fonts, previews before play, downloads with a speed cap, a scan access | Adopted 2026-11-22, written into spec/v0; absorbs 15 |
 | 17 | [Neutrality](0017-neutrality.md): the protocol doesn't adapt to products; outside vocabularies (ffmpeg names, RFC 6381, H.273, DASH roles, MusicBrainz types), open lists with one rule for unknown values, exact values, no capabilities (the viewer sends `delivery`; else the H.264/AAC HLS baseline), choice as defaults, product text to implementer notes, schemes in a registry, owner-announced scan cap, 16 copies, 64 fonts, themes allowed | Adopted 2026-11-22, written into spec/v0; amends 16 |
+| 18 | [Owner succession](0018-owner-succession.md): the owner's server signs `present` weekly; after 15 days of silence the successor (heir, oldest admin, oldest member) claims the group with backing from a majority of owner-endorsed members; the returning owner is cut back to a member | To be reviewed |
 | – | [Clarifications](clarifications.md): 34 small fixes that need only a "yes" | Accepted, all 34 |
 
 Some proposals lean on others; each says how it reads without them:
@@ -55,3 +56,4 @@ Some proposals lean on others; each says how it reads without them:
 - 12 replaces 10; it uses the core's pairing, 3's rotation for members'
   keys, and 9's `inbound` member. It shipped with 13.
 - 14 builds on 12: a group is one of a link's relations.
+- 18 builds on 12: it replaces the vanished owner's freeze with a claim.
