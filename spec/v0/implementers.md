@@ -232,19 +232,23 @@ subtitles to PGS as section 6.5 says.
 
 Notes for [playback](playback.md), not normative.
 
-**Audio roles.** An owning server whose media server doesn't flag a
-track's role may guess it from the track's title ("Commentary",
-"Audio description"), and leaves `role` out when it can't tell
-([playback section 2.3](playback.md#23-the-answer)).
+**Choosing a delivery.** A viewer's server always chooses the copy
+(`versionId`) and the audio (`audioTrack`), and sends `delivery` when its
+device plays more than the baseline. A media server's "direct stream"
+(video kept, audio converted) is a transcode with `videoCodec` `copy`;
+its HDR and Dolby Vision fallbacks are a `range`
+([playback section 2.7](playback.md#27-delivery)).
 
-**Overfin's requests.** Since 2026-11-16, Overfin compared each entry of
-the capabilities a peer sent exactly, so `H264` was an unknown entry
-(before, it lowercased them); capabilities went with proposal 17. Its
-own apps' API, which is not MSFP, still lowercases. Since 2026-11-16 too,
-an `audioTrack` or `subtitleTrack` that isn't a track of the copy counts
-as absent (before, the audio track was passed to its media server as is,
-and the subtitle track echoed)
-([playback section 2.6](playback.md#26-choosing-the-copy-and-the-tracks)).
+**A stream's bitrate.** No stream carries its own bitrate. The copy's
+overall rate, `size` × 8 / `durationMs`, bounds each stream's, and is
+what an owning server compares with the cap for `file` and `remux`
+([playback section 2.2](playback.md#22-what-the-owning-server-does)).
+On music it is inflated by cover art.
+
+**Overfin's requests.** Since 2026-11-16, an `audioTrack` that isn't a
+track of the copy counts as absent (before, the audio track was passed
+to its media server as is). Its own apps' API, which is not MSFP, still
+lowercases what they send.
 
 **Transcode budgets.** Jellyfin starts as many transcodes as it is
 asked: an owning server on it makes a budget of its own, an operator
@@ -260,8 +264,9 @@ media server copies the video.
 1 transcode, no bitrate cap, no downloads and no scan access; the
 operator changes them, per pairing and per group. An operator who allows
 downloads may start from 1 at once, 10 a day and 20,000 kbit/s; one who
-allows scans, from 1,000 a day and a `scanBytes` of 32 MiB
-([playback section 5](playback.md#5-limits)).
+allows scans, from 1,000 a day and a scan cap of 32 MiB (33,554,432
+bytes), which its scan answers state as `scanBytes`
+([playback section 8](playback.md#8-scan-access)).
 
 **Overfin's playbacks.** Overfin's longest playback is 24 hours
 ([playback section 6.3](playback.md#63-how-a-playback-ends)). Its check
@@ -274,11 +279,13 @@ change, open media responses included; each media request checks again.
 After a playback ends, it remembers why for an hour; `progress` gets
 `410` either way.
 
-**Plex and scan access.** Plex, through a file system, reads 1 to 4 MiB
-of a file to list it ([playback section 8](playback.md#8-scan-access)).
-Its "extensive media analysis" must be off for a library of a peer's
-copies: tested, it reads every file whole, and when a read is refused,
-overwrites the file's length with what it read.
+**Plex and scan access.** Plex reaches a peer's titles as a viewer only
+through scan access: through a file system, it reads 1 to 4 MiB of a
+file to list it ([playback section 8](playback.md#8-scan-access)). A
+4 MiB cap misses an MP4 `moov`, or Matroska cues, at the end of a big
+file; 32 MiB covers most. Its "extensive media analysis" must be off
+for a library of a peer's copies: tested, it reads every file whole, and
+when a read is refused, overwrites the file's length with what it read.
 
 ## Media
 
@@ -312,7 +319,18 @@ subset, and comments, before serving. It fetches any bare name the
 viewer asks for. Steps 9 and 10, and playlists complete from the first
 fetch, are new with
 [proposal 16](../../proposals/0016-version-0-revision.md) and still to
-build.
+build; so are the master playlist's attributes and `hvc1` in `mp4`
+segments of [proposal 17](../../proposals/0017-neutrality.md).
+
+**Atmos in a playlist.** Some players want `ec+3` in `CODECS` for an
+E-AC-3 track with Atmos. A viewer's server may write it from `ec-3` and
+the track's `objects` `dolby-atmos`, beside `CHANNELS="16/JOC"`
+([media section 3.1](media.md#31-hls-playlists)).
+
+**URLs from a ticket.** An engine builds the media URLs itself
+([media section 1](media.md#1-the-urls)): what used to be URL checks
+becomes URL building, from the stream root, the ticket and the fixed
+names, with the counts of the answer and the catalog.
 
 ## Music
 
