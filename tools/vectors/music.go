@@ -529,10 +529,12 @@ type musicQueueStream struct {
 }
 
 // musicStreamCheck checks an entry's stream as media section 1 says:
-// <stream root><ticket>/<name>, hls as master.m3u8 (its mimeType, when
-// sent, application/vnd.apple.mpegurl) or file as file; a remux or a
-// transcode served as hls, a delivery file as file.
-func musicStreamCheck(s musicQueueStream, mimeSet bool, root, method, delivery string) error {
+// <stream root><ticket>/queue/<n>/<name>, under the playback's ticket, n
+// the entry's place in the request's queue (0 to 4, decimal, no leading
+// zeros), hls as master.m3u8 (its mimeType, when sent,
+// application/vnd.apple.mpegurl) or file as file; a remux or a transcode
+// served as hls, a delivery file as file.
+func musicStreamCheck(s musicQueueStream, mimeSet bool, root, ticket string, n int, method, delivery string) error {
 	if !strings.HasPrefix(s.URL, root) {
 		return errors.New("the url isn't under the stream root")
 	}
@@ -540,12 +542,18 @@ func musicStreamCheck(s musicQueueStream, mimeSet bool, root, method, delivery s
 		return errors.New("a %, a query or a fragment in the url")
 	}
 	p := strings.Split(strings.TrimPrefix(s.URL, root), "/")
-	if len(p) != 2 || !musicIDForm.MatchString(p[0]) || !musicMediaName.MatchString(p[1]) || p[1] == "." || p[1] == ".." {
-		return errors.New("the url isn't <stream root><ticket>/<name>")
+	if len(p) != 4 || p[1] != "queue" || !musicMediaName.MatchString(p[3]) || p[3] == "." || p[3] == ".." {
+		return errors.New("the url isn't <stream root><ticket>/queue/<n>/<name>")
+	}
+	if p[0] != ticket {
+		return errors.New("the url names another ticket than the playback's")
+	}
+	if p[2] != strconv.Itoa(n) {
+		return fmt.Errorf("the url's <n> isn't %d, the entry's place in the request's queue", n)
 	}
 	switch s.Protocol {
 	case "hls":
-		if p[1] != "master.m3u8" {
+		if p[3] != "master.m3u8" {
 			return errors.New("an hls stream not named master.m3u8")
 		}
 		if mimeSet && s.MimeType != "application/vnd.apple.mpegurl" {
@@ -555,7 +563,7 @@ func musicStreamCheck(s musicQueueStream, mimeSet bool, root, method, delivery s
 			return errors.New("delivery file served as hls")
 		}
 	case "file":
-		if p[1] != "file" {
+		if p[3] != "file" {
 			return errors.New("a file stream not named file")
 		}
 		if method != "direct" {
@@ -584,6 +592,19 @@ func musicQueueAsked(request []byte) ([]string, string, error) {
 	return asked, delivery, nil
 }
 
+// musicPlaybackTicket is the ticket of a play answer's own stream URL,
+// <stream root><ticket>/<name>, or "" when it has none of that form.
+func musicPlaybackTicket(a map[string]any, root string) string {
+	so, _ := a["stream"].(map[string]any)
+	url, _ := so["url"].(string)
+	rest, ok := strings.CutPrefix(url, root)
+	tk, name, cut := strings.Cut(rest, "/")
+	if !ok || !cut || !musicIDForm.MatchString(tk) || (name != "file" && name != "master.m3u8") {
+		return ""
+	}
+	return tk
+}
+
 // musicKeepQueueAnswer is what the viewer's server keeps of a play
 // answer's queue (an array, possibly empty), given its request and the
 // owning server's stream root.
@@ -601,6 +622,7 @@ func musicKeepQueueAnswer(request, answer []byte, root string) ([]byte, error) {
 		return nil, errors.New("the answer isn't an object")
 	}
 	want := map[string]string{"file": "direct", "remux": "remux", "transcode": "transcode"}[delivery]
+	ticket := musicPlaybackTicket(a, root) // "" when the answer's own stream names none: every entry dropped
 	kept := []musicQueueEntry{}
 	list, _ := a["queue"].([]any) // not an array: absent
 	next := 0                     // the first place of the request's queue an entry may take
@@ -633,7 +655,7 @@ func musicKeepQueueAnswer(request, answer []byte, root string) ([]byte, error) {
 			continue
 		}
 		s := musicQueueStream{URL: url, Protocol: proto, MimeType: mime}
-		if musicStreamCheck(s, mimeSet, root, method, delivery) != nil {
+		if ticket == "" || musicStreamCheck(s, mimeSet, root, ticket, at, method, delivery) != nil {
 			continue
 		}
 		k := musicQueueEntry{Title: title, VersionID: vid, Method: method, Stream: s}
@@ -692,13 +714,6 @@ type musicLyricLine struct {
 	Value string `json:"value"`
 }
 
-// musicTag: a language tag in the form catalog section 3 sends: one that
-// sentTag leaves as it is.
-func musicTag(s string) bool {
-	t, err := sentTag(s)
-	return err == nil && t == s
-}
-
 // musicKeepLyrics is what the viewer's server keeps of a lyrics answer,
 // or why the fetch fails.
 func musicKeepLyrics(raw []byte) ([]byte, error) {
@@ -731,7 +746,7 @@ func musicKeepLyrics(raw []byte) ([]byte, error) {
 			continue
 		}
 		s := musicLyricsSet{Kind: "main", Synced: synced}
-		if l, ok := so["lang"].(string); ok && musicTag(l) {
+		if l, ok := so["lang"].(string); ok && validTag(l) {
 			s.Lang = l
 		}
 		if k, ok := so["kind"].(string); ok && kindIn(k, musicLyricKinds...) {

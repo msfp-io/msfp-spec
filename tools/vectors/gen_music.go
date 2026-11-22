@@ -396,50 +396,65 @@ func musicQueueCases() []musicCallCase {
 	}
 
 	three := req(`,"queue":[` + t(mbTrack2) + `,` + t(mbTrack3) + `,` + t(mbTrack4) + `]`)
-	hls := func(ticket string) string {
-		return `{"url":"` + musicStreamRoot + ticket + `/master.m3u8","protocol":"hls","mimeType":"application/vnd.apple.mpegurl"}`
+	// Every entry's stream is under the playback's own ticket, Tk1, at
+	// queue/<n>, n its place in the request's queue.
+	at := func(ticket, n, name string) string { return musicStreamRoot + ticket + "/queue/" + n + "/" + name }
+	hls := func(n string) string {
+		return `{"url":"` + at("Tk1", n, "master.m3u8") + `","protocol":"hls","mimeType":"application/vnd.apple.mpegurl"}`
 	}
-	file := func(ticket string) string { return `{"url":"` + musicStreamRoot + ticket + `/file","protocol":"file"}` }
+	file := func(n string) string { return `{"url":"` + at("Tk1", n, "file") + `","protocol":"file"}` }
+	url := func(u, proto string) string { return `{"url":"` + u + `","protocol":"` + proto + `"}` }
 	entry := func(id, method, stream, more string) string {
 		return `{"title":` + t(id) + `,"versionId":"v1","method":"` + method + `","stream":` + stream + more + `}`
 	}
-	e2 := entry(mbTrack2, "transcode", hls("Tk2"), `,"durationMs":201000`)
-	e3 := entry(mbTrack3, "direct", file("Tk3"), ``)
-	e4 := entry(mbTrack4, "remux", `{"url":"`+musicStreamRoot+`Tk4/master.m3u8","protocol":"hls"}`, `,"durationMs":0`)
-	ans := func(entries ...string) string {
-		return `{"id":"play_` + strings.Repeat("a", 26) + `","method":"direct","queue":[` + strings.Join(entries, ",") + `]}`
+	e2 := entry(mbTrack2, "transcode", hls("0"), `,"durationMs":201000`)
+	e3 := entry(mbTrack3, "direct", file("1"), ``)
+	e4 := entry(mbTrack4, "remux", url(at("Tk1", "2", "master.m3u8"), "hls"), `,"durationMs":0`)
+	own := `"stream":{"url":"` + musicStreamRoot + `Tk1/file","protocol":"file"}`
+	ansOwn := func(stream string, entries ...string) string {
+		return `{"id":"play_` + strings.Repeat("a", 26) + `","method":"direct",` + stream + `,"queue":[` + strings.Join(entries, ",") + `]}`
 	}
+	ans := func(entries ...string) string { return ansOwn(own, entries...) }
 	answers := []struct{ name, request, text string }{
 		{"three entries prepared, in order", three, ans(e2, e3, e4)},
-		{"an entry the owning server left out", three, ans(e2, e4)},
+		{"an entry the owning server left out: the others keep their places", three, ans(e2, e4)},
 		{"an empty queue in the answer", three, ans()},
-		{"no queue in the answer", three, `{"id":"play_` + strings.Repeat("a", 26) + `"}`},
-		{"a queue that isn't an array: absent", three, `{"queue":` + e2 + `}`},
+		{"no queue in the answer", three, `{"id":"play_` + strings.Repeat("a", 26) + `",` + own + `}`},
+		{"a queue that isn't an array: absent", three, `{` + own + `,"queue":` + e2 + `}`},
 		{"an entry that isn't an object dropped alone", three, ans(`"x"`, e2)},
 		{"out of the request's order: the later entry dropped", three, ans(e4, e3)},
 		{"a repeated entry dropped", three, ans(e2, e2, e3)},
-		{"an entry not in the request's queue dropped", three, ans(entry(mbTrack5, "direct", file("Tk5"), ``), e3)},
-		{"the request's title as an entry dropped", three, ans(entry(mbTrack, "direct", file("Tk1"), ``), e2)},
+		{"an entry not in the request's queue dropped", three, ans(entry(mbTrack5, "direct", file("3"), ``), e3)},
+		{"the request's title as an entry dropped", three, ans(entry(mbTrack, "direct", file("0"), ``), e2)},
 		{"a bad versionId dropped", three, ans(strings.Replace(e2, `"v1"`, `"v 1"`, 1), e3)},
 		{"a missing versionId dropped", three, ans(strings.Replace(e2, `"versionId":"v1",`, ``, 1), e3)},
 		{"an unknown method dropped", three, ans(strings.Replace(e2, `"transcode"`, `"copy"`, 1), e3)},
 		{"a missing stream dropped", three, ans(`{"title":`+t(mbTrack2)+`,"versionId":"v1","method":"direct"}`, e3)},
-		{"a stream under another root dropped", three, ans(entry(mbTrack2, "direct", `{"url":"https://b.example.org/api/v1/stream/Tk2/file","protocol":"file"}`, ``), e3)},
-		{"a stream over http dropped", three, ans(entry(mbTrack2, "direct", `{"url":"http://a.example.org/api/v1/stream/Tk2/file","protocol":"file"}`, ``), e3)},
-		{"a stream URL with another file shape dropped", three, ans(entry(mbTrack2, "direct", `{"url":"`+musicStreamRoot+`Tk2/x/file","protocol":"file"}`, ``), e3)},
-		{"a stream URL with a .. part dropped", three, ans(entry(mbTrack2, "direct", `{"url":"`+musicStreamRoot+`../file","protocol":"file"}`, ``), e3)},
-		{"a stream URL with a query or a %", three, ans(entry(mbTrack2, "direct", `{"url":"`+musicStreamRoot+`Tk2/file?x=1","protocol":"file"}`, ``), entry(mbTrack3, "direct", `{"url":"`+musicStreamRoot+`Tk%33/file","protocol":"file"}`, ``), e4)},
-		{"a ticket of 64 characters, and one of 65", three, ans(entry(mbTrack2, "direct", file(strings.Repeat("k", 64)), ``), entry(mbTrack3, "direct", file(strings.Repeat("k", 65)), ``))},
-		{"an hls stream named file, and a file stream named master.m3u8", three, ans(entry(mbTrack2, "transcode", `{"url":"`+musicStreamRoot+`Tk2/file","protocol":"hls"}`, ``), entry(mbTrack3, "direct", `{"url":"`+musicStreamRoot+`Tk3/master.m3u8","protocol":"file"}`, ``), e4)},
-		{"a transcode served as file dropped", three, ans(entry(mbTrack2, "transcode", file("Tk2"), ``), e3)},
-		{"an unknown protocol dropped", three, ans(entry(mbTrack2, "transcode", `{"url":"`+musicStreamRoot+`Tk2/master.m3u8","protocol":"dash"}`, ``), e3)},
-		{"an hls stream of another mimeType, and a mimeType that isn't a string", three, ans(entry(mbTrack2, "transcode", `{"url":"`+musicStreamRoot+`Tk2/master.m3u8","protocol":"hls","mimeType":"audio/mpeg"}`, ``), entry(mbTrack3, "transcode", `{"url":"`+musicStreamRoot+`Tk3/master.m3u8","protocol":"hls","mimeType":7}`, ``), e4)},
-		{"durationMs at its bounds", three, ans(entry(mbTrack2, "direct", file("Tk2"), `,"durationMs":0`), entry(mbTrack3, "direct", file("Tk3"), `,"durationMs":86400000`))},
-		{"durationMs out of range: set to 0", three, ans(entry(mbTrack2, "direct", file("Tk2"), `,"durationMs":86400001`), entry(mbTrack3, "direct", file("Tk3"), `,"durationMs":-1`))},
-		{"durationMs that isn't an integer: absent", three, ans(entry(mbTrack2, "direct", file("Tk2"), `,"durationMs":1.5`), entry(mbTrack3, "direct", file("Tk3"), `,"durationMs":"1"`))},
-		{"with delivery file: only direct as file kept", req(`,"delivery":"file","queue":[` + t(mbTrack2) + `,` + t(mbTrack3) + `,` + t(mbTrack4) + `]`), ans(entry(mbTrack2, "remux", hls("Tk2"), ``), entry(mbTrack3, "direct", hls("Tk3"), ``), entry(mbTrack4, "direct", file("Tk4"), ``))},
-		{"with delivery transcode: a direct entry dropped", req(`,"delivery":"transcode","queue":[` + t(mbTrack2) + `,` + t(mbTrack3) + `]`), ans(entry(mbTrack2, "direct", file("Tk2"), ``), entry(mbTrack3, "transcode", hls("Tk3"), ``))},
-		{"5 entries, local ones among them", req(`,"queue":[` + t(mbTrack2) + `,"track/local/T-1",` + t(mbTrack3) + `,` + t(mbTrack4) + `,"track/local/T-2"]`), ans(e2, `{"title":"track/local/T-1","versionId":"L1","method":"direct","stream":`+file("TkL")+`}`, e3, e4, `{"title":"track/local/T-2","versionId":"L2","method":"transcode","stream":`+hls("TkM")+`}`)},
+		{"a stream under another root dropped", three, ans(entry(mbTrack2, "direct", url("https://b.example.org/api/v1/stream/Tk1/queue/0/file", "file"), ``), e3)},
+		{"a stream over http dropped", three, ans(entry(mbTrack2, "direct", url("http://a.example.org/api/v1/stream/Tk1/queue/0/file", "file"), ``), e3)},
+		{"a stream URL with another file shape dropped", three, ans(entry(mbTrack2, "direct", url(at("Tk1", "0", "x/file"), "file"), ``), e3)},
+		{"a stream URL with a .. part dropped", three, ans(entry(mbTrack2, "direct", url(musicStreamRoot+"Tk1/queue/../file", "file"), ``), e3)},
+		{"a stream URL with a query or a %", three, ans(entry(mbTrack2, "direct", url(at("Tk1", "0", "file?x=1"), "file"), ``), entry(mbTrack3, "direct", url(at("Tk1", "%31", "file"), "file"), ``), e4)},
+		{"the playback's own stream URL, without queue/<n>, dropped", three, ans(entry(mbTrack2, "direct", url(musicStreamRoot+"Tk1/file", "file"), ``), e3)},
+		{"an entry under another ticket than the playback's dropped", three, ans(entry(mbTrack2, "direct", url(at("Tk2", "0", "file"), "file"), ``), e3)},
+		{"an entry at another entry's place dropped", three, ans(entry(mbTrack2, "direct", file("1"), ``), entry(mbTrack3, "direct", file("2"), ``), e4)},
+		{"an entry at its place in the answer, not the request's, dropped", three, ans(e2, entry(mbTrack4, "remux", url(at("Tk1", "1", "master.m3u8"), "hls"), ``))},
+		{"<n> with a leading zero, or out of 0 to 4, dropped", three, ans(entry(mbTrack2, "direct", file("00"), ``), entry(mbTrack3, "direct", file("01"), ``), entry(mbTrack4, "direct", file("5"), ``))},
+		{"<n> missing dropped", three, ans(entry(mbTrack2, "direct", url(musicStreamRoot+"Tk1/queue/file", "file"), ``), e3)},
+		{"an answer whose own stream names no ticket: every entry dropped", three, ansOwn(`"stream":{"url":"https://b.example.org/api/v1/stream/Tk1/file","protocol":"file"}`, e2, e3)},
+		{"an answer without its own stream: every entry dropped", three, `{"id":"play_` + strings.Repeat("a", 26) + `","method":"direct","queue":[` + e2 + `]}`},
+		{"an answer whose own stream is HLS: entries under its ticket kept", three, ansOwn(`"stream":{"url":"`+musicStreamRoot+`Tk1/master.m3u8","protocol":"hls"}`, e2, e3)},
+		{"an hls stream named file, and a file stream named master.m3u8", three, ans(entry(mbTrack2, "transcode", url(at("Tk1", "0", "file"), "hls"), ``), entry(mbTrack3, "direct", url(at("Tk1", "1", "master.m3u8"), "file"), ``), e4)},
+		{"a transcode served as file dropped", three, ans(entry(mbTrack2, "transcode", file("0"), ``), e3)},
+		{"an unknown protocol dropped", three, ans(entry(mbTrack2, "transcode", url(at("Tk1", "0", "master.m3u8"), "dash"), ``), e3)},
+		{"an hls stream of another mimeType, and a mimeType that isn't a string", three, ans(entry(mbTrack2, "transcode", `{"url":"`+at("Tk1", "0", "master.m3u8")+`","protocol":"hls","mimeType":"audio/mpeg"}`, ``), entry(mbTrack3, "transcode", `{"url":"`+at("Tk1", "1", "master.m3u8")+`","protocol":"hls","mimeType":7}`, ``), e4)},
+		{"a file stream with any mimeType kept", three, ans(entry(mbTrack2, "direct", `{"url":"`+at("Tk1", "0", "file")+`","protocol":"file","mimeType":"audio/flac"}`, ``), e3)},
+		{"durationMs at its bounds", three, ans(entry(mbTrack2, "direct", file("0"), `,"durationMs":0`), entry(mbTrack3, "direct", file("1"), `,"durationMs":86400000`))},
+		{"durationMs out of range: set to 0", three, ans(entry(mbTrack2, "direct", file("0"), `,"durationMs":86400001`), entry(mbTrack3, "direct", file("1"), `,"durationMs":-1`))},
+		{"durationMs that isn't an integer: absent", three, ans(entry(mbTrack2, "direct", file("0"), `,"durationMs":1.5`), entry(mbTrack3, "direct", file("1"), `,"durationMs":"1"`))},
+		{"with delivery file: only direct as file kept", req(`,"delivery":"file","queue":[` + t(mbTrack2) + `,` + t(mbTrack3) + `,` + t(mbTrack4) + `]`), ans(entry(mbTrack2, "remux", hls("0"), ``), entry(mbTrack3, "direct", hls("1"), ``), entry(mbTrack4, "direct", file("2"), ``))},
+		{"with delivery transcode: a direct entry dropped", req(`,"delivery":"transcode","queue":[` + t(mbTrack2) + `,` + t(mbTrack3) + `]`), ans(entry(mbTrack2, "direct", file("0"), ``), entry(mbTrack3, "transcode", hls("1"), ``))},
+		{"5 entries, local ones among them: places 0 to 4", req(`,"queue":[` + t(mbTrack2) + `,"track/local/T-1",` + t(mbTrack3) + `,` + t(mbTrack4) + `,"track/local/T-2"]`), ans(entry(mbTrack2, "transcode", hls("0"), ``), `{"title":"track/local/T-1","versionId":"L1","method":"direct","stream":`+file("1")+`}`, entry(mbTrack3, "direct", file("2"), ``), entry(mbTrack4, "direct", file("3"), ``), `{"title":"track/local/T-2","versionId":"L2","method":"transcode","stream":`+hls("4")+`}`)},
 		{"a queue in the answer to a request without one: every entry dropped", req(``), ans(e2)},
 	}
 	for _, c := range answers {
@@ -519,7 +534,7 @@ func genV0Music() []byte {
 			"keys (music section 2): valid says whether the text is a music title key, under the mb or the local scheme; kind is the kind it names.",
 			"titles (music sections 3.2 and 3.3) and localTitles (catalog section 4.3, music section 2.2): text is one entry of a titles answer, as JSON; the caller asked for the libraries listed in libraries. valid false: the caller skips the title. valid true: output is what it keeps, members in this order: key, kind, library, name, sortName, artists, artistNames, releaseType, compilation, date, originalDate, genres, album, disc, number, copies, image, ids (its members sorted); absent members left out.",
 			"A kept copy's members, in this order: id, name, durationMs, container, codec, size, etag, added, bitrateKbps, sampleRate, bitDepth, channels, replayGain (trackGain, trackPeak, albumGain, albumPeak), lyrics. ReplayGain values are written as the shortest decimal of the rounded number (1.0 is written 1); no case holds an exact tie of rounding.",
-			"queue (music section 5.2): kind request: text is a play request, valid says whether the owning server accepts its title and queue (otherwise 400). kind answer: request is the play request, text the play answer from the owning server whose stream root is streamRoot; output is the queue the viewer's server keeps (an array, possibly empty), entries' members in this order: title, versionId, method, stream (url, protocol, mimeType), durationMs. Only the queue member of the answer is judged here; playback's own members are playback.json's.",
+			"queue (music section 5.2): kind request: text is a play request, valid says whether the owning server accepts its title and queue (otherwise 400). kind answer: request is the play request, text the play answer from the owning server whose stream root is streamRoot; output is the queue the viewer's server keeps (an array, possibly empty), entries' members in this order: title, versionId, method, stream (url, protocol, mimeType), durationMs. Each entry's stream URL is <stream root><ticket>/queue/<n>/file or <stream root><ticket>/queue/<n>/master.m3u8, the ticket that of the answer's own stream URL, n the entry's place in the request's queue (0 to 4, decimal, no leading zeros). Only the queue member of the answer is judged here; playback's own members are playback.json's.",
 			"lyrics (music section 6): kind request: text is a lyrics request, valid says whether the owning server reads it (otherwise 400 invalid-request). kind answer: text is a lyrics answer; valid false: the fetch fails; valid true: output is what the viewer's server keeps, each set's members in this order: lang, kind, synced, offset, displayArtist, displayTitle, line (start, value); kind and offset always written.",
 			"Names are cleaned as spec/v0/core.md section 9.1 cleans a server's name, with 256 code points for name and sortName, 512 for artistNames, 64 for genres (a longer genre skipped, not cut), 32 for a copy's name, 512 and 256 for displayArtist and displayTitle, 512 for a lyrics line.",
 		},

@@ -224,7 +224,9 @@ title by title:
 - `sortName`, `artistNames`: cleaned as above; empty once cleaned counts
   as absent.
 - `artists`: each entry a valid artist key (section 2), each once; a bad
-  or repeated entry is skipped; at most 16 kept, the first.
+  or repeated entry is skipped; at most 16 kept, the first. Here and in
+  every "at most *N*, the first" of this part, only kept entries count:
+  a skipped entry doesn't use a place.
 - `releaseType`: one of the eight values, exactly; any other string is
   kept as `other`.
 - `date`, `originalDate`: in one of the three forms, with a year from
@@ -241,6 +243,10 @@ title by title:
   skipped.
 - `image`: kept only on a `local` artist or album; on any other title it
   is ignored.
+- `year`: the description of [catalog section 4.3](catalog.md#43-titles-no-public-source-knows-the-description)
+  gives one, but music titles carry their dates in `date` and
+  `originalDate`: a `year` on a music title, of either scheme, is
+  ignored.
 - `ids`: values of known schemes in their form, for the kinds the table
   of section 3.1 gives; others are skipped.
 - A member the table of section 3 gives for other kinds than the
@@ -314,10 +320,15 @@ from the files' tags, to the ReplayGain 2.0 reference (−18 LUFS):
 - `name`, `added`, `bitrateKbps` as for video, with the range above for
   `bitrateKbps`;
 - `sampleRate`, `bitDepth`, `channels`: integers in their ranges; any
-  other counts as absent;
-- `replayGain`: each member a number in its range, gains rounded to two
-  decimals and peaks to six; any other counts as absent, and a
-  `replayGain` left empty, or that isn't an object, counts as absent;
+  other counts as absent. A `bitDepth` on a lossy codec, which the owning
+  server shouldn't send, is kept all the same: the caller doesn't judge
+  codecs;
+- `replayGain`: each member a number in its range, the range checked on
+  the number as sent, before rounding; then gains rounded to two
+  decimals and peaks to six, to the nearest (an exact tie may go either
+  way: an owning server that wants one value sends it already rounded);
+  any other counts as absent, and a `replayGain` left empty, or that
+  isn't an object, counts as absent;
 - `lyrics`: `plain` or `synced` exactly; any other counts as absent.
 
 Test cases: tracks with copies in `titles`, in
@@ -431,14 +442,35 @@ Entry:
 | `title` | string | its track key | must be one of the request's `queue`, each once, in the request's order |
 | `versionId` | string | the copy playing | the form of version IDs ([playback](playback.md#23-the-answer)) |
 | `method` | string | `direct`, `remux` or `transcode` | as the answer's own |
-| `stream` | object | `url`, `protocol`, `mimeType` (optional), under the playback's ticket | checked as [media](media.md#1-the-urls) says |
-| `durationMs` | integer, optional | the copy's length | outside 0 to 86,400,000: set to 0 |
+| `stream` | object | `url`, `protocol`, `mimeType` (optional), under the playback's ticket | checked as [media](media.md#1-the-urls) says, with the entry's own URL (below) |
+| `durationMs` | integer, optional | the copy's length | outside 0 to 86,400,000: set to 0; not an integer: absent |
+
+- **An entry's URL.** Each queued track has its own stream URL, under
+  the playback's ticket (the ticket of the answer's own `stream.url`):
+  `<stream root><ticket>/queue/<n>/file` for `protocol` `file`, or
+  `<stream root><ticket>/queue/<n>/master.m3u8` for `hls`, with the HLS
+  files it names under `<stream root><ticket>/queue/<n>/`
+  ([media section 1](media.md#1-the-urls)). `<n>` is the entry's place in
+  the request's `queue`, 0 to 4, in decimal without leading zeros: a
+  track the owning server leaves out keeps its place empty, and moves no
+  other entry. An entry whose URL isn't exactly that form, for its
+  protocol and its place, or names another ticket, is dropped. An answer
+  whose own `stream.url` names no ticket has every entry dropped.
+- **An entry's `mimeType`**, when sent, is a string, else the entry is
+  dropped. For `hls` it must be `application/vnd.apple.mpegurl`, else
+  the entry is dropped. For `file` it isn't checked: the viewer's server
+  sets the type of what it relays itself
+  ([media section 3](media.md#3-what-is-fetched)).
 
 - **The track playing.** `progress` and `stop` of a playback with a
   queue may carry `title`: the key of the track playing, the request's
   `title` or one of the answer's `queue` entries; `positionMs` is then a
   position in that track. Absent, it is the request's `title`. Any other
-  `title` is refused (`400`).
+  `title`, or one that isn't a string, is refused (`400`). A playback
+  without a queue (a film's too) takes only its own `title` there. Test
+  cases: `reports` in
+  [vectors/v0/playback.json](../../vectors/v0/playback.json), those
+  named `music:` and those with a `title`.
 - **Past the queue.** Before the last entry ends, the viewer's server
   may send a new `play` for the track after it, with its own `queue`,
   and stops the old playback once the new one's first track plays. The
@@ -501,17 +533,21 @@ shape, in milliseconds; word timing is not sent.
 
 **What the viewer's server keeps:**
 
-- the answer read whole, refused past 1 MiB; a `structuredLyrics` that
-  isn't an array fails the fetch;
+- the answer read whole, refused past 1 MiB (an answer of exactly
+  1,048,576 bytes is read; the vectors leave this bound out, for the
+  size of the file); a `structuredLyrics` that isn't an array fails the
+  fetch;
 - per set: `synced` a boolean, else the set is skipped; `lang` a valid
-  tag, else absent; `kind` one of the three, else `main`; `offset` an
+  tag ([catalog section 3](catalog.md#3-titles): exactly the form a
+  server sends, so `fre` and `fr-ca` count as absent), else absent; `kind` one of the three, else `main`; `offset` an
   integer in range, else 0; `displayArtist`, `displayTitle` cleaned as
   section 3's names, empty counting as absent;
 - per line: `value` a string, cleaned as section 3's names but kept when
   empty, cut to 512 characters; for synced lyrics, `start` an integer in
   range, a line without one or whose `start` is before the line before
   skipped; for plain lyrics, `start` ignored;
-- at most 2,000 lines kept per set, the first, and 8 sets, the first; a
+- at most 2,000 lines kept per set, the first, and 8 sets, the first,
+  counting kept lines and sets only; a
   set with no line left is skipped, and an answer with no set left is a
   failed fetch;
 - lines are text, never markup.
