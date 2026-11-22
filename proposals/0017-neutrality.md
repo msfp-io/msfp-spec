@@ -4,6 +4,10 @@ Status: Adopted (2026-11-22). Amends [proposal 16](0016-version-0-revision.md)
 and reverses some of its decisions (listed below). Every choice here is
 the owner's, taken on 2026-11-22.
 
+**Frozen** (2026-11-22): no further design review. While it is written
+into the spec, a problem is fixed here only when it blocks an
+implementation; anything else is listed for a later proposal.
+
 **Written so far.** Only this proposal's first version is in spec/v0:
 core 8.5 (one rule for unknown values, without the media-type class);
 `implementers.md` (the product text); `spec/registry.md` (schemes only);
