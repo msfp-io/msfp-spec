@@ -35,7 +35,7 @@ var (
 	videoAudioID     = regexp.MustCompile(`^a(0|[1-9][0-9]{0,2})$`) // a<n>, n 0 to 999
 	videoSubtitleID  = regexp.MustCompile(`^s(0|[1-9][0-9]{0,2})$`) // s<n>, n 0 to 999
 	videoIMDbForm    = regexp.MustCompile(`^tt[0-9]{7,10}$`)        // ids.imdb
-	videoCodecsForm  = regexp.MustCompile(`^[A-Za-z0-9.+-]{1,64}$`)  // an RFC 6381 codecs string
+	videoCodecsForm  = regexp.MustCompile(`^[A-Za-z0-9.+-]{1,64}$`) // an RFC 6381 codecs string
 	videoFPSForm     = regexp.MustCompile(`^([1-9][0-9]{0,6})/([1-9][0-9]{0,6})$`)
 	videoAspectForm  = regexp.MustCompile(`^([1-9][0-9]{0,4}):([1-9][0-9]{0,4})$`)
 	videoIntegerForm = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)

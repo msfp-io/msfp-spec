@@ -99,6 +99,12 @@ func videoVid(members string) string {
 	return videoCp(`,"video":{"codec":"hevc","codecs":"hvc1.1.2.L123.B0","width":1920,"height":1080` + members + `}`)
 }
 
+// videoVidCodecs is videoVid with the codecs member given by the case, so
+// that no object holds a member twice (I-JSON).
+func videoVidCodecs(codecs string) string {
+	return videoCp(`,"video":{"codec":"hevc","width":1920,"height":1080,"codecs":` + codecs + `}`)
+}
+
 func videoQuoted(n int, f func(i int) string) string {
 	var l []string
 	for i := 0; i < n; i++ {
@@ -242,12 +248,12 @@ func videoCopyCases() []videoCase {
 		{"video: a codec of 33 characters: absent", videoCp(`,"video":{"codec":"` + strings.Repeat("c", 33) + `","width":1920,"height":1080}`)},
 		{"video: not an object: absent", videoCp(`,"video":"1080p"`)},
 		{"video: h264 without codecs: kept without it", videoCp(`,"video":{"codec":"h264","width":1920,"height":1080}`)},
-		{"video: codecs, an RFC 6381 string", videoVid(`,"codecs":"hvc1.2.4.L153.B0"`)},
-		{"video: codecs of 64 characters", videoVid(`,"codecs":"` + strings.Repeat("a", 64) + `"`)},
-		{"video: codecs of 65 characters: absent alone", videoVid(`,"codecs":"` + strings.Repeat("a", 65) + `"`)},
-		{"video: codecs with a comma: absent alone", videoVid(`,"codecs":"hvc1.2.4.L153.B0,mp4a.40.2"`)},
-		{"video: codecs with a / (a supplemental codec): absent alone", videoVid(`,"codecs":"hvc1.2.4.L153.B0/dvh1.08.06"`)},
-		{"video: codecs empty: absent alone", videoVid(`,"codecs":""`)},
+		{"video: codecs, an RFC 6381 string", videoVidCodecs(`"hvc1.2.4.L153.B0"`)},
+		{"video: codecs of 64 characters", videoVidCodecs(`"` + strings.Repeat("a", 64) + `"`)},
+		{"video: codecs of 65 characters: absent alone", videoVidCodecs(`"` + strings.Repeat("a", 65) + `"`)},
+		{"video: codecs with a comma: absent alone", videoVidCodecs(`"hvc1.2.4.L153.B0,mp4a.40.2"`)},
+		{"video: codecs with a / (a supplemental codec): absent alone", videoVidCodecs(`"hvc1.2.4.L153.B0/dvh1.08.06"`)},
+		{"video: codecs empty: absent alone", videoVidCodecs(`""`)},
 		{"video: bitDepth 16", videoVid(`,"bitDepth":16`)},
 		{"video: bitDepth 0: absent alone", videoVid(`,"bitDepth":0`)},
 		{"video: bitDepth 17: absent alone", videoVid(`,"bitDepth":17`)},

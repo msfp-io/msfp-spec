@@ -1185,37 +1185,37 @@
     },
     {
       "name": "video: codecs, an RFC 6381 string",
-      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"codecs\":\"hvc1.1.2.L123.B0\",\"width\":1920,\"height\":1080,\"codecs\":\"hvc1.2.4.L153.B0\"}}",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"codecs\":\"hvc1.2.4.L153.B0\"}}",
       "valid": true,
       "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"video\":{\"codec\":\"hevc\",\"codecs\":\"hvc1.2.4.L153.B0\",\"width\":1920,\"height\":1080},\"audioTracks\":[]}"
     },
     {
       "name": "video: codecs of 64 characters",
-      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"codecs\":\"hvc1.1.2.L123.B0\",\"width\":1920,\"height\":1080,\"codecs\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"codecs\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
       "valid": true,
       "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"video\":{\"codec\":\"hevc\",\"codecs\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"width\":1920,\"height\":1080},\"audioTracks\":[]}"
     },
     {
       "name": "video: codecs of 65 characters: absent alone",
-      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"codecs\":\"hvc1.1.2.L123.B0\",\"width\":1920,\"height\":1080,\"codecs\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"codecs\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}",
       "valid": true,
       "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080},\"audioTracks\":[]}"
     },
     {
       "name": "video: codecs with a comma: absent alone",
-      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"codecs\":\"hvc1.1.2.L123.B0\",\"width\":1920,\"height\":1080,\"codecs\":\"hvc1.2.4.L153.B0,mp4a.40.2\"}}",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"codecs\":\"hvc1.2.4.L153.B0,mp4a.40.2\"}}",
       "valid": true,
       "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080},\"audioTracks\":[]}"
     },
     {
       "name": "video: codecs with a / (a supplemental codec): absent alone",
-      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"codecs\":\"hvc1.1.2.L123.B0\",\"width\":1920,\"height\":1080,\"codecs\":\"hvc1.2.4.L153.B0/dvh1.08.06\"}}",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"codecs\":\"hvc1.2.4.L153.B0/dvh1.08.06\"}}",
       "valid": true,
       "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080},\"audioTracks\":[]}"
     },
     {
       "name": "video: codecs empty: absent alone",
-      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"codecs\":\"hvc1.1.2.L123.B0\",\"width\":1920,\"height\":1080,\"codecs\":\"\"}}",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"codecs\":\"\"}}",
       "valid": true,
       "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080},\"audioTracks\":[]}"
     },
