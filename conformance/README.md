@@ -5,7 +5,11 @@ server against [version 0](../spec/v0/README.md): the
 [core](../spec/v0/core.md) and the parts
 [catalog](../spec/v0/catalog.md), [playback](../spec/v0/playback.md),
 [media](../spec/v0/media.md), [video](../spec/v0/video.md) and, when the
-server lists it, [music](../spec/v0/music.md). It tests version 0 only. For the part [groups](../spec/v0/groups.md),
+server lists it, [music](../spec/v0/music.md), as revised by
+[proposal 16](../proposals/0016-version-0-revision.md): copies in the
+catalog, extras, `local` titles and their image, deliveries, restarts,
+downloads, scan access, previews, files by byte ranges and complete HLS.
+It tests version 0 only. For the part [groups](../spec/v0/groups.md),
 with `--group-code`, it checks joining a group of the server's, its
 list, `group-sync`, `group-push`, the mail both ways (sealed with HPKE,
 in plain Python in `msfpconf/hpke.py`), `group-pair` as the caller, and
@@ -62,6 +66,11 @@ machine, or another container, that the server reaches.
 4. On the server, offer this peer at least one library holding a film
    or an episode that plays: the catalog, playback and media checks are
    skipped otherwise.
+   For the checks of the revision, offer what it can: a copy of one file
+   (deliveries, the F checks), subtitles and previews, an extra, a
+   `local` title with an image shared with this peer, and limits that
+   allow downloads (with a `downloadKbps` cap) and scans; what isn't
+   offered is checked as refused, or skipped with the reason.
 
 Without `--code`, only the checks a stranger can make run (S1 to S4,
 D1), against `--target`.
@@ -100,6 +109,7 @@ They are marked `[operator]`:
 | accept the pairing | W4, and everything after it |
 | want the suite's library "Conformance films" | Q1 to Q3 |
 | add one title to an offered library and remove one (with `--watch-changes SECONDS`) | T9 |
+| stop sharing local titles with the suite, then share them again (with `--watch-local SECONDS`) | T12 |
 | play one of the suite's films, pause it at once, stop it after the given time (with `--watch-pause SECONDS`) | VW1 to VW4 |
 | accept the second pairing (with `--code2`) | UP2, UP3 |
 | accept the suite's join of the group (with `--group-code`) | GR8 to GR17, GM |
@@ -130,7 +140,7 @@ The steps can also be played by a program, through the server's own
 administration API: build the suite in Python with
 `Suite(args, report, operator_hook=hook)` (from `msfpconf.checks`, with
 `run.parser()` for `args`), where `hook(step)` is called with the step's
-name (`accept`, `want`, `change`, `watch`, `accept2`, `join-accept`,
+name (`accept`, `want`, `change`, `local-off`, `local-on`, `watch`, `accept2`, `join-accept`,
 `admin`, `request-accept`, `confirm`, `rotate`, `rotate2`, `revoke`) before the suite starts watching for it, exactly as
 an operator would be asked. The suite still checks the outcome itself
 and waits up to the step's timeout. `selftest.py` plays the operator of
@@ -143,6 +153,7 @@ its own test server this way.
 | `--code2 CODE` | P11: a second live code from the known key gets the signed `409` with no body; then UP1 to UP4: a second pairing, as a server that can't be called (`inbound: false`, an address `https://msfp-<26>.invalid`), accepted by the operator, ended with `hello` `ended` |
 | `--group-code CODE` | GR1 to GR17 and GM1 to GM8: a code of a group the server's operator made, of the same server as `--code`, with 2 uses or more (GR7 needs one left). The suite, already paired, joins through `group-join`; the operator accepts; then the list, `group-sync`, `group-push`, the mail and `group-pair` (GM), and leaving are checked |
 | `--load` | R1 and R2: a burst of `--load-count` (1,000) calls over 32 connections, expecting a signed `429` `rate-limited` (or `503` `server-busy`) with `retryAfter`, then calls passing again. A burst that meets no limit is a SKIP unless it was big and fast (1,000 calls at 300 a second or more) |
+| `--watch-local SECONDS` | T12: the operator stops sharing `local` titles with the suite, then shares them again; each time the titles follow, with a whole reading (catalog 5) |
 | `--end` | E1 and E2: ends the pairing with `hello` `ended`. Without it, the pairing stays: remove the peer on the server afterwards |
 | `--skip IDS` | skips checks by ID or prefix: `--skip AD,X1,U` |
 | `--uncallable-watch SECONDS` | how long the suite watches that nothing connects to it once it says it can't be called (20) |
@@ -169,10 +180,14 @@ The run goes in this order; the counts are the checks in each group.
 | J | 2 | core 2.3 | I-JSON and types: twice-named members, surrogates, noncharacters, bad UTF-8, a byte order mark, `null`, wrong types refused; white space and unknown members accepted |
 | G | 10 | core 2.2, 2.4, 3, 6.2, 6.4 | signatures: dates, nonces, keys and signatures outside their one form, another host, path or key, duplicate headers, a query, percent-encoding, the media type, `Sec-Fetch-Site`, content codings, a body over 64 KiB |
 | N | 3 | core 6.5, 6.3 | replay, a nonce used again, the answer bound to the nonce and the media type |
-| L | 5 | catalog 2, playback 5, music 5.1 | `libraries`: IDs, kinds, `limits` and their ranges, opaque and stable IDs, bad bodies |
-| T | 9 | catalog 3, 4, 5; video 3, 4; music 2, 3 | `titles`: canonical keys, kinds, libraries, language tags, `with`, `ids`, music descriptions, order, paging, `since` and `seq`, bad requests, the first library, changes adding up |
-| PB | 11 | playback 2 to 6, video 5, music 5 | `play`: malformed requests (`400`), keys not offered (`404`), the playback object and its URLs, nothing said (HLS, not direct); `progress` and `stop` and the playback's states; the choice of audio, subtitles and copy; the streams limit and the race for the last stream |
-| M | 9 | media 1 to 4, video 5.5, 6 | the media: the HLS subset in master and media playlists, segments, ranges (`206` and `416`), refusals (a query, browser headers, an unknown ticket, other methods), WebVTT parts in their rebuilt form, PGS parts, preview sheets |
+| L | 5 | catalog 2, playback 5, music 5.1 | `libraries`: IDs, kinds, `limits` (streams, downloads, scans) and their ranges, opaque and stable IDs, bad bodies |
+| T | 12 | catalog 3 to 5; video 3, 4; music 2, 3 | `titles`: canonical keys of every scheme (`tmdb`, `tvdb`, `mb`, `local`), kinds, libraries, every copy as a caller keeps it (the required core, bounds, the names list, `name` and track `title` limits, best first), extras and `local` descriptions, `with`, `ids`, music's descriptions; order, paging, pages within 5,000 titles and 3 MiB with `next` whenever titles remain; `since` and `seq`, bad requests, the first library, changes adding up; extras only with their title; (`--watch-local`) `local` titles following the owner's switch |
+| I | 3 | catalog 4.4, media 3.4, 4 | the `image` call: a `local` title's image under a ticket of its own (a JPEG or PNG within 1 MiB and 4,096 pixels), that ticket opening nothing else, HEAD `405`, its refusals (`400`, `404`) |
+| PB | 23 | playback 2 to 8, video 5, media 1 | `play`: the `400`s of `vectors/v0/playback.json` (members, `purpose`, `delivery`, `container`, `transcode`, capabilities), keys not offered (`404`), the answer as a viewer's server keeps it (its `etag`, `versionId` and track IDs the catalog's), nothing said (HLS, not direct); `progress` and `stop` with `at` and their bounds; the choice of audio, subtitles and copy (the first by default); the streams limit and the race for the last stream; `delivery` `file`, `remux`, `transcode` (or `409` `delivery-refused`), a copy of several parts refused as `file`, a restart on the same `etag` and bytes, audio renditions; downloads (`409` when off, beside the streams, within `downloads`, the speed cap, late reports with `at`); scans (`409` when off, no stream used, the 32 MiB cap then `416`, the ticket opening the file only) |
+| M | 11 | media 1 to 4, video 5.5, 6 | the media of the first `play`: the HLS subset, playlists complete from the first fetch and the same on every fetch, renditions' names, segments, ranges (`206` and `416`), refusals (a query, browser headers, an unknown ticket), `405` for HEAD and other methods, WebVTT parts and whole tracks in their rebuilt form, ASS parts and whole tracks, picture parts, fonts, preview sheets |
+| F | 4 | media 2, 3.2 | the file of a `delivery` `file`: `200` with the catalog's exact size, `ETag` and `Accept-Ranges`; ranges with `Content-Range` against the exact size, `416` with `bytes */<size>`; stable bytes; HEAD `405`, conditional headers ignored |
+| PV | 3 | video 5.5, 5.6, media 4 | `previews`: the trickplay object of a copy with `previews: true` under a ticket of its own, its sheet, the ticket opening only its sheets, its refusals |
+| MU | 4 | music 5, 5.2, 6 | (music on, tracks offered) a track's play, audio only; a queue, its entries and their streams; malformed queues (`400`); lyrics and their refusals |
 | Q | 3 | catalog 2, 3; core 6.4 | the server as a reader of the suite's catalog: its calls well signed, its `titles` requests, following `next` |
 | VW | 4 | playback 2 to 4, 6.3; core 6.4 | (`--watch-pause`) the server as a viewer of the suite's films: its `play` well signed and formed, the playback kept while paused, the pause reported, `stop` at the end |
 | R | 2 | core 8.3 | (`--load`) a signed `429` or `503` with `retryAfter`, then calls passing again |
@@ -187,8 +202,8 @@ The run goes in this order; the counts are the checks in each group.
 | E | 2 | core 7.4 | (`--end`) `hello` `ended`, then the unsigned `404` |
 | A | 2 | core 6.6, 8.2 | every answer that had to be signed was, and every signed refusal is a problem document |
 
-That is 147 checks in all, with `--code2`, `--group-code`, `--load` and
-`--end`, and 151 with `--watch-pause` too. A server that doesn't answer
+That is 177 checks in all, with `--code2`, `--group-code`, `--load` and
+`--end`, and 182 with `--watch-local` and `--watch-pause` too. A server that doesn't answer
 at its address at all gets one failed S0, and nothing else runs.
 
 Every signed answer is also read as I-JSON and checked for `null`; a
@@ -196,11 +211,11 @@ signed `200` or `202` must be `application/json`, and the answer's media
 type is signed as core section 6.3's fifth line.
 
 The suite offers the server one library, "Conformance films", with
-three films on two pages. Its first page is short and still has `next`,
-on purpose, to see that the server follows it; catalog section 3.1 says
-a whole-list `next` comes only after a full page of 5,000, so the suite
-itself breaks that rule there. It answers `play` with `409`
-`not-playable`: it serves no media.
+three films on two pages, each with one copy (the two-second clip it
+serves, described as catalog section 3.4 says). Its first page is short
+and still has `next`, as catalog section 3.1 allows, to see that the
+server follows it. With `--watch-pause` it plays them; otherwise it
+answers `play` with a playback of that clip all the same.
 
 ## Its limits
 
@@ -221,18 +236,36 @@ itself breaks that rule there. It answers `play` with `409`
   is pure Python, and may not reach them over HTTPS; the `play` limit
   is not tested (the suite paces its own plays under it).
 - **Media** is checked on the first stream, its first media playlist
-  and segment, part 0 of one text and one PGS subtitle track, and sheet
-  0: the suite doesn't play a whole title. When the first title played
-  has no text or no PGS track, M6 or M7 waits for that playback to stop,
-  then plays up to 8 other films or episodes listing subtitles for one.
+  and segment, part 0 and the whole of one text track (and of one ASS
+  track), part 0 of one picture track, the fonts and sheet 0: the suite
+  doesn't play a whole title. When the first title played has no track
+  of a kind, M6, M7 or M11 waits for that playback to stop, then plays
+  up to 8 other titles whose copies list one in the catalog. The suite
+  decodes nothing: it can't tell that a remux kept the streams, nor
+  that a transcode met its targets or burned a subtitle in.
+- **Deliveries** an owning server may refuse (`409` `delivery-refused`
+  for `file`, `remux`, `transcode`; `503` for a transcode) pass as
+  refused; only a copy of several parts must be refused as `file`.
+- **Downloads and scans** need the server's `limits` to allow them; the
+  suite checks the refusal when they are 0. The 24-hour and 10-minute
+  lifetimes of their tickets, the 2-minute idle rule, and the limit of 2
+  scan reads at once are not waited for or loaded; the speed cap is
+  measured over the first 10 seconds of one read, and needs a copy
+  larger than 13 seconds at the cap. A restart (PB16) is made after a
+  `stop`, not after a real expiry.
 - **Heuristics**: L3 (library IDs that look like a media server's) and
-  the shortest-language-code rule (a list of common three-letter codes)
-  can't be exact.
+  the order of copies (video 3.7 leaves ties to the owning server) can't
+  be exact.
 - **Not tested**: what a receiver does after a `hello` with no common
   core, beyond V7's signed `404`s; relations and `individual` in `hello`
   (core 7.7), not covered yet; a change of `base` (not announced, core open question 16);
   several certificates; a peer that ends the pairing toward the server
   while it is suspended.
+- **The server as a viewer of the revision** is seen only through its
+  calls (VW, Q): how it presents a peer's copy as a file, restarts a
+  read, coarsens its capabilities, or refuses a growing playlist or a
+  file whose `ETag` changed happens inside it, out of the suite's sight.
+  Music is checked only when the server offers tracks.
 
 When it ends, the suite prints the points of the specification it found
 unclear or couldn't test from outside.
@@ -244,8 +277,8 @@ python3 conformance/selftest.py           # about 5 minutes
 python3 conformance/selftest.py --quick   # without the fault pass
 ```
 
-It checks the suite's readers against the cases of `vectors/v0/` but
-`video.json` (keys, code, exchanges, rotation, revocation, strict, media,
+It checks the suite's readers against the cases of `vectors/v0/` (keys,
+code, exchanges, rotation, revocation, strict, media, video, playback,
 music and groups; and
 those of `vectors/history/test-draft-strict.json` that core section 17 says hold for
 core 0), then runs the whole suite, over HTTPS both ways, against an
@@ -257,7 +290,9 @@ stream limit, a query served, several ranges served, WebVTT not
 rebuilt, `progress` answered for a playback that isn't live, loopback
 connected to, the old key kept after a rotation, no `progress` while its
 viewer pauses, a `stop` with a negative position, a group event and a
-mail with a forged signature kept), and the checks aimed at each
+mail with a forged signature kept, a title summary video 0 removed, a
+download's `etag` other than the catalog's, `HEAD` answered `404`, a
+growing playlist, a scan read past its cap), and the checks aimed at each
 fault must fail. The fake founds a group and makes its code, for the
 group checks.
 

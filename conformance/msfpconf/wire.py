@@ -773,6 +773,33 @@ class Client:
         finally:
             c.close()
 
+    def get_timed(self, url, headers=(), seconds=12.0, limit=80 * 1024 * 1024):
+        """A media fetch read for at most `seconds`: (status, headers,
+        [(time since the request, bytes read so far), ...]), the body
+        dropped; for measuring a paced download (playback 7)."""
+        u = urllib.parse.urlsplit(url)
+        if "%s://%s" % (u.scheme, u.netloc) != self.address:
+            raise ValueError("%s isn't under the server's address %s" % (url, self.address))
+        c, _, _ = self._checked_conn(True, 90)
+        try:
+            t0 = time.time()
+            c.putrequest("GET", url[len(self.address):], skip_host=True, skip_accept_encoding=True)
+            c.putheader("Host", self.host)
+            for k, v in headers:
+                c.putheader(k, v)
+            c.endheaders()
+            r = c.getresponse()
+            marks, n = [(time.time() - t0, 0)], 0
+            while n < limit and time.time() - t0 < seconds:
+                b = r.read1(65536)
+                if not b:
+                    break
+                n += len(b)
+                marks.append((time.time() - t0, n))
+            return r.status, r.getheaders(), marks
+        finally:
+            c.close()
+
     def discovery(self):
         """GET /.well-known/msfp, any certificate (core 11): (status, headers, body)."""
         c, _, _ = self._conn(False)

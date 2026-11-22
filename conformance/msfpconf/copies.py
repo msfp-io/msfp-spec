@@ -14,7 +14,7 @@ import math
 import re
 from decimal import Decimal
 
-from .wire import WHITE_SPACE, MAX_INT, NegativeZero, NonInteger, clean_name
+from .wire import MAX_INT, NegativeZero, clean_name
 
 
 # ---- JSON with numbers as written ------------------------------------------------

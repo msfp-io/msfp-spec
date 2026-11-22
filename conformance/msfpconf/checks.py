@@ -10,6 +10,7 @@ import select
 import sys
 import time
 
+from . import clip
 from .groups import GroupChecks
 from .keys import KeyChecks
 from .parts import PartChecks
@@ -302,12 +303,15 @@ class Suite(PartChecks, KeyChecks, GroupChecks):
         self.peer.listen("main", self.address, a.listen, ctx)
         self.peer.hosts.add(host_of(self.address))
         self.peer.offer = [{"id": "lib_conformance", "name": "Conformance films", "kind": "movies"}]
+        clip_copy = [{"id": "c_clip", "durationMs": clip.DURATION_MS, "container": "mp4", "size": len(clip.MP4),
+                      "etag": clip.ETAG, "video": {"codec": "h264", "width": 160, "height": 90},
+                      "audioTracks": [{"id": "a1", "language": "en", "channels": 1, "codec": "aac", "default": True}]}]
         self.peer.pages = {
-            "": {"titles": [{"key": "movie/tmdb/550", "kind": "movie", "library": "lib_conformance", "audio": ["en"]},
-                            {"key": "movie/tmdb/603", "kind": "movie", "library": "lib_conformance", "audio": ["en"]}],
+            "": {"titles": [{"key": "movie/tmdb/550", "kind": "movie", "library": "lib_conformance", "copies": clip_copy},
+                            {"key": "movie/tmdb/603", "kind": "movie", "library": "lib_conformance", "copies": clip_copy}],
                  "next": "movie/tmdb/603", "seq": 1},
             "movie/tmdb/603": {"titles": [{"key": "movie/tmdb/949", "kind": "movie", "library": "lib_conformance",
-                                           "audio": ["en"]}], "seq": 1},
+                                           "copies": clip_copy}], "seq": 1},
         }
 
     def new_address(self):

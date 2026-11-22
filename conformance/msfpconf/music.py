@@ -13,9 +13,7 @@ import json
 import math
 import re
 
-from .copies import (AUDIO_CODECS, CONTAINERS, OPAQUE, Num, boolean, diff, dumps, int_in, loads, number, plain,
-                     real_day)
-from .copies import valid_tag
+from .copies import AUDIO_CODECS, CONTAINERS, OPAQUE, diff, dumps, int_in, loads, number, plain, real_day, valid_tag
 
 MBID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 ISRC = re.compile(r"[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")

@@ -335,10 +335,9 @@ class PeerServer:
         root = self.suite.address + STREAM + ticket + "/"
         return 200, dumps({"id": pid, "method": "direct",
                            "stream": {"url": root + "file", "protocol": "file", "mimeType": "video/mp4"},
-                           "positionMs": 0, "durationMs": clip.DURATION_MS,
-                           "audioTracks": [{"id": "a0", "label": "Silence", "language": "en", "channels": 1,
-                                            "default": True}],
-                           "audioTrack": "a0"})
+                           "etag": clip.ETAG, "positionMs": 0, "durationMs": clip.DURATION_MS, "versionId": "c_clip",
+                           "audioTracks": [{"id": "a1", "language": "en", "channels": 1, "default": True}],
+                           "audioTrack": "a1"})
 
     def live(self, pb, now=None):
         """Whether a playback is live: not stopped, and heard of (progress
@@ -364,6 +363,9 @@ class PeerServer:
             bad.append("positionMs %r isn't an integer from 0 to 8,640,000,000" % pos)
         if call == "progress" and "paused" in j and not isinstance(j["paused"], bool):
             bad.append("paused %r isn't a boolean" % j["paused"])
+        at, now = j.get("at"), time.time()
+        if "at" in j and not (isinstance(at, int) and not isinstance(at, bool) and now - 30 * 86400 <= at <= now + 300):
+            bad.append("at %r isn't Unix seconds from 30 days ago to 5 minutes ahead" % at)
         for b in bad:
             rec["faults"].append("its %s would be refused with 400: %s (playback %s)" % (call, b, "3" if call == "progress" else "4"))
         return bool(bad)
@@ -392,6 +394,12 @@ class PeerServer:
                          host=None, json=None, status=200 if ok else 404)
         data = clip.MP4
         try:
+            if h.command != "GET":
+                h.send_response(405)
+                h.send_header("Allow", "GET")
+                h.send_header("Content-Length", "0")
+                h.end_headers()
+                return
             if not ok:
                 h.send_response(404)
                 h.send_header("Content-Length", "0")
@@ -415,6 +423,7 @@ class PeerServer:
             h.send_response(status)
             h.send_header("Content-Type", "video/mp4")
             h.send_header("Accept-Ranges", "bytes")
+            h.send_header("ETag", '"%s"' % clip.ETAG)
             if status == 206:
                 h.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, len(data)))
             h.send_header("Content-Length", str(end - start + 1))
