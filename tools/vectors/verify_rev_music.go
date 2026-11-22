@@ -16,7 +16,7 @@ func verifyRevMusic(read func(string) []byte) []error {
 	if err := json.Unmarshal(read(file), &f); err != nil {
 		return []error{fmt.Errorf("%s: %v", file, err)}
 	}
-	for _, k := range []string{"about", "libraries", "streamRoot", "keys", "titles", "localTitles", "queue", "lyrics"} {
+	for _, k := range []string{"about", "libraries", "keys", "titles", "localTitles", "queue", "lyrics"} {
 		if _, ok := f[k]; !ok {
 			bad("no %s", k)
 		}
@@ -28,9 +28,8 @@ func verifyRevMusic(read func(string) []byte) []error {
 			libs = append(libs, s)
 		}
 	}
-	root := str(f, "streamRoot")
-	if checkAddress(root[:len(root)-len("/api/v1/stream/")], false) != nil || root[len(root)-len("/api/v1/stream/"):] != "/api/v1/stream/" {
-		bad("streamRoot %q isn't <address>/api/v1/stream/", root)
+	if _, ok := f["streamRoot"]; ok {
+		bad("a streamRoot: queue entries carry no URL since proposal 17")
 	}
 
 	// Each array: cases with unique names, some valid and some not, the
@@ -117,7 +116,7 @@ func verifyRevMusic(read func(string) []byte) []error {
 			}
 			kind, scheme, _ := musicParseKey(t.Key)
 			switch {
-			case len(t.Artists) > 16, len(t.Genres) > 8, len(t.SecondaryTypes) > 8, len(t.Copies) > 8:
+			case len(t.Artists) > 16, len(t.Genres) > 8, len(t.SecondaryTypes) > 8, len(t.Copies) > 16:
 				bad("%s %q: more artists, genres, secondary types or copies than allowed", arr, str(x, "name"))
 			case t.PrimaryType != "" && !musicType(t.PrimaryType):
 				bad("%s %q: a primaryType kept out of its form", arr, str(x, "name"))
@@ -125,6 +124,13 @@ func verifyRevMusic(read func(string) []byte) []error {
 				bad("%s %q: a track kept without a copy", arr, str(x, "name"))
 			case t.Image != nil && (scheme != "local" || kind == "track"):
 				bad("%s %q: image kept on a title that isn't a local artist or album", arr, str(x, "name"))
+			case t.IDs != nil && (scheme != "mb" || kind == "artist"):
+				bad("%s %q: ids kept on a title that isn't an mb album or track", arr, str(x, "name"))
+			}
+			for s := range t.IDs {
+				if musicIDKinds[s] != kind {
+					bad("%s %q: an ids scheme %q kept on a %s", arr, str(x, "name"), s, kind)
+				}
 			}
 			for _, st := range t.SecondaryTypes {
 				if !musicType(st) {
@@ -132,8 +138,8 @@ func verifyRevMusic(read func(string) []byte) []error {
 				}
 			}
 			for _, c := range t.Copies {
-				if !openToken(c.Container) || !openToken(c.Codec) {
-					bad("%s %q: a copy's container or codec kept that isn't a token", arr, str(x, "name"))
+				if !musicMediaType(c.MediaType) || !openToken(c.Codec) {
+					bad("%s %q: a copy's mediaType or codec kept out of its form", arr, str(x, "name"))
 				}
 			}
 		}
@@ -146,11 +152,16 @@ func verifyRevMusic(read func(string) []byte) []error {
 		case "request":
 			err = musicCheckQueueRequest([]byte(str(x, "text")))
 		case "answer":
-			got, err = musicKeepQueueAnswer([]byte(str(x, "request")), []byte(str(x, "text")), root)
+			got, err = musicKeepQueueAnswer([]byte(str(x, "request")), []byte(str(x, "text")))
 			if err == nil {
 				var kept []musicQueueEntry
 				if e := json.Unmarshal(got, &kept); e != nil || len(kept) > 5 {
 					bad("queue %q: output isn't an array of at most 5 entries", str(x, "name"))
+				}
+				for _, k := range kept {
+					if k.Protocol != "hls" && k.Protocol != "file" {
+						bad("queue %q: an entry kept with protocol %q", str(x, "name"), k.Protocol)
+					}
 				}
 			}
 		default:
@@ -170,8 +181,8 @@ func verifyRevMusic(read func(string) []byte) []error {
 		case "answer":
 			got, err = musicKeepLyrics([]byte(str(x, "text")))
 			if err == nil {
-				if _, e := musicKeepLyrics(got); e != nil {
-					bad("lyrics %q: the output, kept again, fails: %v", str(x, "name"), e)
+				if again, e := musicKeepLyrics(got); e != nil || string(again) != string(got) {
+					bad("lyrics %q: the output, kept again, fails or changes: %v", str(x, "name"), e)
 				}
 			}
 		default:

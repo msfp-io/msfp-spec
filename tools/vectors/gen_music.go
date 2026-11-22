@@ -8,9 +8,6 @@ import (
 // The libraries the caller asked for, in every music title case.
 var musicLibraries = []string{"m1", "m2"}
 
-// The owning server's stream root in the queue cases.
-const musicStreamRoot = "https://a.example.org/api/v1/stream/"
-
 // Made-up MBIDs for the cases (those of music section 3's example).
 const (
 	mbArtist  = "0a000000-0000-4000-8000-000000000001"
@@ -61,7 +58,6 @@ type musicCallCase struct {
 type v1MusicFile struct {
 	About       []string        `json:"about"`
 	Libraries   []string        `json:"libraries"`
-	StreamRoot  string          `json:"streamRoot"`
 	Keys        []keyCase       `json:"keys"`
 	Titles      []titleCase     `json:"titles"`
 	LocalTitles []titleCase     `json:"localTitles"`
@@ -134,7 +130,7 @@ const (
 	mAlbumHead  = `"key":"album/mb/` + mbAlbum + `","kind":"album","library":"m1"`
 	mArtistHead = `"key":"artist/mb/` + mbArtist + `","kind":"artist","library":"m2"`
 	mTrackHead  = `"key":"track/mb/` + mbTrack + `","kind":"track","library":"m1","album":"album/mb/` + mbAlbum + `"`
-	mCopy       = `{"id":"c1","durationMs":308000,"container":"flac","codec":"flac","size":36214455,"etag":"7f3a9c21"}`
+	mCopy       = `{"id":"c1","durationMs":308000,"mediaType":"audio/flac","codec":"flac","size":36214455,"etag":"7f3a9c21"}`
 )
 
 func ak(id string) string { return `"artist/mb/` + id + `"` }
@@ -155,7 +151,7 @@ func mCopies(copies ...string) string {
 // mCopyWith is the good copy with members replaced or added: each
 // "name":value; a value of "-" removes the member.
 func mCopyWith(id string, members ...string) string {
-	base := []string{`"id":"` + id + `"`, `"durationMs":308000`, `"container":"flac"`, `"codec":"flac"`, `"size":36214455`, `"etag":"7f3a9c21"`}
+	base := []string{`"id":"` + id + `"`, `"durationMs":308000`, `"mediaType":"audio/flac"`, `"codec":"flac"`, `"size":36214455`, `"etag":"7f3a9c21"`}
 	for _, m := range members {
 		name := m[:strings.Index(m, ":")]
 		val := m[len(name)+1:]
@@ -188,16 +184,16 @@ func musicTitleCases() []titleCase {
 		many = append(many, ak(fmt.Sprintf("0a000000-0000-4000-8000-0000000001%02d", i)))
 	}
 	many = append(many[:2], append([]string{ak(mbArtist), `"album/mb/` + mbAlbum + `"`, `"ARTIST"`, `7`, ak(mbArtist), `"artist/local/L1"`}, many[2:]...)...)
-	var nine []string
-	for i := 1; i <= 9; i++ {
-		nine = append(nine, mCopyWith(fmt.Sprintf("c%d", i)))
+	var seventeen []string
+	for i := 1; i <= 17; i++ {
+		seventeen = append(seventeen, mCopyWith(fmt.Sprintf("c%d", i)))
 	}
 	in := []musicIn{
 		// Section 3's example, as it is.
 		{"music section 3's example album", `{"key":"album/mb/0b000000-0000-4000-8000-000000000002","kind":"album","library":"m1","name":"Bridge over Troubled Water","artists":["artist/mb/0a000000-0000-4000-8000-000000000001"],"artistNames":"Simon & Garfunkel","primaryType":"album","date":"2011-03-08","originalDate":"1970-01-26","genres":["Folk rock"],"ids":{"mbreleasegroup":"0d000000-0000-4000-8000-000000000005"}}`},
-		{"music section 3's example track", `{"key":"track/mb/0c000000-0000-4000-8000-000000000003","kind":"track","library":"m1","name":"The Boxer","artists":["artist/mb/0a000000-0000-4000-8000-000000000001"],"artistNames":"Simon & Garfunkel","album":"album/mb/0b000000-0000-4000-8000-000000000002","disc":1,"number":2,"copies":[{"id":"Vq3kM0aZ7pXc","durationMs":308000,"container":"flac","codec":"flac","size":36214455,"etag":"7f3a9c21","bitrateKbps":936,"sampleRate":44100,"bitDepth":16,"channels":2,"replayGain":{"trackGain":-4.12,"trackPeak":0.988525,"albumGain":-5.3,"albumPeak":1.0},"lyrics":"synced"}],"ids":{"mbrecording":"0e000000-0000-4000-8000-000000000006","isrc":"USSM17000123"}}`},
+		{"music section 3's example track", `{"key":"track/mb/0c000000-0000-4000-8000-000000000003","kind":"track","library":"m1","name":"The Boxer","album":"album/mb/0b000000-0000-4000-8000-000000000002","disc":1,"number":2,"copies":[{"id":"Vq3kM0aZ7pXc","durationMs":308417,"mediaType":"audio/flac","codec":"flac","size":36214455,"etag":"7f3a9c21","sampleRate":44100,"bitDepth":16,"channels":2,"replayGain":{"trackGain":-4.12,"trackPeak":0.988525,"albumGain":-5.3,"albumPeak":1.0},"lyrics":"synced"}],"ids":{"mbrecording":"0e000000-0000-4000-8000-000000000006"}}`},
 		{"an artist", `{` + mArtistHead + `,"name":"Simon & Garfunkel"}`},
-		{"an album with every member", mAlbum(`"sortName":"Bridge over Troubled Water, The","artists":[` + ak(mbArtist) + `,` + ak(mbArtist2) + `],"artistNames":"A & B","primaryType":"album","secondaryTypes":["compilation","live"],"compilation":true,"date":"2011","originalDate":"1970-01","genres":["Folk rock","Pop"],"ids":{"mbreleasegroup":"` + mbGroup + `"}`)},
+		{"an album with every member", mAlbum(`"artists":[` + ak(mbArtist) + `,` + ak(mbArtist2) + `],"artistNames":"A & B","primaryType":"album","secondaryTypes":["compilation","live"],"compilation":true,"date":"2011","originalDate":"1970-01","genres":["Folk rock","Pop"],"ids":{"mbreleasegroup":"` + mbGroup + `"}`)},
 
 		// Names.
 		{"names cleaned: white space runs, controls and format characters", `{` + mTrackHead + `,"name":"  The\t\tBoxer\n\u0007(live)‮ ","artistNames":" Simon &​Garfunkel ","copies":[` + mCopy + `]}`},
@@ -205,9 +201,9 @@ func musicTitleCases() []titleCase {
 		{"a name cut to 256 code points, then trimmed", `{` + mArtistHead + `,"name":"` + strings.Repeat("é", 255) + ` b"}`},
 		{"a name cut to 256 code points", `{` + mArtistHead + `,"name":"` + strings.Repeat("é", 255) + `ab"}`},
 		{"artistNames cut to 512 code points", mTrack(`"artistNames":"` + strings.Repeat("a", 511) + `bc"`)},
-		{"sortName cut to 256 code points", mAlbum(`"sortName":"` + strings.Repeat("s", 255) + `tu"`)},
-		{"sortName and artistNames empty once cleaned: absent", mAlbum(`"sortName":" ​ ","artistNames":"\t"`)},
-		{"sortName and artistNames that aren't strings: absent", mAlbum(`"sortName":["x"],"artistNames":7`)},
+		{"sortName isn't a member any more: ignored", mAlbum(`"sortName":"Bridge over Troubled Water, The"`)},
+		{"artistNames empty once cleaned: absent", mAlbum(`"artistNames":" ​\t"`)},
+		{"artistNames that isn't a string: absent", mAlbum(`"artistNames":7`)},
 		{"no name: skipped", `{` + mArtistHead + `}`},
 		{"a name empty once cleaned: skipped", `{` + mArtistHead + `,"name":" ​\t "}`},
 		{"a name that isn't a string: skipped", `{` + mArtistHead + `,"name":7}`},
@@ -233,6 +229,8 @@ func musicTitleCases() []titleCase {
 		{"MusicBrainz's other primary types kept: broadcast", mAlbum(`"primaryType":"broadcast"`)},
 		{"primaryType other is a MusicBrainz type, kept", mAlbum(`"primaryType":"other"`)},
 		{"an unknown primaryType kept as it is", mAlbum(`"primaryType":"box-set"`)},
+		{"MusicBrainz's secondary types with a space and a slash: field recording, audio drama, mixtape/street", mAlbum(`"primaryType":"album","secondaryTypes":["field recording","audio drama","mixtape/street","audiobook"]`)},
+		{"a type with a slash at an end, and one with two spaces inside, kept", mAlbum(`"primaryType":"a/","secondaryTypes":["/b","c  d"]`)},
 		{"types with a space and a slash kept", mAlbum(`"primaryType":"ep","secondaryTypes":["audio drama","mixtape/street","dj-mix","spokenword"]`)},
 		{"a type of 32 characters kept, of 33 absent", mAlbum(`"primaryType":"` + strings.Repeat("a", 32) + `","secondaryTypes":["` + strings.Repeat("b", 33) + `","live"]`)},
 		{"a primaryType in another case: absent, never lowercased by the caller", mAlbum(`"primaryType":"Album"`)},
@@ -286,6 +284,9 @@ func musicTitleCases() []titleCase {
 		// Members of other kinds.
 		{"an album ignores a track's members", mAlbum(`"album":"album/mb/` + mbAlbum2 + `","disc":1,"number":1,"copies":[` + mCopy + `],"image":true,"ids":{"mbrecording":"` + mbRec + `","isrc":"USSM17000123","acoustid":"` + acoustID + `"}`)},
 		{"a track ignores an album's members", mTrack(`"sortName":"y","primaryType":"album","secondaryTypes":["live"],"compilation":true,"image":true,"ids":{"mbreleasegroup":"` + mbGroup + `"}`)},
+		{"a track without artists, artistNames, dates or genres: its album's, nothing filled in", mTrack(``)},
+		{"a compilation's track with its own artists and names", mTrack(`"artists":[` + ak(mbArtist2) + `],"artistNames":"B"`)},
+		{"a track's members equal to its album's kept as sent: the caller doesn't compare", mTrack(`"artists":[` + ak(mbArtist) + `],"artistNames":"Simon & Garfunkel","date":"2011-03-08","genres":["Folk rock"]`)},
 		{"a track's own dates and genres kept", mTrack(`"date":"1999-05","originalDate":"1968","genres":["Soul"," Funk ","soul"]`)},
 		{"a track's dates checked as an album's", mTrack(`"date":"2023-02-29","originalDate":"1970-13"`)},
 		{"a track's originalDate after its date: absent", mTrack(`"date":"1970","originalDate":"1971"`)},
@@ -294,12 +295,15 @@ func musicTitleCases() []titleCase {
 		{"an artist carries no artists, artistNames, album members, dates, genres or image", `{` + mArtistHead + `,"name":"x","artists":[` + ak(mbArtist2) + `],"artistNames":"y","sortName":"z","primaryType":"album","genres":["Pop"],"date":"1970","image":true,"copies":[` + mCopy + `],"ids":{"mbreleasegroup":"` + mbGroup + `"}}`},
 
 		// ids.
-		{"ids of a track: mbrecording, isrc, acoustid", mTrack(`"ids":{"mbrecording":"` + mbRec + `","isrc":"GBAYE6300001","acoustid":"` + acoustID + `"}`)},
-		{"ids out of form, of other kinds, of unknown or old schemes, and non-strings skipped", mTrack(`"ids":{"mbrecording":"0E000000-0000-4000-8000-000000000006","isrc":"ussm17000123","acoustid":"` + acoustID + `x","mbreleasegroup":"` + mbGroup + `","mbrelease":"` + mbAlbum + `","mbtrack":"` + mbTrack + `","discogs":"123"}`)},
-		{"ids: an ISRC of 11 characters skipped alone", mTrack(`"ids":{"isrc":"USSM1700012","mbrecording":"` + mbRec + `"}`)},
-		{"ids: an ISRC whose registrant code has digits", mTrack(`"ids":{"isrc":"US1M27000123"}`)},
-		{"ids: an ISRC with a letter in its last 7 characters skipped", mTrack(`"ids":{"isrc":"USSM1A000123"}`)},
-		{"ids: values that aren't strings skipped alone", mTrack(`"ids":{"isrc":7,"mbrecording":"` + mbRec + `","acoustid":null}`)},
+		{"ids of an mb track: mbrecording", mTrack(`"ids":{"mbrecording":"` + mbRec + `"}`)},
+		{"ids of an mb album: mbreleasegroup", mAlbum(`"ids":{"mbreleasegroup":"` + mbGroup + `"}`)},
+		{"ids: isrc and acoustid aren't schemes any more, skipped", mTrack(`"ids":{"mbrecording":"` + mbRec + `","isrc":"USSM17000123","acoustid":"` + acoustID + `"}`)},
+		{"ids: isrc alone, skipped: ids absent", mTrack(`"ids":{"isrc":"GBAYE6300001"}`)},
+		{"ids out of form, of other kinds, of unknown or old schemes, and non-strings skipped", mTrack(`"ids":{"mbrecording":"0E000000-0000-4000-8000-000000000006","mbreleasegroup":"` + mbGroup + `","mbrelease":"` + mbAlbum + `","mbtrack":"` + mbTrack + `","discogs":"123","tmdb":"949"}`)},
+		{"ids: an mbrecording on an album skipped", mAlbum(`"ids":{"mbrecording":"` + mbRec + `","mbreleasegroup":"` + mbGroup + `"}`)},
+		{"ids on an mb artist: skipped, its key is its MBID", `{` + mArtistHead + `,"name":"x","ids":{"mbreleasegroup":"` + mbGroup + `","mbrecording":"` + mbRec + `"}}`},
+		{"ids: values that aren't strings skipped alone", mTrack(`"ids":{"mbreleasegroup":7,"mbrecording":"` + mbRec + `","acoustid":null}`)},
+		{"ids: an mbrecording that isn't a string: ids absent", mTrack(`"ids":{"mbrecording":7}`)},
 		{"ids that isn't an object: absent", mTrack(`"ids":["` + mbRec + `"]`)},
 
 		// Copies: the track.
@@ -311,7 +315,7 @@ func musicTitleCases() []titleCase {
 		// Copies: required members.
 		{"a copy without id skipped alone", mCopies(mCopyWith("c1", `"id":-`), mCopyWith("c2"))},
 		{"a copy without durationMs skipped alone", mCopies(mCopyWith("c1", `"durationMs":-`), mCopyWith("c2"))},
-		{"a copy without container skipped alone", mCopies(mCopyWith("c1", `"container":-`), mCopyWith("c2"))},
+		{"a copy without mediaType skipped alone", mCopies(mCopyWith("c1", `"mediaType":-`), mCopyWith("c2"))},
 		{"a copy without codec skipped alone", mCopies(mCopyWith("c1", `"codec":-`), mCopyWith("c2"))},
 		{"a copy without size skipped alone", mCopies(mCopyWith("c1", `"size":-`), mCopyWith("c2"))},
 		{"a copy without etag skipped alone", mCopies(mCopyWith("c1", `"etag":-`), mCopyWith("c2"))},
@@ -322,32 +326,35 @@ func musicTitleCases() []titleCase {
 		{"size at its bounds", mCopies(mCopyWith("c1", `"size":1`), mCopyWith("c2", `"size":999999999999999`))},
 		{"size out of range: the copy skipped", mCopies(mCopyWith("c1", `"size":0`), mCopyWith("c2", `"size":1000000000000000`), mCopyWith("c3", `"size":1e3`), mCopyWith("c4"))},
 		{"etags of 64 characters, 65, empty, with a dot", mCopies(mCopyWith("c1", `"etag":"`+strings.Repeat("e", 64)+`"`), mCopyWith("c2", `"etag":"`+strings.Repeat("e", 65)+`"`), mCopyWith("c3", `"etag":""`), mCopyWith("c4", `"etag":"7f.3"`), mCopyWith("c5", `"etag":7`))},
-		{"ffmpeg names of containers and codecs kept", mCopies(mCopyWith("c1", `"container":"mp3"`, `"codec":"mp3"`), mCopyWith("c2", `"container":"mp4"`, `"codec":"alac"`), mCopyWith("c3", `"container":"ogg"`, `"codec":"vorbis"`), mCopyWith("c4", `"container":"wav"`, `"codec":"pcm_s24le"`), mCopyWith("c5", `"container":"matroska"`, `"codec":"opus"`))},
-		{"container and codec tokens kept as they are, known or not, never turned into other", mCopies(mCopyWith("c1", `"container":"ipod"`, `"codec":"wmav2"`), mCopyWith("c2", `"container":"mka"`, `"codec":"h264"`), mCopyWith("c3", `"container":"x.new_1-2"`, `"codec":"iamf"`), mCopyWith("c4", `"container":"other"`, `"codec":"other"`))},
-		{"a container and a codec of 32 characters kept", mCopies(mCopyWith("c1", `"container":"`+strings.Repeat("c", 32)+`"`, `"codec":"`+strings.Repeat("k", 32)+`"`))},
-		{"a container or codec that isn't a token: the copy skipped", mCopies(mCopyWith("c1", `"container":"FLAC"`), mCopyWith("c2", `"codec":"pcm s16le"`), mCopyWith("c3", `"container":""`), mCopyWith("c4", `"codec":"`+strings.Repeat("k", 33)+`"`), mCopyWith("c5", `"container":"m4a,mp4"`), mCopyWith("c6"))},
-		{"a container or codec that isn't a string: the copy skipped", mCopies(mCopyWith("c1", `"container":7`), mCopyWith("c2", `"codec":["flac"]`), mCopyWith("c3"))},
-		{"codecs, RFC 6381 strings, kept", mCopies(mCopyWith("c1", `"codecs":"fLaC"`), mCopyWith("c2", `"container":"mp4"`, `"codec":"aac"`, `"codecs":"mp4a.40.2"`), mCopyWith("c3", `"container":"mp4"`, `"codec":"eac3"`, `"codecs":"ec-3"`))},
+		{"media types and codec tokens kept", mCopies(mCopyWith("c1", `"mediaType":"audio/mpeg"`, `"codec":"mp3"`), mCopyWith("c2", `"mediaType":"audio/mp4"`, `"codec":"alac"`), mCopyWith("c3", `"mediaType":"audio/ogg"`, `"codec":"vorbis"`), mCopyWith("c4", `"mediaType":"audio/wave"`, `"codec":"pcm_s24le"`), mCopyWith("c5", `"mediaType":"audio/matroska"`, `"codec":"opus"`, `"codecs":"Opus"`), mCopyWith("c6", `"mediaType":"audio/aiff"`, `"codec":"pcm_s16be"`))},
+		{"media types and codecs kept as they are, known or not, never turned into another value", mCopies(mCopyWith("c1", `"mediaType":"audio/x-wav"`, `"codec":"wmav2"`), mCopyWith("c2", `"mediaType":"video/mp4"`, `"codec":"h264"`), mCopyWith("c3", `"mediaType":"audio/vnd.dolby.mlp+x_1"`, `"codec":"iamf"`), mCopyWith("c4", `"mediaType":"application/octet-stream"`, `"codec":"other"`), mCopyWith("c5", `"mediaType":"1/2"`))},
+		{"a media type of 127 characters kept, of 128 the copy skipped", mCopies(mCopyWith("c1", `"mediaType":"audio/`+strings.Repeat("m", 121)+`"`), mCopyWith("c2", `"mediaType":"audio/`+strings.Repeat("m", 122)+`"`), mCopyWith("c3"))},
+		{"a codec of 32 characters kept", mCopies(mCopyWith("c1", `"codec":"`+strings.Repeat("k", 32)+`"`))},
+		{"a mediaType that isn't a media type: the copy skipped", mCopies(mCopyWith("c1", `"mediaType":"audio/FLAC"`), mCopyWith("c2", `"mediaType":"flac"`), mCopyWith("c3", `"mediaType":"audio/mp4; codecs=mp4a.40.2"`), mCopyWith("c4", `"mediaType":"audio/mp4/x"`), mCopyWith("c5", `"mediaType":"audio/"`), mCopyWith("c6", `"mediaType":"/flac"`), mCopyWith("c7", `"mediaType":"audio/.flac"`), mCopyWith("c8", `"mediaType":"+audio/flac"`), mCopyWith("c9", `"mediaType":"audio/fl ac"`), mCopyWith("c10", `"mediaType":""`), mCopyWith("c11"))},
+		{"a mediaType that isn't a string, or missing: the copy skipped", mCopies(mCopyWith("c1", `"mediaType":7`), mCopyWith("c2", `"mediaType":["audio/flac"]`), mCopyWith("c3", `"mediaType":-`), mCopyWith("c4"))},
+		{"container isn't a member any more: a copy with container and no mediaType skipped", mCopies(mCopyWith("c1", `"mediaType":-`, `"container":"flac"`), mCopyWith("c2", `"container":"flac"`))},
+		{"a codec that isn't a token: the copy skipped", mCopies(mCopyWith("c1", `"codec":"FLAC"`), mCopyWith("c2", `"codec":"pcm s16le"`), mCopyWith("c3", `"codec":""`), mCopyWith("c4", `"codec":"`+strings.Repeat("k", 33)+`"`), mCopyWith("c5", `"codec":"flac,alac"`), mCopyWith("c6"))},
+		{"a codec that isn't a string: the copy skipped", mCopies(mCopyWith("c1", `"codec":7`), mCopyWith("c2", `"codec":["flac"]`), mCopyWith("c3"))},
+		{"codecs required for aac and dts: sent, kept", mCopies(mCopyWith("c1", `"mediaType":"audio/mp4"`, `"codec":"aac"`, `"codecs":"mp4a.40.2"`), mCopyWith("c2", `"mediaType":"audio/mp4"`, `"codec":"aac"`, `"codecs":"mp4a.40.5"`), mCopyWith("c3", `"mediaType":"audio/matroska"`, `"codec":"dts"`, `"codecs":"dtsh"`))},
+		{"codecs missing on aac or dts: the copy kept without codecs, not played as it is", mCopies(mCopyWith("c1", `"mediaType":"audio/mp4"`, `"codec":"aac"`), mCopyWith("c2", `"mediaType":"audio/wave"`, `"codec":"dts"`))},
+		{"codecs malformed on aac: counts as absent, the copy kept", mCopies(mCopyWith("c1", `"mediaType":"audio/mp4"`, `"codec":"aac"`, `"codecs":"mp4a.40.2,mp4a.40.5"`), mCopyWith("c2", `"mediaType":"audio/mp4"`, `"codec":"aac"`, `"codecs":7`))},
+		{"codecs optional for other codecs: absent on flac, mp3 and opus", mCopies(mCopyWith("c1"), mCopyWith("c2", `"mediaType":"audio/mpeg"`, `"codec":"mp3"`), mCopyWith("c3", `"mediaType":"audio/ogg"`, `"codec":"opus"`))},
+		{"codecs, RFC 6381 strings, kept as sent, case and all", mCopies(mCopyWith("c1", `"codecs":"fLaC"`), mCopyWith("c2", `"codecs":"flac"`), mCopyWith("c3", `"mediaType":"audio/mp4"`, `"codec":"eac3"`, `"codecs":"ec-3"`))},
 		{"codecs of 64 characters kept, of 65 absent", mCopies(mCopyWith("c1", `"codecs":"`+strings.Repeat("a", 64)+`"`), mCopyWith("c2", `"codecs":"`+strings.Repeat("a", 65)+`"`))},
 		{"codecs empty, with a comma, a space or a plus, or not a string: absent", mCopies(mCopyWith("c1", `"codecs":""`), mCopyWith("c2", `"codecs":"mp4a.40.2,avc1"`), mCopyWith("c3", `"codecs":"mp4a 40"`), mCopyWith("c4", `"codecs":"a+b"`), mCopyWith("c5", `"codecs":7`))},
-		{"at most 8 copies kept, the first", mCopies(append([]string{`7`}, nine...)...)},
-		{"at most 8 copies kept, skipped ones not counted", mCopies(append([]string{mCopyWith("bad", `"etag":-`)}, nine[:8]...)...)},
+		{"at most 16 copies kept, the first", mCopies(append([]string{`7`}, seventeen...)...)},
+		{"at most 16 copies kept, skipped ones not counted", mCopies(append([]string{mCopyWith("bad", `"etag":-`)}, seventeen[:16]...)...)},
+		{"16 copies, all kept", mCopies(seventeen[:16]...)},
 
 		// Copies: optional members.
-		{"a copy's name cleaned and cut to 64 code points", mCopies(mCopyWith("c1", `"name":" Hi-Res\t\t`+strings.Repeat("x", 62)+`"`), mCopyWith("c2", `"name":"Vinyl rip"`))},
-		{"a copy's name empty once cleaned or not a string: absent", mCopies(mCopyWith("c1", `"name":" ​ "`), mCopyWith("c2", `"name":7`))},
-		{"added: a valid date kept", mCopies(mCopyWith("c1", `"added":"2024-02-29"`))},
-		{"added out of form or not a real day: absent", mCopies(mCopyWith("c1", `"added":"2023-02-29"`), mCopyWith("c2", `"added":"2024-2-01"`), mCopyWith("c3", `"added":"2024-02"`), mCopyWith("c4", `"added":20240201`))},
-		{"bitrateKbps kept exact, never rounded", mCopies(mCopyWith("c1", `"bitrateKbps":941`), mCopyWith("c2", `"bitrateKbps":15`), mCopyWith("c3", `"bitrateKbps":321`))},
-		{"bitrateKbps at its bounds", mCopies(mCopyWith("c1", `"bitrateKbps":1`), mCopyWith("c2", `"bitrateKbps":100000`))},
-		{"bitrateKbps out of range or not an integer: absent", mCopies(mCopyWith("c1", `"bitrateKbps":0`), mCopyWith("c2", `"bitrateKbps":100001`), mCopyWith("c3", `"bitrateKbps":-8`), mCopyWith("c4", `"bitrateKbps":320.0`))},
+		{"name, added and bitrateKbps aren't members any more: ignored", mCopies(mCopyWith("c1", `"name":"Hi-Res"`, `"added":"2024-02-29"`, `"bitrateKbps":941`), mCopyWith("c2", `"name":7`, `"bitrateKbps":0`))},
 		{"durationMs kept exact, to the millisecond", mCopies(mCopyWith("c1", `"durationMs":308417`), mCopyWith("c2", `"durationMs":1001`))},
 		{"sampleRate, bitDepth and channels at their lower bounds", mCopies(mCopyWith("c1", `"sampleRate":8000`, `"bitDepth":8`, `"channels":1`))},
 		{"sampleRate, bitDepth and channels at their upper bounds", mCopies(mCopyWith("c1", `"sampleRate":768000`, `"bitDepth":32`, `"channels":64`))},
 		{"sampleRate, bitDepth and channels below their ranges: absent", mCopies(mCopyWith("c1", `"sampleRate":7999`, `"bitDepth":7`, `"channels":0`))},
 		{"sampleRate, bitDepth and channels above their ranges: absent", mCopies(mCopyWith("c1", `"sampleRate":768001`, `"bitDepth":33`, `"channels":65`))},
 		{"sampleRate, bitDepth and channels that aren't integers: absent", mCopies(mCopyWith("c1", `"sampleRate":44100.0`, `"bitDepth":"16"`, `"channels":true`))},
-		{"bitDepth on a lossy codec is kept: the caller checks only its range", mCopies(mCopyWith("c1", `"codec":"mp3"`, `"container":"mp3"`, `"bitDepth":16`))},
+		{"bitDepth on a lossy codec is kept: the caller checks only its range", mCopies(mCopyWith("c1", `"codec":"mp3"`, `"mediaType":"audio/mpeg"`, `"bitDepth":16`))},
 		{"replayGain at its bounds", mCopies(mCopyWith("c1", `"replayGain":{"trackGain":-64,"trackPeak":0,"albumGain":64,"albumPeak":10}`))},
 		{"replayGain rounded: gains to two decimals, peaks to six", mCopies(mCopyWith("c1", `"replayGain":{"trackGain":-4.126,"trackPeak":0.9885254,"albumGain":5.304,"albumPeak":1.0000006}`))},
 		{"replayGain in exponent form, and a gain rounding to zero", mCopies(mCopyWith("c1", `"replayGain":{"trackGain":-0.001,"trackPeak":9.5e-1,"albumGain":1E1,"albumPeak":1e-7}`))},
@@ -358,7 +365,7 @@ func musicTitleCases() []titleCase {
 		{"a replayGain that isn't an object: absent", mCopies(mCopyWith("c1", `"replayGain":[-4.12]`))},
 		{"lyrics plain and synced", mCopies(mCopyWith("c1", `"lyrics":"plain"`), mCopyWith("c2", `"lyrics":"synced"`))},
 		{"lyrics of another value or type: absent", mCopies(mCopyWith("c1", `"lyrics":"Synced"`), mCopyWith("c2", `"lyrics":"none"`), mCopyWith("c3", `"lyrics":true`))},
-		{"video's members of a copy ignored on a track", mCopies(mCopyWith("c1", `"edition":"remastered"`, `"startMs":0`, `"parts":[{"size":36214455,"durationMs":308000}]`, `"video":{"codec":"h264","width":640,"height":480}`, `"audioTracks":[{"id":"a1","codec":"flac"}]`, `"subtitleTracks":[{"id":"s1","format":"subrip"}]`, `"chapters":[{"startMs":0}]`, `"segments":[]`, `"previews":true`, `"threeD":"sbs"`))},
+		{"video's members of a copy ignored on a track", mCopies(mCopyWith("c1", `"edition":"remastered"`, `"startMs":0`, `"parts":2`, `"video":{"codec":"h264","width":640,"height":480}`, `"audioTracks":[{"id":"a1","codec":"flac"}]`, `"subtitleTracks":[{"id":"s1","format":"subrip"}]`, `"endMs":1000`, `"chapters":[{"startMs":0}]`, `"segments":[]`, `"previewLayout":{"tileWidth":320,"tileHeight":180,"columns":10,"rows":10,"intervalMs":10000,"tileCount":31}`, `"previews":true`, `"threeD":"sbs"`))},
 	}
 	return musicKeep(in)
 }
@@ -367,12 +374,12 @@ func musicLocalTitleCases() []titleCase {
 	in := []musicIn{
 		{"a local artist with an image", `{"key":"artist/local/Ar7","kind":"artist","library":"m1","name":"The Garage Band","image":true}`},
 		{"a local album without an image (false kept)", `{"key":"album/local/Al_1","kind":"album","library":"m1","name":"Demos","artists":["artist/local/Ar7"],"artistNames":"The Garage Band","primaryType":"album","secondaryTypes":["demo"],"date":"2019","genres":["Rock"],"image":false}`},
-		{"a local album may carry its release group", `{"key":"album/local/Al_2","kind":"album","library":"m1","name":"Bootleg","ids":{"mbreleasegroup":"` + mbGroup + `"}}`},
+		{"a local album's ids ignored: a local title carries none", `{"key":"album/local/Al_2","kind":"album","library":"m1","name":"Bootleg","ids":{"mbreleasegroup":"` + mbGroup + `"}}`},
 		{"an image that isn't a boolean: absent", `{"key":"artist/local/Ar8","kind":"artist","library":"m1","name":"x","image":"true"}`},
 		{"a local track carries no image", `{"key":"track/local/T-1","kind":"track","library":"m1","name":"Song","image":true,"copies":[` + mCopy + `]}`},
 		{"an mb artist's image ignored", `{` + mArtistHead + `,"name":"x","image":true}`},
 		{"an mb album's image ignored", mAlbum(`"image":true`)},
-		{"a local track without an album, with an ISRC and an AcoustID", `{"key":"track/local/T-2","kind":"track","library":"m1","name":"Home recording","artists":["artist/local/Ar7"],"disc":1,"number":3,"copies":[` + mCopy + `],"ids":{"isrc":"FRZ039900001","acoustid":"` + acoustID + `","mbrecording":"` + mbRec + `"}}`},
+		{"a local track without an album; its ids ignored", `{"key":"track/local/T-2","kind":"track","library":"m1","name":"Home recording","artists":["artist/local/Ar7"],"disc":1,"number":3,"copies":[` + mCopy + `],"ids":{"isrc":"FRZ039900001","acoustid":"` + acoustID + `","mbrecording":"` + mbRec + `"}}`},
 		{"a local track on an mb album", `{"key":"track/local/T-3","kind":"track","library":"m1","name":"Bonus","album":"album/mb/` + mbAlbum + `","copies":[` + mCopy + `]}`},
 		{"a local track on a local album", `{"key":"track/local/T-4","kind":"track","library":"m1","name":"Take 2","album":"album/local/Al_1","copies":[` + mCopy + `]}`},
 		{"a local track whose album isn't an album key: album absent", `{"key":"track/local/T-5","kind":"track","library":"m1","name":"x","album":"track/local/T-4","copies":[` + mCopy + `]}`},
@@ -393,94 +400,98 @@ func musicLocalTitleCases() []titleCase {
 
 func musicQueueCases() []musicCallCase {
 	t := func(id string) string { return `"track/mb/` + id + `"` }
+	e := func(id, more string) string { return `{"title":` + t(id) + more + `}` }
 	req := func(members string) string { return `{"title":` + t(mbTrack) + members + `}` }
 	var out []musicCallCase
 	for _, c := range []musicIn{
 		{"no queue", req(``)},
 		{"an empty queue", req(`,"queue":[]`)},
-		{"one track", req(`,"queue":[` + t(mbTrack2) + `]`)},
-		{"5 tracks, local ones among them", req(`,"queue":[` + t(mbTrack2) + `,"track/local/T-1",` + t(mbTrack3) + `,` + t(mbTrack4) + `,"track/local/T-2"]`)},
-		{"a local track's queue", `{"title":"track/local/T-1","queue":[` + t(mbTrack) + `]}`},
-		{"6 tracks: refused", req(`,"queue":[` + t(mbTrack2) + `,` + t(mbTrack3) + `,` + t(mbTrack4) + `,` + t(mbTrack5) + `,` + t(mbTrack6) + `,"track/local/T-1"]`)},
-		{"an entry that isn't a string: refused", req(`,"queue":[` + t(mbTrack2) + `,7]`)},
-		{"an entry in uppercase: refused", req(`,"queue":["track/mb/0C000000-0000-4000-8000-000000000008"]`)},
-		{"an album in the queue: refused", req(`,"queue":["album/mb/` + mbAlbum + `"]`)},
-		{"an entry with a trailing slash: refused", req(`,"queue":["track/mb/` + mbTrack2 + `/"]`)},
-		{"title itself in the queue: refused", req(`,"queue":[` + t(mbTrack2) + `,` + t(mbTrack) + `]`)},
-		{"a repeated entry: refused", req(`,"queue":[` + t(mbTrack2) + `,` + t(mbTrack3) + `,` + t(mbTrack2) + `]`)},
-		{"a queue that isn't an array: refused", req(`,"queue":` + t(mbTrack2))},
+		{"one track", req(`,"queue":[` + e(mbTrack2, ``) + `]`)},
+		{"5 tracks, local ones among them", req(`,"queue":[` + e(mbTrack2, ``) + `,{"title":"track/local/T-1"},` + e(mbTrack3, ``) + `,` + e(mbTrack4, ``) + `,{"title":"track/local/T-2"}]`)},
+		{"a local track's queue", `{"title":"track/local/T-1","queue":[` + e(mbTrack, ``) + `]}`},
+		{"entries with their own versionId", req(`,"queue":[` + e(mbTrack2, `,"versionId":"Vq3kM0aZ7pXc"`) + `,` + e(mbTrack3, `,"versionId":"`+strings.Repeat("v", 64)+`"`) + `]`)},
+		{"entries with their own delivery: file, remux into audio/mp4 and audio/mp2t, transcode", req(`,"delivery":"file","queue":[` + e(mbTrack2, `,"delivery":"file"`) + `,` + e(mbTrack3, `,"delivery":"remux","mediaType":"audio/mp4"`) + `,` + e(mbTrack4, `,"delivery":"remux","mediaType":"audio/mp2t"`) + `,` + e(mbTrack5, `,"delivery":"transcode","transcode":{"audioCodec":"aac"}`) + `]`)},
+		{"an entry's delivery transcode without targets", req(`,"queue":[` + e(mbTrack2, `,"delivery":"transcode"`) + `]`)},
+		{"an entry with versionId and delivery together", req(`,"queue":[` + e(mbTrack2, `,"versionId":"c2","delivery":"remux","mediaType":"audio/mp4"`) + `]`)},
+		{"unknown members of an entry ignored", req(`,"queue":[` + e(mbTrack2, `,"positionMs":5,"stream":{}`) + `]`)},
+		{"entries without delivery under a request's remux: the request's mediaType", req(`,"delivery":"remux","mediaType":"audio/mp4","queue":[` + e(mbTrack2, ``) + `]`)},
+		{"6 tracks: refused", req(`,"queue":[` + e(mbTrack2, ``) + `,` + e(mbTrack3, ``) + `,` + e(mbTrack4, ``) + `,` + e(mbTrack5, ``) + `,` + e(mbTrack6, ``) + `,{"title":"track/local/T-1"}]`)},
+		{"an entry that is a bare key, as before proposal 17: refused", req(`,"queue":[` + t(mbTrack2) + `]`)},
+		{"an entry that isn't an object: refused", req(`,"queue":[` + e(mbTrack2, ``) + `,7]`)},
+		{"an entry without title: refused", req(`,"queue":[{"versionId":"c1"}]`)},
+		{"an entry whose title isn't a string: refused", req(`,"queue":[{"title":7}]`)},
+		{"an entry in uppercase: refused", req(`,"queue":[{"title":"track/mb/0C000000-0000-4000-8000-000000000008"}]`)},
+		{"an album in the queue: refused", req(`,"queue":[{"title":"album/mb/` + mbAlbum + `"}]`)},
+		{"an entry with a trailing slash: refused", req(`,"queue":[{"title":"track/mb/` + mbTrack2 + `/"}]`)},
+		{"title itself in the queue: refused", req(`,"queue":[` + e(mbTrack2, ``) + `,` + e(mbTrack, ``) + `]`)},
+		{"a repeated entry: refused, even with another versionId", req(`,"queue":[` + e(mbTrack2, `,"versionId":"c1"`) + `,` + e(mbTrack3, ``) + `,` + e(mbTrack2, `,"versionId":"c2"`) + `]`)},
+		{"a versionId out of form: refused", req(`,"queue":[` + e(mbTrack2, `,"versionId":"c 1"`) + `]`)},
+		{"a versionId of 65 characters: refused", req(`,"queue":[` + e(mbTrack2, `,"versionId":"`+strings.Repeat("v", 65)+`"`) + `]`)},
+		{"a versionId that isn't a string: refused", req(`,"queue":[` + e(mbTrack2, `,"versionId":7`) + `]`)},
+		{"a delivery that isn't a token: refused", req(`,"queue":[` + e(mbTrack2, `,"delivery":"File"`) + `]`)},
+		{"a delivery that isn't a string: refused", req(`,"queue":[` + e(mbTrack2, `,"delivery":null`) + `]`)},
+		{"an unknown delivery token: 409 delivery-refused", req(`,"queue":[` + e(mbTrack2, `,"delivery":"dash"`) + `]`)},
+		{"a remux without mediaType: refused", req(`,"queue":[` + e(mbTrack2, `,"delivery":"remux"`) + `]`)},
+		{"a remux with the old container member: refused, mediaType missing", req(`,"queue":[` + e(mbTrack2, `,"delivery":"remux","container":"mp4"`) + `]`)},
+		{"a mediaType without the entry's own delivery remux: refused", req(`,"delivery":"remux","mediaType":"audio/mp4","queue":[` + e(mbTrack2, `,"mediaType":"audio/mp4"`) + `]`)},
+		{"a mediaType beside delivery file: refused", req(`,"queue":[` + e(mbTrack2, `,"delivery":"file","mediaType":"audio/mp4"`) + `]`)},
+		{"a malformed mediaType: refused", req(`,"queue":[` + e(mbTrack2, `,"delivery":"remux","mediaType":"audio/MP4"`) + `]`)},
+		{"a mediaType with parameters: refused", req(`,"queue":[` + e(mbTrack2, `,"delivery":"remux","mediaType":"audio/mp4;codecs=flac"`) + `]`)},
+		{"a mediaType that isn't a string: refused", req(`,"queue":[` + e(mbTrack2, `,"delivery":"remux","mediaType":["audio/mp4"]`) + `]`)},
+		{"a remux into video/mp4 for a track: 409 delivery-refused", req(`,"queue":[` + e(mbTrack2, `,"delivery":"remux","mediaType":"video/mp4"`) + `]`)},
+		{"a remux into another audio type: 409 delivery-refused", req(`,"queue":[` + e(mbTrack2, `,"delivery":"remux","mediaType":"audio/ogg"`) + `]`)},
+		{"a malformed entry wins over a refused delivery: 400", req(`,"queue":[` + e(mbTrack2, `,"delivery":"dash"`) + `,` + e(mbTrack3, `,"versionId":"c/1"`) + `]`)},
+		{"a transcode object without the entry's own delivery transcode: refused", req(`,"delivery":"transcode","queue":[` + e(mbTrack2, `,"transcode":{"audioCodec":"opus"}`) + `]`)},
+		{"a transcode that isn't an object: refused", req(`,"queue":[` + e(mbTrack2, `,"delivery":"transcode","transcode":"aac"`) + `]`)},
+		{"a queue that isn't an array: refused", req(`,"queue":` + e(mbTrack2, ``))},
 		{"a null queue: refused", req(`,"queue":null`)},
-		{"a queue after an album's title: refused", `{"title":"album/mb/` + mbAlbum + `","queue":[` + t(mbTrack2) + `]}`},
+		{"a queue after an album's title: refused", `{"title":"album/mb/` + mbAlbum + `","queue":[` + e(mbTrack2, ``) + `]}`},
 	} {
 		err := musicCheckQueueRequest([]byte(c.text))
 		ok, r := reason(err)
 		out = append(out, musicCallCase{Name: c.name, Kind: "request", Text: c.text, Valid: ok, Reason: r})
 	}
 
-	three := req(`,"queue":[` + t(mbTrack2) + `,` + t(mbTrack3) + `,` + t(mbTrack4) + `]`)
-	// Every entry's stream is under the playback's own ticket, Tk1, at
-	// queue/<n>, n its place in the request's queue.
-	at := func(ticket, n, name string) string { return musicStreamRoot + ticket + "/queue/" + n + "/" + name }
-	hls := func(n string) string {
-		return `{"url":"` + at("Tk1", n, "master.m3u8") + `","protocol":"hls","mimeType":"application/vnd.apple.mpegurl"}`
+	three := req(`,"queue":[` + e(mbTrack2, ``) + `,` + e(mbTrack3, ``) + `,` + e(mbTrack4, ``) + `]`)
+	entry := func(id, vid, method, proto, more string) string {
+		return `{"title":` + t(id) + `,"versionId":"` + vid + `","method":"` + method + `","protocol":"` + proto + `"` + more + `}`
 	}
-	file := func(n string) string { return `{"url":"` + at("Tk1", n, "file") + `","protocol":"file"}` }
-	url := func(u, proto string) string { return `{"url":"` + u + `","protocol":"` + proto + `"}` }
-	entry := func(id, method, stream, more string) string {
-		return `{"title":` + t(id) + `,"versionId":"v1","method":"` + method + `","stream":` + stream + more + `}`
-	}
-	e2 := entry(mbTrack2, "transcode", hls("0"), `,"durationMs":201000`)
-	e3 := entry(mbTrack3, "direct", file("1"), ``)
-	e4 := entry(mbTrack4, "remux", url(at("Tk1", "2", "master.m3u8"), "hls"), `,"durationMs":0`)
-	own := `"stream":{"url":"` + musicStreamRoot + `Tk1/file","protocol":"file"}`
-	ansOwn := func(stream string, entries ...string) string {
-		return `{"id":"play_` + strings.Repeat("a", 26) + `","method":"direct",` + stream + `,"queue":[` + strings.Join(entries, ",") + `]}`
-	}
-	ans := func(entries ...string) string { return ansOwn(own, entries...) }
+	e2 := entry(mbTrack2, "v1", "transcode", "hls", ``)
+	e3 := entry(mbTrack3, "v1", "direct", "hls", ``)
+	e4 := entry(mbTrack4, "v1", "remux", "hls", ``)
+	head := `"id":"play_` + strings.Repeat("a", 26) + `","ticket":"Tk1","protocol":"hls","method":"transcode"`
+	ans := func(entries ...string) string { return `{` + head + `,"queue":[` + strings.Join(entries, ",") + `]}` }
+	mixed := req(`,"delivery":"transcode","queue":[` + e(mbTrack2, `,"delivery":"file"`) + `,` + e(mbTrack3, `,"versionId":"c2","delivery":"remux","mediaType":"audio/mp4"`) + `,` + e(mbTrack4, ``) + `]`)
 	answers := []struct{ name, request, text string }{
-		{"three entries prepared, in order", three, ans(e2, e3, e4)},
+		{"three entries prepared, in order, without delivery: all hls", three, ans(e2, e3, e4)},
 		{"an entry the owning server left out: the others keep their places", three, ans(e2, e4)},
 		{"an empty queue in the answer", three, ans()},
-		{"no queue in the answer", three, `{"id":"play_` + strings.Repeat("a", 26) + `",` + own + `}`},
-		{"a queue that isn't an array: absent", three, `{` + own + `,"queue":` + e2 + `}`},
+		{"no queue in the answer", three, `{` + head + `}`},
+		{"a queue that isn't an array: absent", three, `{` + head + `,"queue":` + e2 + `}`},
 		{"an entry that isn't an object dropped alone", three, ans(`"x"`, e2)},
 		{"out of the request's order: the later entry dropped", three, ans(e4, e3)},
 		{"a repeated entry dropped", three, ans(e2, e2, e3)},
-		{"an entry not in the request's queue dropped", three, ans(entry(mbTrack5, "direct", file("3"), ``), e3)},
-		{"the request's title as an entry dropped", three, ans(entry(mbTrack, "direct", file("0"), ``), e2)},
+		{"an entry not in the request's queue dropped", three, ans(entry(mbTrack5, "v1", "direct", "hls", ``), e3)},
+		{"the request's title as an entry dropped", three, ans(entry(mbTrack, "v1", "direct", "hls", ``), e2)},
 		{"a bad versionId dropped", three, ans(strings.Replace(e2, `"v1"`, `"v 1"`, 1), e3)},
 		{"a missing versionId dropped", three, ans(strings.Replace(e2, `"versionId":"v1",`, ``, 1), e3)},
 		{"an unknown method dropped", three, ans(strings.Replace(e2, `"transcode"`, `"copy"`, 1), e3)},
-		{"a missing stream dropped", three, ans(`{"title":`+t(mbTrack2)+`,"versionId":"v1","method":"direct"}`, e3)},
-		{"a stream under another root dropped", three, ans(entry(mbTrack2, "direct", url("https://b.example.org/api/v1/stream/Tk1/queue/0/file", "file"), ``), e3)},
-		{"a stream over http dropped", three, ans(entry(mbTrack2, "direct", url("http://a.example.org/api/v1/stream/Tk1/queue/0/file", "file"), ``), e3)},
-		{"a stream URL with another file shape dropped", three, ans(entry(mbTrack2, "direct", url(at("Tk1", "0", "x/file"), "file"), ``), e3)},
-		{"a stream URL with a .. part dropped", three, ans(entry(mbTrack2, "direct", url(musicStreamRoot+"Tk1/queue/../file", "file"), ``), e3)},
-		{"a stream URL with a query or a %", three, ans(entry(mbTrack2, "direct", url(at("Tk1", "0", "file?x=1"), "file"), ``), entry(mbTrack3, "direct", url(at("Tk1", "%31", "file"), "file"), ``), e4)},
-		{"the playback's own stream URL, without queue/<n>, dropped", three, ans(entry(mbTrack2, "direct", url(musicStreamRoot+"Tk1/file", "file"), ``), e3)},
-		{"an entry under another ticket than the playback's dropped", three, ans(entry(mbTrack2, "direct", url(at("Tk2", "0", "file"), "file"), ``), e3)},
-		{"an entry at another entry's place dropped", three, ans(entry(mbTrack2, "direct", file("1"), ``), entry(mbTrack3, "direct", file("2"), ``), e4)},
-		{"an entry at its place in the answer, not the request's, dropped", three, ans(e2, entry(mbTrack4, "remux", url(at("Tk1", "1", "master.m3u8"), "hls"), ``))},
-		{"<n> with a leading zero, or out of 0 to 4, dropped", three, ans(entry(mbTrack2, "direct", file("00"), ``), entry(mbTrack3, "direct", file("01"), ``), entry(mbTrack4, "direct", file("5"), ``))},
-		{"<n> missing dropped", three, ans(entry(mbTrack2, "direct", url(musicStreamRoot+"Tk1/queue/file", "file"), ``), e3)},
-		{"an answer whose own stream names no ticket: every entry dropped", three, ansOwn(`"stream":{"url":"https://b.example.org/api/v1/stream/Tk1/file","protocol":"file"}`, e2, e3)},
-		{"an answer without its own stream: every entry dropped", three, `{"id":"play_` + strings.Repeat("a", 26) + `","method":"direct","queue":[` + e2 + `]}`},
-		{"an answer whose own stream is HLS: entries under its ticket kept", three, ansOwn(`"stream":{"url":"`+musicStreamRoot+`Tk1/master.m3u8","protocol":"hls"}`, e2, e3)},
-		{"an hls stream named file, and a file stream named master.m3u8", three, ans(entry(mbTrack2, "transcode", url(at("Tk1", "0", "file"), "hls"), ``), entry(mbTrack3, "direct", url(at("Tk1", "1", "master.m3u8"), "file"), ``), e4)},
-		{"a transcode served as file dropped", three, ans(entry(mbTrack2, "transcode", file("0"), ``), e3)},
-		{"an unknown protocol dropped", three, ans(entry(mbTrack2, "transcode", url(at("Tk1", "0", "master.m3u8"), "dash"), ``), e3)},
-		{"an hls stream of another mimeType, and a mimeType that isn't a string", three, ans(entry(mbTrack2, "transcode", `{"url":"`+at("Tk1", "0", "master.m3u8")+`","protocol":"hls","mimeType":"audio/mpeg"}`, ``), entry(mbTrack3, "transcode", `{"url":"`+at("Tk1", "1", "master.m3u8")+`","protocol":"hls","mimeType":7}`, ``), e4)},
-		{"a file stream with any mimeType kept", three, ans(entry(mbTrack2, "direct", `{"url":"`+at("Tk1", "0", "file")+`","protocol":"file","mimeType":"audio/flac"}`, ``), e3)},
-		{"durationMs at its bounds", three, ans(entry(mbTrack2, "direct", file("0"), `,"durationMs":0`), entry(mbTrack3, "direct", file("1"), `,"durationMs":86400000`))},
-		{"durationMs out of range: set to 0", three, ans(entry(mbTrack2, "direct", file("0"), `,"durationMs":86400001`), entry(mbTrack3, "direct", file("1"), `,"durationMs":-1`))},
-		{"durationMs that isn't an integer: absent", three, ans(entry(mbTrack2, "direct", file("0"), `,"durationMs":1.5`), entry(mbTrack3, "direct", file("1"), `,"durationMs":"1"`))},
-		{"with delivery file: only direct as file kept", req(`,"delivery":"file","queue":[` + t(mbTrack2) + `,` + t(mbTrack3) + `,` + t(mbTrack4) + `]`), ans(entry(mbTrack2, "remux", hls("0"), ``), entry(mbTrack3, "direct", hls("1"), ``), entry(mbTrack4, "direct", file("2"), ``))},
-		{"with delivery transcode: a direct entry dropped", req(`,"delivery":"transcode","queue":[` + t(mbTrack2) + `,` + t(mbTrack3) + `]`), ans(entry(mbTrack2, "direct", file("0"), ``), entry(mbTrack3, "transcode", hls("1"), ``))},
-		{"5 entries, local ones among them: places 0 to 4", req(`,"queue":[` + t(mbTrack2) + `,"track/local/T-1",` + t(mbTrack3) + `,` + t(mbTrack4) + `,"track/local/T-2"]`), ans(entry(mbTrack2, "transcode", hls("0"), ``), `{"title":"track/local/T-1","versionId":"L1","method":"direct","stream":`+file("1")+`}`, entry(mbTrack3, "direct", file("2"), ``), entry(mbTrack4, "direct", file("3"), ``), `{"title":"track/local/T-2","versionId":"L2","method":"transcode","stream":`+hls("4")+`}`)},
+		{"a missing method dropped", three, ans(`{"title":`+t(mbTrack2)+`,"versionId":"v1","protocol":"hls"}`, e3)},
+		{"a missing protocol dropped", three, ans(`{"title":`+t(mbTrack2)+`,"versionId":"v1","method":"direct"}`, e3)},
+		{"an unknown protocol dropped", three, ans(entry(mbTrack2, "v1", "transcode", "dash", ``), e3)},
+		{"without delivery, a file entry dropped: the baseline is HLS", three, ans(entry(mbTrack2, "v1", "direct", "file", ``), e3)},
+		{"an entry's stream, url and durationMs, as before proposal 17: ignored", three, ans(entry(mbTrack2, "v1", "transcode", "hls", `,"stream":{"url":"https://b.example.org/x","protocol":"file"},"durationMs":201000`), e3)},
+		{"the request's delivery file: only direct as file kept", req(`,"delivery":"file","queue":[` + e(mbTrack2, ``) + `,` + e(mbTrack3, ``) + `,` + e(mbTrack4, ``) + `]`), ans(entry(mbTrack2, "v1", "remux", "hls", ``), entry(mbTrack3, "v1", "direct", "hls", ``), entry(mbTrack4, "v1", "direct", "file", ``))},
+		{"the request's delivery transcode: a direct entry dropped", req(`,"delivery":"transcode","queue":[` + e(mbTrack2, ``) + `,` + e(mbTrack3, ``) + `]`), ans(entry(mbTrack2, "v1", "direct", "hls", ``), entry(mbTrack3, "v1", "transcode", "hls", ``))},
+		{"each entry checked against its own delivery, else the request's", mixed, ans(entry(mbTrack2, "v1", "direct", "file", ``), entry(mbTrack3, "c2", "remux", "hls", ``), entry(mbTrack4, "v1", "transcode", "hls", ``))},
+		{"an entry served by the request's delivery instead of its own dropped", mixed, ans(entry(mbTrack2, "v1", "transcode", "hls", ``), entry(mbTrack3, "c2", "transcode", "hls", ``), entry(mbTrack4, "v1", "remux", "hls", ``))},
+		{"an entry's own delivery file served as hls dropped", mixed, ans(entry(mbTrack2, "v1", "direct", "hls", ``), entry(mbTrack3, "c2", "remux", "file", ``))},
+		{"an entry playing another copy than its versionId dropped", mixed, ans(entry(mbTrack3, "c1", "remux", "hls", ``), entry(mbTrack4, "c9", "transcode", "hls", ``))},
+		{"5 entries, local ones among them", req(`,"queue":[` + e(mbTrack2, ``) + `,{"title":"track/local/T-1"},` + e(mbTrack3, ``) + `,` + e(mbTrack4, ``) + `,{"title":"track/local/T-2"}]`), ans(e2, `{"title":"track/local/T-1","versionId":"L1","method":"direct","protocol":"hls"}`, e3, e4, `{"title":"track/local/T-2","versionId":"L2","method":"transcode","protocol":"hls"}`)},
 		{"a queue in the answer to a request without one: every entry dropped", req(``), ans(e2)},
 	}
 	for _, c := range answers {
-		got, err := musicKeepQueueAnswer([]byte(c.request), []byte(c.text), musicStreamRoot)
+		got, err := musicKeepQueueAnswer([]byte(c.request), []byte(c.text))
 		ok, r := reason(err)
 		out = append(out, musicCallCase{Name: c.name, Kind: "answer", Request: c.request, Text: c.text, Valid: ok, Output: string(got), Reason: r})
 	}
@@ -513,35 +524,34 @@ func musicLyricsCases() []musicCallCase {
 		lines2001 = append(lines2001, fmt.Sprintf(`{"value":"%d"}`, i))
 	}
 	for i := 0; i < 9; i++ {
-		sets9 = append(sets9, fmt.Sprintf(`{"synced":false,"line":[{"value":"set %d"}]}`, i))
+		sets9 = append(sets9, fmt.Sprintf(`{"line":[{"value":"set %d"}]}`, i))
 	}
 	for _, c := range []musicIn{
-		{"plain lyrics", set(`{"synced":false,"line":[{"value":"Hello darkness"},{"value":""},{"value":"my old friend"}]}`)},
-		{"synced lyrics with every member", set(`{"lang":"en","kind":"main","synced":true,"offset":-250,"displayArtist":"Simon & Garfunkel","displayTitle":"The Boxer","line":[{"start":0,"value":"I am just a poor boy"},{"start":4210,"value":"Though my story's seldom told"}]}`)},
-		{"a translation and a pronunciation beside the main set", set(`{"lang":"en","synced":false,"line":[{"value":"a"}]},{"lang":"fr","kind":"translation","synced":false,"line":[{"value":"b"}]},{"lang":"ja-Latn","kind":"pronunciation","synced":false,"line":[{"value":"c"}]}`)},
-		{"lang kept only as a tag is sent", set(`{"lang":"fr-CA","synced":false,"line":[{"value":"a"}]},{"lang":"fre","synced":false,"line":[{"value":"b"}]},{"lang":"fr-ca","synced":false,"line":[{"value":"c"}]},{"lang":"und","synced":false,"line":[{"value":"d"}]},{"lang":7,"synced":false,"line":[{"value":"e"}]}`)},
-		{"a kind that isn't a token, or isn't a string: main", set(`{"kind":"Translation","synced":false,"line":[{"value":"a"}]},{"kind":2,"synced":false,"line":[{"value":"b"}]},{"kind":"","synced":false,"line":[{"value":"c"}]}`)},
-		{"an unknown kind token kept as it is, never turned into main", set(`{"kind":"romanization","synced":false,"line":[{"value":"a"}]},{"kind":"other","synced":false,"line":[{"value":"b"}]}`)},
-		{"offset at its bounds", set(`{"synced":true,"offset":-600000,"line":[{"start":0,"value":"a"}]},{"synced":true,"offset":600000,"line":[{"start":0,"value":"b"}]}`)},
-		{"offset out of range or not an integer: 0", set(`{"synced":true,"offset":600001,"line":[{"start":0,"value":"a"}]},{"synced":true,"offset":-600001,"line":[{"start":0,"value":"b"}]},{"synced":true,"offset":1.5,"line":[{"start":0,"value":"c"}]},{"synced":true,"offset":"10","line":[{"start":0,"value":"d"}]}`)},
-		{"displayArtist and displayTitle cleaned and cut", set(`{"synced":false,"displayArtist":" A\t\tB ` + strings.Repeat("a", 520) + `","displayTitle":"` + strings.Repeat("t", 257) + `","line":[{"value":"a"}]}`)},
-		{"displayArtist and displayTitle empty once cleaned or not strings: absent", set(`{"synced":false,"displayArtist":" ​ ","displayTitle":7,"line":[{"value":"a"}]}`)},
-		{"synced that isn't a boolean, or missing: the set skipped", set(`{"synced":"true","line":[{"value":"a"}]},{"line":[{"value":"b"}]},{"synced":false,"line":[{"value":"c"}]}`)},
-		{"a set that isn't an object skipped", set(`"x",{"synced":false,"line":[{"value":"c"}]}`)},
-		{"line values cleaned, kept when empty, cut to 512 code points", set(`{"synced":false,"line":[{"value":"  two\t\tspaces \u0007"},{"value":" ​ "},{"value":"` + strings.Repeat("é", 511) + `ab"}]}`)},
-		{"lines are text: markup kept as it is", set(`{"synced":false,"line":[{"value":"<b>loud</b> &amp; <script>x</script>"}]}`)},
-		{"a line whose value isn't a string, or that isn't an object, skipped", set(`{"synced":false,"line":[{"value":7},{"start":5},"x",{"value":"kept"}]}`)},
-		{"synced: lines without a start, or out of range, skipped", set(`{"synced":true,"line":[{"value":"no start"},{"start":-1,"value":"negative"},{"start":86400001,"value":"too late"},{"start":1.5,"value":"not an integer"},{"start":0,"value":"zero"},{"start":86400000,"value":"last"}]}`)},
-		{"synced: a start before the line before skipped, an equal one kept", set(`{"synced":true,"line":[{"start":1000,"value":"a"},{"start":999,"value":"before"},{"start":1000,"value":"same"},{"start":2000,"value":"b"}]}`)},
-		{"plain: start ignored", set(`{"synced":false,"line":[{"start":5000,"value":"a"},{"start":"x","value":"b"}]}`)},
-		{"at most 2,000 lines kept, the first", set(`{"synced":false,"line":[` + strings.Join(lines2001, ",") + `]}`)},
+		{"plain lyrics: no line carries start", set(`{"line":[{"value":"Hello darkness"},{"value":""},{"value":"my old friend"}]}`)},
+		{"synced lyrics: every line carries start", set(`{"lang":"en","kind":"main","line":[{"start":0,"value":"I am just a poor boy"},{"start":4210,"value":"Though my story's seldom told"}]}`)},
+		{"a set mixing lines with and without start: skipped", set(`{"line":[{"start":0,"value":"a"},{"value":"b"}]},{"line":[{"value":"kept"}]}`)},
+		{"a set mixing them, the line with start first or last: skipped either way", set(`{"line":[{"value":"a"},{"start":10,"value":"b"}]},{"line":[{"start":10,"value":"a"},{"start":20,"value":"b"},{"value":"c"}]},{"line":[{"start":0,"value":"kept"}]}`)},
+		{"synced, offset, displayArtist and displayTitle, as before proposal 17: ignored", set(`{"synced":true,"offset":-250,"displayArtist":"Simon & Garfunkel","displayTitle":"The Boxer","line":[{"start":0,"value":"a"},{"start":10,"value":"b"}]}`)},
+		{"synced true on lines without start: plain", set(`{"synced":true,"line":[{"value":"a"}]}`)},
+		{"synced false on lines with start: synced", set(`{"synced":false,"line":[{"start":5,"value":"a"}]}`)},
+		{"a translation and a pronunciation beside the main set", set(`{"lang":"en","line":[{"value":"a"}]},{"lang":"fr","kind":"translation","line":[{"value":"b"}]},{"lang":"ja-Latn","kind":"pronunciation","line":[{"value":"c"}]}`)},
+		{"lang kept only as a tag is sent", set(`{"lang":"fr-CA","line":[{"value":"a"}]},{"lang":"fre","line":[{"value":"b"}]},{"lang":"fr-ca","line":[{"value":"c"}]},{"lang":"und","line":[{"value":"d"}]},{"lang":7,"line":[{"value":"e"}]}`)},
+		{"a kind that isn't a token, or isn't a string: main", set(`{"kind":"Translation","line":[{"value":"a"}]},{"kind":2,"line":[{"value":"b"}]},{"kind":"","line":[{"value":"c"}]}`)},
+		{"an unknown kind token kept as it is, never turned into main", set(`{"kind":"romanization","line":[{"value":"a"}]},{"kind":"other","line":[{"value":"b"}]}`)},
+		{"a set that isn't an object skipped", set(`"x",{"line":[{"value":"c"}]}`)},
+		{"line values cleaned, kept when empty, cut to 512 code points", set(`{"line":[{"value":"  two\t\tspaces \u0007"},{"value":" ​ "},{"value":"` + strings.Repeat("é", 511) + `ab"}]}`)},
+		{"lines are text: markup kept as it is", set(`{"line":[{"value":"<b>loud</b> &amp; <script>x</script>"}]}`)},
+		{"a line whose value isn't a string, or that isn't an object, skipped before the set is judged", set(`{"line":[{"value":7},{"start":5},"x",{"value":"kept"}]},{"line":[{"start":0,"value":"a"},{"value":7},{"start":10,"value":"b"}]}`)},
+		{"synced: a start out of range or not an integer skips the line", set(`{"line":[{"start":-1,"value":"negative"},{"start":86400001,"value":"too late"},{"start":1.5,"value":"not an integer"},{"start":null,"value":"null"},{"start":"5","value":"a string"},{"start":0,"value":"zero"},{"start":86400000,"value":"last"}]}`)},
+		{"synced: a start before the line before skipped, an equal one kept", set(`{"line":[{"start":1000,"value":"a"},{"start":999,"value":"before"},{"start":1000,"value":"same"},{"start":2000,"value":"b"}]}`)},
+		{"at most 2,000 lines kept, the first", set(`{"line":[` + strings.Join(lines2001, ",") + `]}`)},
 		{"at most 8 sets kept, the first", set(strings.Join(sets9, ","))},
-		{"a set with no line left skipped", set(`{"synced":true,"line":[{"value":"no start"}]},{"synced":false,"line":[]},{"synced":false},{"synced":false,"line":{"value":"x"}},{"synced":false,"line":[{"value":"kept"}]}`)},
-		{"no set left: the fetch fails", set(`{"synced":true,"line":[{"value":"no start"}]}`)},
+		{"a set with no line left skipped", set(`{"line":[{"start":-1,"value":"bad start"}]},{"line":[]},{},{"line":{"value":"x"}},{"line":[{"value":"kept"}]}`)},
+		{"no set left: the fetch fails", set(`{"line":[{"start":0,"value":"a"},{"value":"b"}]}`)},
 		{"an empty structuredLyrics: the fetch fails", set(``)},
-		{"a structuredLyrics that isn't an array: the fetch fails", `{"structuredLyrics":{"synced":false,"line":[{"value":"a"}]}}`},
+		{"a structuredLyrics that isn't an array: the fetch fails", `{"structuredLyrics":{"line":[{"value":"a"}]}}`},
 		{"no structuredLyrics: the fetch fails", `{}`},
-		{"an answer that isn't an object: the fetch fails", `[{"synced":false,"line":[{"value":"a"}]}]`},
+		{"an answer that isn't an object: the fetch fails", `[{"line":[{"value":"a"}]}]`},
 	} {
 		got, err := musicKeepLyrics([]byte(c.text))
 		ok, r := reason(err)
@@ -555,15 +565,14 @@ func genV0Music() []byte {
 		About: []string{
 			"MSFP music part version 0, as revised by proposals 16 and 17 (spec/v0/music.md). Generated by tools/vectors; no implementation has produced them yet. The MBIDs are made up.",
 			"keys (music section 2): valid says whether the text is a music title key, under the mb or the local scheme; kind is the kind it names.",
-			"titles (music sections 3.2 and 3.3) and localTitles (catalog section 4.3, music section 2.2): text is one entry of a titles answer, as JSON; the caller asked for the libraries listed in libraries. valid false: the caller skips the title. valid true: output is what it keeps, members in this order: key, kind, library, name, sortName, artists, artistNames, primaryType, secondaryTypes, compilation, date, originalDate, genres, album, disc, number, copies, image, ids (its members sorted); absent members left out.",
-			"A kept copy's members, in this order: id, name, durationMs, container, codec, codecs, size, etag, added, bitrateKbps, sampleRate, bitDepth, channels, replayGain (trackGain, trackPeak, albumGain, albumPeak), lyrics. ReplayGain values are written as the shortest decimal of the rounded number (1.0 is written 1); no case holds an exact tie of rounding.",
-			"queue (music section 5.2): kind request: text is a play request, valid says whether the owning server accepts its title and queue (otherwise 400). kind answer: request is the play request, text the play answer from the owning server whose stream root is streamRoot; output is the queue the viewer's server keeps (an array, possibly empty), entries' members in this order: title, versionId, method, stream (url, protocol, mimeType), durationMs. Each entry's stream URL is <stream root><ticket>/queue/<n>/file or <stream root><ticket>/queue/<n>/master.m3u8, the ticket that of the answer's own stream URL, n the entry's place in the request's queue (0 to 4, decimal, no leading zeros). Only the queue member of the answer is judged here; playback's own members are playback.json's.",
-			"lyrics (music section 6): kind request: text is a lyrics request, valid says whether the owning server reads it (otherwise 400 invalid-request). kind answer: text is a lyrics answer; valid false: the fetch fails; valid true: output is what the viewer's server keeps, each set's members in this order: lang, kind, synced, offset, displayArtist, displayTitle, line (start, value); kind and offset always written.",
-			"Open values (spec/v0/core.md section 8.5): a copy's container and codec are tokens (1 to 32 characters of a-z 0-9 . _ -), ffmpeg's names or any other, kept as they are; one that isn't a token is dropped, and the copy, missing a required member, skipped. primaryType and each of secondaryTypes are MusicBrainz release-group types, lowercased, 1 to 32 characters of a-z 0-9 space . _ - /, no space at either end, kept as they are; any other value counts as absent (an entry of secondaryTypes skipped alone). codecs is an RFC 6381 string of 1 to 64 characters of A-Z a-z 0-9 . -; any other counts as absent. durationMs and bitrateKbps are kept exact.",
-			"Names are cleaned as spec/v0/core.md section 9.1 cleans a server's name, with 256 code points for name and sortName, 512 for artistNames, 64 for genres (a longer genre skipped, not cut), 64 for a copy's name, 512 and 256 for displayArtist and displayTitle, 512 for a lyrics line.",
+			"titles (music sections 3.2 and 3.3) and localTitles (catalog section 4.3, music section 2.2): text is one entry of a titles answer, as JSON; the caller asked for the libraries listed in libraries. valid false: the caller skips the title. valid true: output is what it keeps, members in this order: key, kind, library, name, artists, artistNames, primaryType, secondaryTypes, compilation, date, originalDate, genres, album, disc, number, copies, image, ids (its members sorted); absent members left out. A track's artists, artistNames, dates and genres are kept as sent: an absent one is its album's, which the caller doesn't fill in. ids are kept on mb albums (mbreleasegroup) and mb tracks (mbrecording) only.",
+			"A kept copy's members, in this order: id, durationMs, mediaType, codec, codecs, size, etag, sampleRate, bitDepth, channels, replayGain (trackGain, trackPeak, albumGain, albumPeak), lyrics; at most 16 copies. ReplayGain values are written as the shortest decimal of the rounded number (1.0 is written 1); no case holds an exact tie of rounding. A copy of codec aac or dts kept without codecs is one the viewer's server doesn't play as it is (core section 8.5).",
+			"queue (music section 5.2): kind request: text is a play request, valid says whether the owning server accepts its title and queue; reason starts with 400, or with 409 delivery-refused for a well-formed delivery or media type it doesn't make. Each queue entry is an object: title, optional versionId and delivery, with mediaType (remux) or transcode as the request's; the request's own delivery members and an entry's transcode targets are judged by playback.json's rules, not here. kind answer: request is the play request, text the play answer; output is the queue the viewer's server keeps (an array, possibly empty), entries' members in this order: title, versionId, method, protocol. An entry takes its own delivery, else the request's; with none, protocol is hls. Entries carry no URL: the viewer's server builds <stream root><ticket>/queue/<n>/file or <stream root><ticket>/queue/<n>/master.m3u8 from the answer's ticket and the entry's place n in the request's queue. Only the queue member of the answer is judged here; playback's own members are playback.json's.",
+			"lyrics (music section 6): kind request: text is a lyrics request, valid says whether the owning server reads it (otherwise 400 invalid-request). kind answer: text is a lyrics answer; valid false: the fetch fails; valid true: output is what the viewer's server keeps, each set's members in this order: lang, kind, line (start, value); kind always written. A set is synced when every line left carries start, plain when none does, skipped when they mix.",
+			"Open values (spec/v0/core.md section 8.5): a copy's mediaType is a media type (lowercase, one /, no parameters, each half starting with a letter or a digit, at most 127 characters of a-z 0-9 . + - _ /) and its codec a token (1 to 32 characters of a-z 0-9 . _ -), kept as they are, known or not; a malformed one is dropped, and the copy, missing a required member, skipped. primaryType and each of secondaryTypes are MusicBrainz release-group types, lowercased, 1 to 32 characters of a-z 0-9 space . _ - /, no space at either end, kept as they are; any other value counts as absent (an entry of secondaryTypes skipped alone). codecs is an RFC 6381 string of 1 to 64 characters of A-Z a-z 0-9 . -; any other counts as absent. durationMs is kept exact.",
+			"Names are cleaned as spec/v0/core.md section 9.1 cleans a server's name, with 256 code points for name, 512 for artistNames, 64 for genres (a longer genre skipped, not cut), 512 for a lyrics line.",
 		},
 		Libraries:   musicLibraries,
-		StreamRoot:  musicStreamRoot,
 		Keys:        musicKeyCases(),
 		Titles:      musicTitleCases(),
 		LocalTitles: musicLocalTitleCases(),
