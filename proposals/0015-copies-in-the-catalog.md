@@ -2,9 +2,10 @@
 
 Status: Proposed (2026-11-21), for the owner's review.
 Touches: [video section 3](../spec/v0/video.md#3-titles) (a new member,
-`copies`), [catalog section 3.1](../spec/v0/catalog.md#31-paging-and-ordering)
-(pages bounded by size too), the test vectors and the conformance suite.
-No new call, no new part.
+`copies`, with chapters), [catalog section 3.1](../spec/v0/catalog.md#31-paging-and-ordering)
+(pages bounded by size too), [video section 5.5](../spec/v0/video.md#55-seek-bar-previews)
+(previews before a first play: a new call, `previews`, if section 6 (a) is
+chosen), the test vectors and the conformance suite. No new part.
 
 A film or an episode in `titles` would describe its copies the way a
 media server needs them to build a library: each copy's length,
@@ -88,6 +89,8 @@ Copy:
 | `video` | stream, optional | its picture (below); absent for a copy whose picture isn't known |
 | `audioTracks` | array of track, optional | its audio tracks, at most 32 |
 | `subtitleTracks` | array of track, optional | the subtitle tracks `play` would list for it ([video section 5.4](../spec/v0/video.md#54-choosing-the-subtitles)), at most 64 |
+| `chapters` | array of chapter, optional | its chapters, in order of their start (section 5), at most 256 |
+| `previews` | boolean, optional | `true`: the owning server has seek-bar previews of it, to fetch with `previews` (section 6 (a)) |
 
 Video stream:
 
@@ -187,6 +190,52 @@ changes:
 - the caller already stops when `next` is absent: nothing changes on its
   side.
 
+### 5. Chapters
+
+A copy's chapters, as its file or its media server names them:
+
+| Field | Type | Content |
+|-------|------|---------|
+| `startMs` | integer | where the chapter starts, in the copy, from 0 to its `durationMs` |
+| `name` | string, optional | its name ("Opening", "Chapter 3"), plain text, at most 64 characters |
+
+The viewer's server keeps them in order, drops a chapter whose `startMs`
+is out of range or not after the one before (a repeated start is dropped),
+keeps the first 256, and shows them as its media server shows a local
+file's: marks on the seek bar, a chapter list, previous and next
+chapter. Chapter images aren't sent: a viewer's server that shows them
+takes them from the copy's seek-bar previews (section 6), or shows none.
+
+An owning server sends the chapters its media server knows of the copy
+(for Jellyfin, those it read from the file or a plugin gave it); none
+known, it leaves `chapters` out. A copy of several parts lists the
+chapters of all its parts, each part's shifted by the length of the
+parts before it.
+
+### 6. Seek-bar previews before a first play (decision)
+
+Today a copy's previews come only with a playback
+([video section 5.5](../spec/v0/video.md#55-seek-bar-previews)): a viewer's
+server gets them the first time someone plays the title, and its viewers
+see them from the second. Two ways:
+
+- **(a) A call for them, `previews`.** Its request names a title and a
+  version (`key`, `versionId`); its answer is the `trickplay` object of
+  video section 5.5, with sheet URLs under a ticket of its own that lives
+  10 minutes and is no playback: it doesn't count against `streams`,
+  starts no conversion, and gets no `progress` or `stop`. A viewer's
+  server asks it once per copy, after reading the title, and keeps the
+  sheets (some 30 to 300 KB per episode at 320 pixels). The owning
+  server answers `404` for a copy without previews, and may refuse with
+  `429` when asked too often (core section 8.3). `copies` says which
+  copies have previews: a `previews` member, `true`, on each.
+- **(b) No change.** Previews from the second time a title is opened, as
+  today.
+
+Recommended: (a). A viewer's first look at a title is where a missing
+seek-bar preview shows most, and the cost to the owning server is small
+and spread out (a few requests per title, once).
+
 ## Alternatives considered
 
 1. **The viewer's server remembers what the first `play` gave.** No
@@ -273,10 +322,12 @@ MSFP is version 0, a draft: no version number changes.
 5. **`audio`, `subtitles` and `video`**: keep them for good, or drop
    them once every implementation sends `copies`? Keeping them costs
    little and keeps a light reader light.
+6. **Chapters** (section 5): 256 and 64 characters enough?
+7. **Previews before a first play** (section 6): (a) or (b)?
 
 ## Recommendation
 
-Adopt sections 1 to 4. The catalog is where a media server builds its
+Adopt sections 1 to 5, and section 6 (a). The catalog is where a media server builds its
 library from, and a library needs each file's length, container,
 picture and tracks before anyone plays it. It should have been there
 from the start; version 0 is the time to add it.
