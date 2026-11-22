@@ -53,7 +53,7 @@ FAULTS = {
     "limits": ["PB10"],             # no stream limit (playback 6)
     "progress": ["PB5"],            # progress of a playback that isn't live answered 200 (playback 6.1)
     "query": ["M4"],                # media served with a query string (media 2)
-    "range": ["M9"],                # several ranges served as the first (media 2.1)
+    "range": ["F2"],                # several ranges served as the first (media 2.1)
     "vtt": ["M6"],                  # a WebVTT part served as it is, not rebuilt (video 6.3)
     "loopback": ["X1"],             # connects to a loopback address for a peer (core 3.3)
     "oldkey": ["O2"],               # still signs with the old key after the peer answered rotated (core 12.4)
@@ -61,6 +61,11 @@ FAULTS = {
     "badstop": ["VW1"],             # a stop with a negative position (playback 4)
     "groupforged": ["GR13"],        # a group event whose signature doesn't verify kept (groups 3.2)
     "mailforged": ["GM3"],          # a mail whose signature doesn't verify kept (groups 5)
+    "summary": ["T1"],              # a film with the title summary video 0 removed (video 3.2)
+    "etag": ["PB18"],               # a download's answer whose etag isn't the catalog's (playback 2.3)
+    "head": ["M4", "F4"],           # HEAD on media answered 404, not 405 (media 2.2)
+    "growing": ["M2"],              # a media playlist without EXT-X-ENDLIST (media 3.1)
+    "scancap": ["PB22"],            # a scan's reads past 32 MiB served (media 4.2)
 }
 
 
@@ -306,7 +311,7 @@ def end_to_end(verbose, faults=()):
         "--code", fake.make_code(), "--code2", fake.make_code(), "--group-code", fake.make_group_code(),
         "--address", "https://suite.example.org:%d" % port, "--listen", "127.0.0.1:%d" % port,
         "--connect", "127.0.0.1:%d" % fake.port, "--operator", "--operator-timeout", "20", "--accept-timeout", "20",
-        "--watch-changes", "20", "--watch-pause", "30", "--load", "--load-count", "150", "--uncallable-watch", "3", "--end"])
+        "--watch-changes", "20", "--watch-local", "20", "--watch-pause", "30", "--load", "--load-count", "150", "--uncallable-watch", "3", "--end"])
     out = sys.stdout if verbose else io.StringIO()
     report = Report(out=out, verbose=verbose)
     t0 = time.time()
