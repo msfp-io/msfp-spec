@@ -1,4 +1,4 @@
-<img src="logo.png" alt="" width="128" align="right">
+<img src="logo.png" alt="" width="64" align="left">
 
 # MSFP: Media Server Federation Protocol
 
