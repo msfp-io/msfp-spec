@@ -192,49 +192,92 @@ func verifyRevVideo(read func(string) []byte) []error {
 		case "request":
 			same("previews request", c, nil, checkVideoPreviewsRequest([]byte(c.Text)))
 		case "answer":
-			got, err := keepVideoPreviewsAnswer([]byte(c.Text), root)
+			got, err := keepVideoPreviewsAnswer([]byte(c.Text))
 			same("previews answer", c, got, err)
 			if !c.Valid {
 				continue
 			}
-			if again, err := keepVideoPreviewsAnswer([]byte(c.Output), root); err != nil || !bytes.Equal(again, []byte(c.Output)) {
+			if again, err := keepVideoPreviewsAnswer([]byte(c.Output)); err != nil || !bytes.Equal(again, []byte(c.Output)) {
 				bad("previews answer %q: keeping the output again gives %q, %v", c.Name, again, err)
 			}
-			var a struct{ Trickplay map[string]any }
+			var a map[string]any
 			_ = json.Unmarshal([]byte(c.Output), &a)
-			if t := a.Trickplay; t != nil {
-				n := func(k string) int64 { x, _ := t[k].(float64); return int64(x) }
-				sheets, _ := t["sheets"].([]any)
-				per := n("columns") * n("rows")
-				if per == 0 || int64(len(sheets)) != (n("tileCount")+per-1)/per || len(sheets) > 1000 ||
-					n("columns")*n("tileWidth") > 4096 || n("rows")*n("tileHeight") > 4096 {
-					bad("previews answer %q: kept previews out of bounds", c.Name)
-				}
-				for i, s := range sheets {
-					if u, _ := s.(string); !strings.HasPrefix(u, root) || !strings.HasSuffix(u, fmt.Sprintf("/trickplay/%d", i)) {
-						bad("previews answer %q: kept sheet %d isn't under the stream root at its index", c.Name, i)
-					}
-				}
+			form := regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+			if len(a) != 2 || !form.MatchString(str(a, "ticket")) || !form.MatchString(str(a, "etag")) {
+				bad("previews answer %q: kept %v, not a ticket and an etag in their forms", c.Name, a)
 			}
 		default:
 			bad("previews %q: side %q", c.Name, c.Side)
 		}
 	}
-	for _, c := range arrays["fontURLs"] {
-		got, err := keepVideoFonts([]byte(c.Text), root)
-		same("fontURLs", c, got, err)
+	var answerCopy string
+	_ = json.Unmarshal(f["answerCopy"], &answerCopy)
+	acv, _ := videoDecode([]byte(answerCopy))
+	acp, err := keepCopy(acv)
+	if err != nil {
+		bad("answerCopy: %v", err)
+		return errs
+	}
+	var ac map[string]any
+	_ = json.Unmarshal([]byte(answerCopy), &ac)
+	sheets := int64(0)
+	if l, ok := ac["previewLayout"].(map[string]any); ok {
+		n := func(k string) int64 { x, _ := l[k].(float64); return int64(x) }
+		sheets = (n("tileCount") + n("columns")*n("rows") - 1) / (n("columns") * n("rows"))
+	}
+	for _, c := range arrays["answers"] {
+		got, err := keepVideoAnswer([]byte(c.Text), acp, root)
+		same("answers", c, got, err)
 		if !c.Valid {
 			continue
 		}
-		var urls []string
-		_ = json.Unmarshal([]byte(c.Output), &urls)
-		if len(urls) > 64 {
-			bad("fontURLs %q: %d fonts kept", c.Name, len(urls))
+		var in, out map[string]any
+		_ = json.Unmarshal([]byte(c.Text), &in)
+		_ = json.Unmarshal([]byte(c.Output), &out)
+		base := root + str(in, "ticket") + "/"
+		subs, _ := out["subtitles"].([]any)
+		fonts, _ := out["fontCount"].(float64)
+		urls, _ := out["urls"].([]any)
+		if len(subs) > 64 || fonts < 0 || fonts > 64 {
+			bad("answers %q: %d subtitles or %v fonts kept", c.Name, len(subs), fonts)
 		}
-		for i, u := range urls {
-			if !strings.HasPrefix(u, root) || !strings.HasSuffix(u, fmt.Sprintf("/fonts/%d", i)) {
-				bad("fontURLs %q: kept font %d isn't under the stream root at its index", c.Name, i)
+		want := 0
+		for _, e := range subs {
+			m, _ := e.(map[string]any)
+			want++
+			if m["ass"] == true {
+				want++
+				if str(m, "form") != "text" {
+					bad("answers %q: ass kept on a picture track", c.Name)
+				}
 			}
+		}
+		if len(urls) != want+int(fonts)+int(sheets) {
+			bad("answers %q: %d URLs, not %d", c.Name, len(urls), want+int(fonts)+int(sheets))
+		}
+		name := regexp.MustCompile(`^(subtitles|pictures|ass)/s(0|[1-9][0-9]{0,2})$|^(fonts|trickplay)/(0|[1-9][0-9]*)$`)
+		for _, u := range urls {
+			s, _ := u.(string)
+			if rest, ok := strings.CutPrefix(s, base); !ok || !name.MatchString(rest) {
+				bad("answers %q: URL %q isn't built from the stream root, the ticket and a fixed name", c.Name, s)
+			}
+		}
+	}
+	required := map[string]bool{"h264": true, "hevc": true, "av1": true, "vp9": true, "aac": true, "dts": true}
+	for _, c := range arrays["codecs"] {
+		got, err := readVideoCodecs([]byte(c.Text))
+		same("codecs", c, got, err)
+		var in, out map[string]any
+		_ = json.Unmarshal([]byte(c.Text), &in)
+		_ = json.Unmarshal([]byte(c.Output), &out)
+		if c.Valid && required[str(in, "codec")] && str(out, "codecs") != str(in, "codecs") {
+			bad("codecs %q: a required codecs string not kept as it is", c.Name)
+		}
+		if !c.Valid && required[str(in, "codec")] && !strings.Contains(c.Reason, "can't play as it is") {
+			bad("codecs %q: refused without saying the copy can't play as it is", c.Name)
+		}
+		if b, ok := in["bitDepth"]; ok && c.Valid && out["bitDepth"] != b {
+			bad("codecs %q: bitDepth %v isn't the stream's own %v", c.Name, out["bitDepth"], b)
 		}
 	}
 	for _, c := range arrays["fontSets"] {
@@ -264,9 +307,13 @@ func videoCheckKeptTitle(out []byte, libs []string) []error {
 	bad := func(format string, a ...any) { errs = append(errs, fmt.Errorf(format, a...)) }
 	var t map[string]any
 	_ = json.Unmarshal(out, &t)
-	key, kind := str(t, "key"), str(t, "kind")
-	if videoKindOfForm(key) != kind {
-		bad("kept key %q isn't of the form of kind %q", key, kind)
+	key := str(t, "key")
+	kind := videoKindOfForm(key)
+	if kind == "" || kind == "two kinds" {
+		bad("kept key %q isn't of the form of one kind", key)
+	}
+	if _, ok := t["kind"]; ok {
+		bad("a kind kept on %q", key)
 	}
 	if !videoIn(str(t, "library"), libs) {
 		bad("kept library %q wasn't asked for", str(t, "library"))
@@ -308,7 +355,7 @@ func videoCheckKeptTitle(out []byte, libs []string) []error {
 			}
 		}
 	}
-	if _, ok := t["ids"]; ok && (strings.Contains(key, "/local/") || kind == "season" || kind == "extra") {
+	if _, ok := t["ids"]; ok && !(kind == "episode" && !strings.Contains(key, "/local/") || kind == "series" && strings.HasPrefix(key, "series/tvdb/")) {
 		bad("ids kept on a %s %q", kind, key)
 	}
 	if x, ok := t["extraType"]; ok != (kind == "extra") || ok && openTokenValue(x) == "" {
@@ -316,10 +363,6 @@ func videoCheckKeptTitle(out []byte, libs []string) []error {
 	}
 	name, hasName := t["name"].(string)
 	switch {
-	case kind == "extra":
-		if hasName && (name == "" || utf8.RuneCountInString(name) > 64) {
-			bad("an extra's name of %d characters", utf8.RuneCountInString(name))
-		}
 	case local && (kind == "movie" || kind == "series"):
 		if !hasName || name == "" || utf8.RuneCountInString(name) > 128 {
 			bad("a local title's name missing or over 128 characters")
@@ -346,6 +389,11 @@ func videoCheckKeptCopy(c map[string]any) []error {
 		errs = append(errs, fmt.Errorf("copy %q: "+format, append([]any{str(c, "id")}, a...)...))
 	}
 	n := func(m map[string]any, k string) (int64, bool) { x, ok := m[k].(float64); return int64(x), ok }
+	for _, k := range []string{"name", "container", "bitrateKbps", "added", "previews"} {
+		if _, ok := c[k]; ok {
+			bad("a dropped member %s kept", k)
+		}
+	}
 	d, _ := n(c, "durationMs")
 	if d < 0 || d > videoMaxDuration {
 		bad("durationMs %d", d)
@@ -353,22 +401,44 @@ func videoCheckKeptCopy(c map[string]any) []error {
 	if s, _ := n(c, "size"); s < 1 || s > videoMaxSize {
 		bad("size %d", s)
 	}
-	if !openToken(str(c, "container")) {
-		bad("container %q isn't a token", str(c, "container"))
+	if !videoMediaType(str(c, "mediaType")) {
+		bad("mediaType %q isn't a media type", str(c, "mediaType"))
 	}
-	if e, ok := c["edition"]; ok && openTokenValue(e) == "" {
-		bad("edition %v isn't a token", e)
+	for _, k := range []string{"edition", "threeD"} {
+		if e, ok := c[k]; ok && openTokenValue(e) == "" {
+			bad("%s %v isn't a token", k, e)
+		}
 	}
-	if utf8.RuneCountInString(str(c, "name")) > 64 {
-		bad("name over 64 characters")
-	}
-	if b, ok := n(c, "bitrateKbps"); ok && (b < 1 || b > 10_000_000) {
-		bad("bitrateKbps %d", b)
-	}
-	if s, ok := n(c, "startMs"); ok && (s < 0 || s > d) {
+	s, hasStart := n(c, "startMs")
+	if hasStart && (s < 0 || s > d) {
 		bad("startMs %d", s)
 	}
+	if e, ok := n(c, "endMs"); ok && (e <= s || e > d) {
+		bad("endMs %d not above startMs %d and at most durationMs", e, s)
+	}
+	if p, ok := c["parts"]; ok {
+		if x, isNum := p.(float64); !isNum || x < 2 || x > 16 {
+			bad("parts %v isn't a count from 2 to 16", p)
+		}
+	}
+	if l, ok := c["previewLayout"].(map[string]any); ok {
+		w, _ := n(l, "tileWidth")
+		h, _ := n(l, "tileHeight")
+		cols, _ := n(l, "columns")
+		rows, _ := n(l, "rows")
+		iv, _ := n(l, "intervalMs")
+		tc, _ := n(l, "tileCount")
+		if len(l) != 6 || w < 1 || w > 2048 || h < 1 || h > 2048 || cols < 1 || cols > 100 || rows < 1 || rows > 100 ||
+			iv < 100 || iv > 3_600_000 || tc < 1 || tc > 1000*cols*rows || cols*w > 4096 || rows*h > 4096 {
+			bad("previewLayout %v out of bounds", l)
+		}
+	}
 	if v, ok := c["video"].(map[string]any); ok {
+		for _, k := range []string{"codecTag", "profile", "level"} {
+			if _, ok := v[k]; ok {
+				bad("a dropped member %s kept on video", k)
+			}
+		}
 		if !openToken(str(v, "codec")) {
 			bad("video codec %q isn't a token", str(v, "codec"))
 		}
@@ -376,16 +446,40 @@ func videoCheckKeptCopy(c map[string]any) []error {
 		if len(hdr) > 8 {
 			bad("over 8 hdr entries")
 		}
-		last, dv := "", false
+		last := ""
 		for _, h := range hdr {
 			x, _ := h.(string)
 			if !openToken(x) || x <= last {
 				bad("hdr entry %q not a token, repeated or out of byte order", x)
 			}
-			last, dv = x, dv || x == "dv"
+			last = x
 		}
-		if _, ok := v["dv"]; ok && !dv {
-			bad("dv kept without dv in hdr")
+		if dv, ok := v["dv"].(map[string]any); ok {
+			p, _ := n(dv, "profile")
+			l, _ := n(dv, "level")
+			cp, _ := n(dv, "compatibility")
+			_, bl := dv["bl"]
+			_, rpu := dv["rpu"]
+			if p < 0 || p > 127 || l < 0 || l > 63 || cp < 0 || cp > 15 || bl || rpu {
+				bad("dv %v", dv)
+			}
+		}
+		if col, ok := v["colour"].(map[string]any); ok {
+			if len(col) == 0 {
+				bad("an empty colour kept")
+			}
+			for _, k := range []string{"primaries", "transfer", "matrix"} {
+				if x, ok := col[k]; ok {
+					if f, isNum := x.(float64); !isNum || f < 0 || f > 255 || f == 2 || f != float64(int64(f)) {
+						bad("colour %s %v isn't an H.273 code point", k, x)
+					}
+				}
+			}
+			if x, ok := col["fullRange"]; ok {
+				if _, isBool := x.(bool); !isBool {
+					bad("fullRange %v isn't a boolean", x)
+				}
+			}
 		}
 		if f, ok := v["fps"]; ok {
 			var a, b int64
@@ -399,8 +493,8 @@ func videoCheckKeptCopy(c map[string]any) []error {
 		if b, ok := n(v, "bitDepth"); ok && (b < 1 || b > 16) {
 			bad("bitDepth %d", b)
 		}
-		if p := str(v, "profile"); utf8.RuneCountInString(p) > 64 {
-			bad("profile over 64 characters")
+		if r, ok := n(v, "refFrames"); ok && (r < 1 || r > 16 || str(v, "codec") != "h264") {
+			bad("refFrames %d on %s", r, str(v, "codec"))
 		}
 	}
 	audio, _ := c["audioTracks"].([]any)
@@ -415,10 +509,15 @@ func videoCheckKeptCopy(c map[string]any) []error {
 		ids := map[string]bool{}
 		for _, e := range list {
 			m, _ := e.(map[string]any)
-			if ids[str(m, "id")] || utf8.RuneCountInString(str(m, "title")) > 64 || utf8.RuneCountInString(str(m, "profile")) > 64 {
-				bad("track %q repeated, or its title or profile over 64 characters", str(m, "id"))
+			if ids[str(m, "id")] {
+				bad("track %q repeated", str(m, "id"))
 			}
-			for _, k := range []string{"codec", "role", "format"} {
+			for _, k := range []string{"title", "profile", "layout", "fileIndex"} {
+				if _, ok := m[k]; ok {
+					bad("track %q: a dropped member %s kept", str(m, "id"), k)
+				}
+			}
+			for _, k := range []string{"codec", "role", "format", "objects"} {
 				if x, ok := m[k]; ok && openTokenValue(x) == "" {
 					bad("track %q: %s %v isn't a token", str(m, "id"), k, x)
 				}
@@ -443,7 +542,8 @@ func videoCheckKeptCopy(c map[string]any) []error {
 		m := e.(map[string]any)
 		s, _ := n(m, "startMs")
 		t, _ := n(m, "endMs")
-		if s < 0 || s >= t || t > d || openTokenValue(m["kind"]) == "" {
+		_, final := m["final"]
+		if s < 0 || s >= t || t > d || openTokenValue(m["kind"]) == "" || final {
 			bad("segment %v", m)
 		}
 	}
