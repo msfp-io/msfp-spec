@@ -2,7 +2,8 @@
 """The suite's self-test. Needs no server.
 
 1. The suite's readers against the vectors: vectors/v0/*.json (keys,
-   code, exchanges, rotation, revocation, strict, media, music) and the
+   code, exchanges, rotation, revocation, strict, media, video, playback,
+   music, groups) and the
    cases of vectors/history/test-draft-strict.json that core 0 section 17 says hold for
    core 0 (keys, signatures, base64url, dates, integers, JSON).
 2. The whole suite against an in-process fake version 0 server
@@ -30,8 +31,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from msfpconf import ed25519  # noqa: E402
-from msfpconf.content import music_vectors_ok  # noqa: E402
+from msfpconf import copies, media as mediarules  # noqa: E402
 from msfpconf.media import Refused, check_pgs, check_playlist, rebuild_vtt  # noqa: E402
+from msfpconf.music import music_vectors_ok  # noqa: E402
+from msfpconf.playback import playback_vectors_ok  # noqa: E402
 from msfpconf.wire import (Answer, Key, NotIJSON, answer_message, b64u, check_address, check_base,  # noqa: E402
                            check_destination, check_media_name, check_uncallable_address, commitment, decimal,
                            fingerprint, is_int, make_rotation, parse_code, parse_ijson, proof, read_revocation,
@@ -50,7 +53,7 @@ FAULTS = {
     "limits": ["PB10"],             # no stream limit (playback 6)
     "progress": ["PB5"],            # progress of a playback that isn't live answered 200 (playback 6.1)
     "query": ["M4"],                # media served with a query string (media 2)
-    "range": ["M9"],                # several ranges served as the first (media 2.1)
+    "range": ["F2"],                # several ranges served as the first (media 2.1)
     "vtt": ["M6"],                  # a WebVTT part served as it is, not rebuilt (video 6.3)
     "loopback": ["X1"],             # connects to a loopback address for a peer (core 3.3)
     "oldkey": ["O2"],               # still signs with the old key after the peer answered rotated (core 12.4)
@@ -58,6 +61,22 @@ FAULTS = {
     "badstop": ["VW1"],             # a stop with a negative position (playback 4)
     "groupforged": ["GR13"],        # a group event whose signature doesn't verify kept (groups 3.2)
     "mailforged": ["GM3"],          # a mail whose signature doesn't verify kept (groups 5)
+    "summary": ["T1"],              # a film with the title summary video 0 removed (video 3.2)
+    "etag": ["PB18"],               # a download's answer whose etag isn't the catalog's (playback 2.3)
+    "head": ["M4", "F4"],           # HEAD on media answered 404, not 405 (media 2.2)
+    "growing": ["M2"],              # a media playlist without EXT-X-ENDLIST (media 3.1)
+    "scancap": ["PB22"],            # a scan's reads past its cap served (media 4.2)
+    "scanfloor": ["PB22"],          # scans cut at the 4 MiB floor, not at the scanBytes announced (playback 5)
+    "tokens": ["PB24"],             # an unknown delivery token refused with 400, not 409 (core 8.5)
+    "remux": ["PB24"],              # a remux to matroska served, not refused (playback 2.7: mpegts or mp4)
+    "baseline": ["PB4"],            # the file served without delivery (playback 2.7: the baseline is HLS)
+    "renditions": ["PB17"],         # audioRenditions true in the answer, none in the playlist (playback 2.3)
+    "oldnames": ["T1"],             # a copy's container mkv, MSFP's old name, not ffmpeg's matroska (video 3.5)
+}
+# Faults in what the spec only recommends since proposal 17: the checks
+# named must still pass (a recommended default is a note, never a failure).
+DEFAULTS = {
+    "lastcopy": ["PB9", "T1"],      # the last copy plays without versionId, not the first (playback 2.6)
 }
 
 
@@ -114,6 +133,12 @@ def vectors():
         expect("destinations", c.get("text", ""), c["valid"], check_destination(c.get("text", "")) is None)
     for c in st["uncallableAddresses"]:
         expect("uncallableAddresses", c.get("text", ""), c["valid"], check_uncallable_address(c.get("text", "")) is None)
+
+    for c in st["openTokens"]:
+        expect("openTokens", c.get("text", ""), c["valid"], copies.token(c.get("text")) is not None)
+    from msfpconf.content import library_kind
+    for c in st["libraryKinds"]:
+        expect("libraryKinds", c["name"], c.get("kind"), library_kind(copies.loads(c["library"])))
 
     keys = load("v0", "keys.json")
     K = {}
@@ -174,8 +199,16 @@ def vectors():
         except Refused:
             out, ok = None, False
         expect("webvtt", c["name"], (c["valid"], c.get("output")), (ok, out if ok else None))
+    for c in media["ass"]:
+        raw = bytes.fromhex(c["hex"]) if "hex" in c else c.get("text", "").encode("utf-8", "surrogatepass")
+        try:
+            out, ok = mediarules.rebuild_ass(raw).decode(), True
+        except Refused:
+            out, ok = None, False
+        expect("ass", c["name"], (c["valid"], c.get("output")), (ok, out if ok else None))
+    audio_ids = ["a%d" % i for i in range(1, 41)]
     for c in media["hls"]:
-        expect("hls", c["name"], c["valid"], check_playlist(c.get("text", "").encode())[0] is None)
+        expect("hls", c["name"], c["valid"], check_playlist(c.get("text", "").encode(), audio_ids)[0] is None)
     for c in media["pgs"]:
         try:
             check_pgs(bytes.fromhex(c.get("hex", "")))
@@ -183,6 +216,71 @@ def vectors():
         except Refused:
             ok = False
         expect("pgs", c["name"], c["valid"], ok)
+    for c in media["fonts"]:
+        try:
+            got = mediarules.check_font(bytes.fromhex(c["hex"]))
+        except Refused:
+            got = None
+        expect("fonts", c["name"], c.get("type") if c["valid"] else None, got)
+    for c in media["ranges"]:
+        try:
+            got = mediarules.check_range(c["text"], c["size"])
+        except Refused:
+            got = None
+        expect("ranges", c["name"], (c["start"], c["end"]) if c["valid"] else None, got)
+    for c in media["fileAnswers"]:
+        why = mediarules.check_file_answer(c.get("range"), c["size"], c["etag"], c["status"], c.get("etagHeader"),
+                                           c.get("contentRange"), c.get("contentLength"))
+        expect("fileAnswers", c["name"], c["valid"], why is None)
+    for c in media["scans"]:
+        expect("scans", c["name"], (c["status"], c["contentRange"]), mediarules.scan_answer(c["sent"], c.get("range"), c["size"],
+                                                                                        c.get("scanBytes")))
+
+    video = load("v0", "video.json")
+    for group in ("titles", "extras", "localTitles"):
+        for c in video[group]:
+            try:
+                out, ok = copies.dumps(copies.keep_video_title(copies.loads(c["text"]), video["libraries"])), True
+            except ValueError:
+                out, ok = None, False
+            expect("video " + group, c["name"], (c["valid"], c.get("output")), (ok, out))
+    for c in video["copies"]:
+        try:
+            out, ok = copies.dumps(copies.keep_video_copy(copies.loads(c["text"]))), True
+        except ValueError:
+            out, ok = None, False
+        expect("video copies", c["name"], (c["valid"], c.get("output")), (ok, out))
+    for group in ("localKeys", "tvdbKeys"):
+        for c in video[group]:
+            k = copies.video_key(c["text"])
+            expect("video " + group, c["name"], c.get("kind") if c["valid"] else None, k.kind if k else None)
+    for c in video["previews"]:
+        if c["side"] == "request":
+            try:
+                o = copies.loads(c["text"])
+            except ValueError:
+                o = None
+            expect("video previews", c["name"], c["valid"], copies.check_previews_request(o) is None)
+            continue
+        try:
+            out, ok = copies.dumps(copies.keep_previews_answer(copies.loads(c["text"]), video["streamRoot"])), True
+        except ValueError:
+            out, ok = None, False
+        expect("video previews", c["name"], (c["valid"], c.get("output")), (ok, out))
+    for c in video["fontURLs"]:
+        try:
+            out, ok = copies.dumps(copies.keep_fonts(copies.loads(c["text"]), video["streamRoot"])), True
+        except ValueError:
+            out, ok = None, False
+        expect("video fontURLs", c["name"], (c["valid"], c.get("output")), (ok, out))
+    for c in video["fontSets"]:
+        try:
+            n, total = copies.check_font_set(copies.loads(c["text"]))
+            out, ok = '{"fonts":%d,"bytes":%d}' % (n, total), True
+        except ValueError:
+            out, ok = None, False
+        expect("video fontSets", c["name"], (c["valid"], c.get("output")), (ok, out))
+    bad += playback_vectors_ok(os.path.join(VEC, "v0", "playback.json"))
     bad += music_vectors_ok(os.path.join(VEC, "v0", "music.json"))
 
     # Groups: envelopes kept or not (section 3.2), the code's group, the
@@ -244,7 +342,7 @@ def end_to_end(verbose, faults=()):
         "--code", fake.make_code(), "--code2", fake.make_code(), "--group-code", fake.make_group_code(),
         "--address", "https://suite.example.org:%d" % port, "--listen", "127.0.0.1:%d" % port,
         "--connect", "127.0.0.1:%d" % fake.port, "--operator", "--operator-timeout", "20", "--accept-timeout", "20",
-        "--watch-changes", "20", "--watch-pause", "30", "--load", "--load-count", "150", "--uncallable-watch", "3", "--end"])
+        "--watch-changes", "20", "--watch-local", "20", "--watch-pause", "30", "--load", "--load-count", "150", "--uncallable-watch", "3", "--end"])
     out = sys.stdout if verbose else io.StringIO()
     report = Report(out=out, verbose=verbose)
     t0 = time.time()
@@ -295,11 +393,19 @@ def main():
     status = {r.id: r.status for r in report.results}
     missed = ["%s (fault %s): %s" % (cid, f, status.get(cid, "not run")) for f, ids in FAULTS.items() for cid in ids
               if status.get(cid) != "fail"]
+    _, _, _, report2, suite2 = end_to_end(verbose, faults=list(DEFAULTS))
+    status2 = {r.id: r.status for r in report2.results}
+    missed += ["%s (default %s, only recommended): %s, should pass with a note" % (cid, f, status2.get(cid, "not run"))
+               for f, ids in DEFAULTS.items() for cid in ids if status2.get(cid) != "pass"]
+    if not any("versionId" in t for _, t in suite2.defaults):
+        missed.append("lastcopy: no note of the recommended default not followed")
     if missed:
         print("the fake server with deliberate faults: these checks should have failed and didn't:\n" + "\n".join(missed))
         return 1
-    print("with %d deliberate faults in the fake server, the %d checks aimed at them all failed (%d checks in %.0f s)"
-          % (len(FAULTS), sum(len(v) for v in FAULTS.values()), n, took))
+    print("with %d deliberate faults in the fake server, the %d checks aimed at them all failed (%d checks in %.0f s); "
+          "with %d recommended defaults not followed, the %d checks concerned passed, with notes"
+          % (len(FAULTS), sum(len(v) for v in FAULTS.values()), n, took, len(DEFAULTS),
+             sum(len(v) for v in DEFAULTS.values())))
     return 0
 
 

@@ -25,7 +25,9 @@ from .wire import (CODE_PREFIX, VERSION, FED, H_DATE, H_KEY, H_NONCE, H_SIG, Ans
                    dumps, has_null, host_of, is_int, make_code, make_revocation, make_rotation,
                    parse_ijson, proof, read_pins, read_revocation, read_rotation, request_message,
                    split_hostport, spki_pin, unb64u)
-from .content import video_key
+from .copies import check_previews_request, token, valid_tag, video_key
+from .media import scan_cap
+from .music import check_lyrics_request, check_queue_request, music_key
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VEC = os.path.join(HERE, "..", "..", "vectors", "v0")
@@ -35,6 +37,10 @@ NEEDS = {"catalog": (), "media": (), "groups": (), "playback": ("catalog", "medi
          "video": ("catalog", "playback", "media"), "music": ("catalog", "playback", "media")}
 JPEG = (b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
         b"\xff\xc0\x00\x11\x08\x00\x5a\x00\xa0\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01\xff\xd9")
+
+
+PICTURES = ("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle")     # ffmpeg's names (video 3.5)
+TEXTS = ("subrip", "webvtt", "mov_text", "ttml", "ass", "ssa")
 
 
 def problem(status, typ, title, **extra):
@@ -68,6 +74,10 @@ class Peer:
         self.pull = None                # (old, new, nc): a rotation pulled by hello
         self.revoked = None             # a revoked Key, carried in hello answers
         self.calls = []                 # (time, bucket)
+        self.local = True               # its local titles shared with this peer (catalog 5)
+        self.offer_seq = 0              # the seq of the last change of what it is offered
+        self.downloads = []             # when its downloads started (playback 7)
+        self.scans = []                 # when its scans started (playback 8)
 
 
 class FakeServer:
@@ -101,19 +111,67 @@ class FakeServer:
                           {"id": "Ze8hJ1uQ5dF0gK3lP7oV2w", "name": "Séries", "kind": "tvshows"},
                           {"id": "Mu5c0R4nH8sT2vX6yB9eQa", "name": "Music", "kind": "music"}]
         L0, L1, L2 = (x["id"] for x in self.libraries)
+        FILE = 4 * 1024 * 1024 + 123
+
+        def copy(cid, name, height, etag, audio=("en",), subs=(), previews=False, parts=None, duration=7200000):
+            c = {"id": cid, "name": name, "durationMs": duration + 417, "container": "mp4", "size": FILE, "etag": etag}
+            if parts:
+                c["parts"] = [{"size": FILE - 1000, "durationMs": duration - 60000}, {"size": 1000, "durationMs": 60000}]
+            c["bitrateKbps"] = 4613
+            c["video"] = {"codec": "h264", "codecs": "avc1.640028", "profile": "High", "width": height * 16 // 9,
+                          "height": height, "bitDepth": 8, "colour": {"primaries": "bt709", "transfer": "bt709",
+                                                                     "matrix": "bt709", "range": "tv"},
+                          "fps": "24000/1001"}
+            c["audioTracks"] = [dict({"id": "a%d" % (i + 1), "language": lang, "channels": 6 if i == 0 else 2,
+                                      "codec": "aac", "codecs": "mp4a.40.2", "profile": "LC"},
+                                     **({"default": True} if i == 0 else {}))
+                                for i, lang in enumerate(audio)]
+            if subs:
+                c["subtitleTracks"] = [{"id": "s%d" % (i + 1), "language": lang, "format": fmt} for i, (lang, fmt) in enumerate(subs)]
+            if previews:
+                c["previews"] = True
+            return c
         self.titles = {
-            "movie/tmdb/550": {"kind": "movie", "library": L0, "audio": ["en", "fr"], "subtitles": ["en", "fr"], "ids": {"imdb": "tt0137523"}},
-            "movie/tmdb/603": {"kind": "movie", "library": L0, "audio": ["en"]},
+            "movie/tmdb/550": {"kind": "movie", "library": L0, "ids": {"imdb": "tt0137523"},
+                               **({"audio": ["en", "fr"]} if "summary" in self.faults else {}), "copies": [
+                copy("v_Kd8sQ2", "1080p", 1080, "f550a", ("en", "fr"), (("en", "subrip"), ("fr", "hdmv_pgs_subtitle"), ("en", "ass")), True),
+                copy("v_Pz4nW7", "720p", 720, "f550b", ("en", "fr")),
+                copy("v_Mp3aR9", "480p, two files", 480, "f550c", parts=True)]},
+            "movie/tmdb/550/x/Tr7aQ1": {"kind": "extra", "library": L0, "extraType": "trailer", "name": "Teaser",
+                                        "copies": [copy("x_1", "1080p", 1080, "x550", duration=120000)]},
+            "movie/tmdb/550/x/Th9sW2": {"kind": "extra", "library": L0, "extraType": "themesong", "name": "Theme",
+                                        "copies": [copy("x_2", "audio", 1080, "x550t", duration=60000)]},
+            "movie/tmdb/603": {"kind": "movie", "library": L0, "copies": [
+                dict(copy("v_Mx1", "1080p", 1080, "f603"), container="mkv") if "oldnames" in self.faults
+                else copy("v_Mx1", "1080p", 1080, "f603")]},
+            "movie/local/q3Zp0Lw8": {"kind": "movie", "library": L0, "name": "Summer 2019", "year": 2019, "image": True,
+                                     "local": True, "copies": [copy("h_1", "720p", 720, "loc1", duration=600000)]},
             "series/tmdb/1399": {"kind": "series", "library": L1, "ids": {"tvdb": "121361"}},
             "series/tmdb/1399/s1": {"kind": "season", "library": L1},
-            "series/tmdb/1399/e63056": {"kind": "episode", "library": L1, "audio": ["en"], "place": {"season": 1, "episode": 1}, "with": ["series/tmdb/1399/e63057"] if "with" not in self.faults else ["series/tmdb/1400/e1"]},
-            "series/tmdb/1399/e63057": {"kind": "episode", "library": L1, "audio": ["en"], "place": {"season": 1, "episode": 2}, "with": ["series/tmdb/1399/e63056"]},
-            "track/mb/0c000000-0000-4000-8000-000000000003": {"kind": "track", "library": L2, "name": "The Boxer",
+            "series/tmdb/1399/e63056": {"kind": "episode", "library": L1, "place": {"season": 1, "episode": 1},
+                                        "with": ["series/tmdb/1399/e63057"] if "with" not in self.faults else ["series/tmdb/1400/e1"],
+                                        "copies": [copy("e_1", "1080p", 1080, "ep12", duration=3600000)]},
+            "series/tmdb/1399/e63057": {"kind": "episode", "library": L1, "place": {"season": 1, "episode": 2},
+                                        "with": ["series/tmdb/1399/e63056"],
+                                        "copies": [dict(copy("e_1", "1080p", 1080, "ep12", duration=3600000), startMs=1800000)]},
+            "album/mb/0b000000-0000-4000-8000-000000000002": {"kind": "album", "library": L2, "name": "Bridge over Troubled Water",
                                                              "artists": ["artist/mb/0a000000-0000-4000-8000-000000000001"],
-                                                             "artistNames": "Simon & Garfunkel", "durationMs": 308000},
+                                                             "artistNames": "Simon & Garfunkel", "primaryType": "album",
+                                                             "secondaryTypes": ["compilation"]},
+            "artist/mb/0a000000-0000-4000-8000-000000000001": {"kind": "artist", "library": L2, "name": "Simon & Garfunkel"},
         }
+        for n, (name, lyr) in enumerate((("Bridge over Troubled Water", None), ("The Boxer", "synced"))):
+            c = {"id": "t_%d" % n, "durationMs": 308000, "container": "flac", "codec": "flac", "size": 2000000 + n,
+                 "etag": "tr%d" % n}
+            if lyr:
+                c["lyrics"] = lyr
+            self.titles["track/mb/0c000000-0000-4000-8000-00000000000%d" % (n + 3)] = {
+                "kind": "track", "library": L2, "name": name, "artists": ["artist/mb/0a000000-0000-4000-8000-000000000001"],
+                "artistNames": "Simon & Garfunkel", "album": "album/mb/0b000000-0000-4000-8000-000000000002",
+                "disc": 1, "number": n + 1, "copies": [c]}
         self.changes = {k: 1 for k in self.titles}
-        self.limits = {"streams": 2, "transcodes": 1, "bitrateKbps": 0}
+        self.limits = {"streams": 2, "transcodes": 1, "bitrateKbps": 0, "downloads": 1, "downloadsPerDay": 50,
+                       "downloadKbps": 2000, "scansPerDay": 100, "scanBytes": 4 * 1024 * 1024 + 64}
         self.peer_rate = (200.0, 400)   # calls a second, burst
         self.group = None               # the one group this server founded (make_group_code)
         self.httpd = self._serve()
@@ -363,9 +421,9 @@ class FakeServer:
         for p in list(self.peers.values()):
             if p.state != "paired" or not p.inbound:
                 continue
-            a = self.call(p, "play", {"title": "movie/tmdb/949", "capabilities": {"containers": ["mp4"],
-                                                                                    "videoCodecs": ["h264"],
-                                                                                    "audioCodecs": ["aac"]}})
+            # The suite's copy is H.264 and AAC in MP4, which this viewer
+            # plays as it is: it asks for the file (playback 2.7).
+            a = self.call(p, "play", {"title": "movie/tmdb/949", "delivery": "file"})
             if not a or a.status != 200 or not isinstance(a.json.get("id"), str):
                 return
             pid = a.json["id"]
@@ -390,10 +448,24 @@ class FakeServer:
     def op_change(self):
         with self.lock:
             self.seq += 1
-            self.titles["movie/tmdb/680"] = {"kind": "movie", "library": self.libraries[0]["id"], "audio": ["en"]}
+            self.titles["movie/tmdb/680"] = {"kind": "movie", "library": self.libraries[0]["id"], "copies": [
+                {"id": "v_680", "durationMs": 8340000, "container": "matroska", "size": 1000000, "etag": "f680",
+                 "audioTracks": [{"id": "a1", "language": "en", "codec": "aac"}]}]}
             self.changes["movie/tmdb/680"] = self.seq
             self.titles.pop("movie/tmdb/603", None)
             self.changes["movie/tmdb/603"] = self.seq
+
+    def _local(self, on):
+        with self.lock:
+            self.seq += 1
+            for p in self.peers.values():
+                p.local, p.offer_seq = on, self.seq
+
+    def op_local_off(self):
+        self._local(False)
+
+    def op_local_on(self):
+        self._local(True)
 
     def _rotate_own(self):
         old, new = self.key, self.next.pop(0)
@@ -465,10 +537,10 @@ class FakeServer:
                 srv.handle_get(self, head=True)
 
             def do_PUT(self):
-                srv.send(self, 405, b"")
+                srv.handle_get(self)
 
             def do_DELETE(self):
-                srv.send(self, 405, b"")
+                srv.handle_get(self)
 
         class Server(http.server.ThreadingHTTPServer):
             daemon_threads = True
@@ -512,6 +584,8 @@ class FakeServer:
         n = int(h.headers.get("Content-Length") or 0)
         body = h.rfile.read(n) if n else b""
         path = h.path
+        if path.startswith("/api/v1/stream/"):
+            return self.handle_get(h)
         if not path.startswith(FED) or "/" in path[len(FED):]:
             return self.send(h, 404, b"")
         call = path[len(FED):]
@@ -675,13 +749,19 @@ class FakeServer:
                 if "playback" in on:
                     out["limits"] = self.limits
                 return 200, dumps(out), sk
-            return self.titles_call(j, on, sk)
-        if call in ("play", "progress", "stop"):
+            return self.titles_call(peer, j, on, sk)
+        if call in ("play", "progress", "stop", "previews", "lyrics"):
             if "playback" not in on:
+                return 404, NS, sk
+            if call in ("previews", "lyrics") and ("video" if call == "previews" else "music") not in on:
                 return 404, NS, sk
             if not isinstance(j, dict) or has_null(j):
                 return 400, BAD, sk
             return getattr(self, call)(peer, j, on, sk)
+        if call == "image":
+            if "catalog" not in on:
+                return 404, NS, sk
+            return self.image(peer, j, on, sk)
         return None, b"", None
 
     def pair(self, key, peer, j):
@@ -826,7 +906,7 @@ class FakeServer:
         self.peers[new] = peer
         return 200, dumps({"state": "rotated"}), sk
 
-    def titles_call(self, j, on, sk):
+    def titles_call(self, peer, j, on, sk):
         libs, after, since = j.get("libraries"), j.get("after", ""), j.get("since", 0)
         if not isinstance(libs, list) or any(not isinstance(x, str) for x in libs):
             return 404, NF, sk
@@ -836,179 +916,447 @@ class FakeServer:
 
         def shown(k, t):
             part = "video" if video_key(k) else "music"
-            return part in on and t["library"] in libs and t["library"] in offered
+            return part in on and t["library"] in libs and t["library"] in offered and (peer.local or not t.get("local"))
 
-        if 0 < since <= self.seq or ("since" in self.faults and since > self.seq):
+        if (0 < since <= self.seq and since >= peer.offer_seq) or ("since" in self.faults and since > self.seq):
             keys = sorted((k for k, s in self.changes.items() if s > since), key=str.encode)
-            titles = [dict(self.titles[k], key=k) for k in keys if k in self.titles and shown(k, self.titles[k])]
+            titles = [self._shown(dict(self.titles[k], key=k)) for k in keys if k in self.titles and shown(k, self.titles[k])]
             gone = [k for k in keys if k not in self.titles]
-            return 200, dumps({"titles": [self._order(t) for t in titles], "gone": gone, "changes": True, "seq": self.seq}), sk
+            return 200, dumps({"titles": titles, "gone": gone, "changes": True, "seq": self.seq}), sk
         keys = sorted((k for k, t in self.titles.items() if shown(k, t) and k.encode() > after.encode()), key=str.encode)
         page = keys[:5000]
-        out = {"titles": [self._order(dict(self.titles[k], key=k)) for k in page], "seq": self.seq}
+        out = {"titles": [self._shown(dict(self.titles[k], key=k)) for k in page], "seq": self.seq}
         if len(page) == 5000 and len(keys) > 5000:
             out["next"] = page[-1]
         return 200, dumps(out), sk
 
     @staticmethod
-    def _order(t):
+    def _shown(t):
         return dict([("key", t["key"]), ("kind", t["kind"]), ("library", t["library"])] +
-                    [(k, v) for k, v in t.items() if k not in ("key", "kind", "library")])
+                    [(k, v) for k, v in t.items() if k not in ("key", "kind", "library", "local")])
 
-    # ---- playback -----------------------------------------------------------------------------
+    # ---- playback (playback 2-8, video 5, music 5) ----------------------------------------------
+
+    def _copies(self, key):
+        t = self.titles.get(key)
+        return t.get("copies", []) if t else []
+
+    def play_refusal(self, j, on):
+        """Playback 2.2 step 1, video 5.1, music 5.2: None, or why it is a 400."""
+        t = j.get("title")
+        if not isinstance(t, str):
+            return "title"
+        vk, mk = video_key(t), music_key(t)
+        if not ((vk and vk.kind in ("movie", "episode", "extra") and "video" in on) or (mk == "track" and "music" in on)):
+            return "a key play doesn't take"
+        purpose, delivery = j.get("purpose", "play"), j.get("delivery")
+        # Core 8.5: a value that isn't a token is malformed (400); an
+        # unknown token in delivery, container or a codec is 409 later.
+        if purpose not in ("play", "download", "scan") or ("delivery" in j and token(delivery) is None):
+            return "purpose or delivery"
+        if "tokens" in self.faults and "delivery" in j and delivery not in ("file", "remux", "transcode"):
+            return "an unknown delivery refused as malformed"
+        known = delivery in ("file", "remux", "transcode")
+        if "container" in j and (delivery != "remux" or token(j["container"]) is None):
+            return "container"
+        if delivery == "remux" and "container" not in j:
+            return "container"
+        tr = j.get("transcode")
+        if "transcode" in j:
+            if delivery != "transcode" or not isinstance(tr, dict):
+                return "transcode"
+            for f, ok in (("videoCodec", lambda v: token(v) is not None), ("audioCodec", lambda v: token(v) is not None),
+                          ("maxHeight", lambda v: is_int(v) and v in (480, 720, 1080, 1440, 2160, 4320)),
+                          ("maxBitrateKbps", lambda v: is_int(v) and 1000 <= v <= 10000000 and v % 1000 == 0),
+                          ("audioChannels", lambda v: is_int(v) and v in (2, 6, 8)),
+                          ("burnSubtitle", lambda v: isinstance(v, str))):
+                if f in tr and not ok(tr[f]):
+                    return "transcode." + f
+        if purpose == "download" and (known or delivery is None) and not (
+                delivery == "file" or (delivery == "transcode" and isinstance(tr, dict)
+                                       and ("maxHeight" in tr or "maxBitrateKbps" in tr))):
+            return "download's delivery"
+        if purpose == "scan" and (known or delivery is None) and delivery != "file":
+            return "scan's delivery"
+        if "audioRenditions" in j and not isinstance(j["audioRenditions"], bool):
+            return "audioRenditions"
+        for f, hi in (("startPositionMs", 8640000000), ("maxBitrateKbps", 10000000)):
+            if f in j and not (is_int(j[f]) and 0 <= j[f] <= hi):
+                return f
+        for f in ("audioLanguage", "subtitleLanguage"):
+            if f in j and not valid_tag(j[f]):
+                return f
+        if "versionId" in j and not isinstance(j["versionId"], str):
+            return "versionId"
+        if "queue" in j and check_queue_request(j):
+            return "queue"
+        return None
 
     def play(self, peer, j, on, sk):
-        t = j.get("title")
-        tag = re.compile(r"[A-Za-z0-9-]{1,12}")
-        if not isinstance(t, str):
+        why = self.play_refusal(j, on)
+        if why:
             return 400, BAD, sk
-        vk = video_key(t)
-        mk = re.fullmatch(r"track/mb/[0-9a-f-]{36}", t)
-        if not ((vk and vk[0] in ("movie", "episode") and "video" in on) or (mk and "music" in on)):
-            return 400, BAD, sk
-        for f, lo, hi in (("startPositionMs", 0, 8640000000), ("maxBitrateKbps", 0, 10000000)):
-            if f in j and not (is_int(j[f]) and lo <= j[f] <= hi):
-                return 400, BAD, sk
-        for f in ("audioLanguage", "subtitleLanguage"):
-            if f in j and not (isinstance(j[f], str) and tag.fullmatch(j[f])):
-                return 400, BAD, sk
-        if "versionId" in j and not isinstance(j["versionId"], str):
-            return 400, BAD, sk
-        caps = j.get("capabilities", {})
-        if not isinstance(caps, dict):
-            return 400, BAD, sk
-        for f in ("containers", "audioCodecs", "videoCodecs", "hdr", "subtitles"):
-            if f in caps and (not isinstance(caps[f], list) or any(not isinstance(x, str) for x in caps[f])):
-                return 400, BAD, sk
-        if self.limits["streams"] == 0:
-            return 409, problem(409, "stream-limit-reached", "Too many streams on this account"), sk
-        if t not in self.titles:
+        t, purpose, delivery = j["title"], j.get("purpose", "play"), j.get("delivery")
+        lim = self.limits
+        busy = problem(409, "stream-limit-reached", "Too many streams on this account")
+        if {"play": lim["streams"], "download": lim["downloads"], "scan": lim["scansPerDay"]}[purpose] == 0:
+            return 409, busy, sk
+        copies = self._copies(t)
+        if t not in self.titles or not copies or (self.titles[t]["library"] not in {x["id"] for x in self.libraries}):
             return 404, NF, sk
-        if "audioTrack" in j and not (isinstance(j["audioTrack"], str) and re.fullmatch(r"a[0-9]{1,3}", j["audioTrack"])):
+        if self.titles[t].get("local") and not peer.local:
+            return 404, NF, sk
+        cp = next((c for c in copies if c["id"] == j.get("versionId")), None)
+        if cp is None and j.get("audioLanguage"):
+            cp = next((c for c in copies if any(a.get("language") == j["audioLanguage"] for a in c["audioTracks"])), None)
+        cp = cp or (copies[-1] if "lastcopy" in self.faults else copies[0])
+        tr = j.get("transcode") or {}
+        for f, rx in (("audioTrack", r"a(0|[1-9][0-9]{0,2})"), ("subtitleTrack", r"s(0|[1-9][0-9]{0,2})|off")):
+            if f in j and not (isinstance(j[f], str) and re.fullmatch(rx, j[f])):
+                return 400, BAD, sk
+        if "burnSubtitle" in tr and not re.fullmatch(r"s(0|[1-9][0-9]{0,2})", tr["burnSubtitle"]):
             return 400, BAD, sk
-        if "subtitleTrack" in j and not (isinstance(j["subtitleTrack"], str) and re.fullmatch(r"s[0-9]{1,3}|off", j["subtitleTrack"])):
-            return 400, BAD, sk
-        versions = [{"id": "v_Kd8sQ2", "name": "1080p"}, {"id": "v_Pz4nW7", "name": "720p"}]
-        vid = j.get("versionId") if j.get("versionId") in [v["id"] for v in versions] else versions[0]["id"]
-        audio = [{"id": "a1", "label": "English", "language": "en", "channels": 6, "default": True},
-                 {"id": "a2", "label": "Français", "language": "fr", "channels": 2}]
-        at = j.get("audioTrack")
-        if at not in ("a1", "a2"):
-            at = next((x["id"] for x in audio if j.get("audioLanguage") and x["language"].split("-")[0] ==
-                       j["audioLanguage"].lower().split("-")[0]), "a1")
-        caps_all = set(caps.get("containers", [])) & {"mp4", "mkv"} and "h264" in caps.get("videoCodecs", [])
-        method = "direct" if caps_all else "transcode"
+        now = time.time()
         mine = [p for p in self.playbacks.values() if p["peer"] is peer and p["live"]]
-        if len(mine) >= self.limits["streams"] and "limits" not in self.faults:
-            return 409, problem(409, "stream-limit-reached", "Too many streams on this account"), sk
-        if method == "transcode" and sum(1 for p in mine if p["method"] == "transcode") >= self.limits["transcodes"]:
+        if purpose == "play" and len([p for p in mine if p["purpose"] == "play"]) >= lim["streams"] and "limits" not in self.faults:
+            return 409, busy, sk
+        if purpose == "download" and (len([p for p in mine if p["purpose"] == "download"]) >= lim["downloads"] or
+                                      len([x for x in peer.downloads if x > now - 86400]) >= lim["downloadsPerDay"]):
+            return 409, busy, sk
+        if purpose == "scan" and len([x for x in peer.scans if x > now - 86400]) >= lim["scansPerDay"]:
+            return 409, busy, sk
+        refused = problem(409, "delivery-refused", "Delivery refused")
+        if delivery == "file" and len(cp.get("parts") or []) > 1:
+            return 409, refused, sk
+        subs = cp.get("subtitleTracks") or []
+        if "burnSubtitle" in tr and tr["burnSubtitle"] not in [s["id"] for s in subs]:
+            return 409, refused, sk
+        # Step 7: a delivery, container or codec it doesn't make (core 8.5).
+        if delivery is not None and delivery not in ("file", "remux", "transcode"):
+            return 409, refused, sk
+        if delivery == "remux" and j["container"] not in ("mpegts", "mp4") and "remux" not in self.faults:
+            return 409, refused, sk
+        if tr.get("videoCodec", "h264") not in ("h264", "hevc") or tr.get("audioCodec", "aac") not in ("aac", "ac3", "eac3"):
+            return 409, refused, sk
+        if delivery:
+            method = {"file": "direct", "remux": "remux", "transcode": "transcode"}[delivery]
+        else:
+            # The baseline (playback 2.7): H.264 and AAC in HLS. Its copies
+            # already are, so they are remuxed, never sent as the file.
+            v = cp.get("video") or {}
+            plain = (not video_key(t) or v.get("codec") == "h264") and all(
+                a.get("codec") == "aac" and a.get("channels", 2) <= 2 for a in cp.get("audioTracks") or [])
+            method = "remux" if plain else "transcode"
+            if "baseline" in self.faults and "startPositionMs" in j and len(cp.get("parts") or []) < 2:
+                method = "direct"
+        if purpose == "play" and method == "transcode" and \
+                sum(1 for p in mine if p["method"] == "transcode" and p["purpose"] == "play") >= lim["transcodes"]:
             return 503, problem(503, "server-busy", "The server is busy; try again shortly"), sk
-        pid = "play_" + b64u(os.urandom(20)).lower().replace("-", "a").replace("_", "b")[:26]
-        pid = "play_" + "".join(ch if ch in "abcdefghijklmnopqrstuvwxyz234567" else "q" for ch in pid[5:])
+        pid = "play_" + "".join("abcdefghijklmnopqrstuvwxyz234567"[b % 32] for b in os.urandom(26))
         ticket = b64u(os.urandom(24))
         root = self.address + "/api/v1/stream/" + ticket + "/"
-        out = {"id": pid, "method": method,
-               "stream": {"url": root + ("file" if method == "direct" else "master.m3u8"),
-                          "protocol": "file" if method == "direct" else "hls"},
-               "positionMs": j.get("startPositionMs", 0), "durationMs": 7200000, "versions": versions, "versionId": vid,
-               "audioTracks": audio, "audioTrack": at, "maxBitrateKbps": 120000}
-        if vk:
-            subs = [{"id": "s1", "label": "English", "language": "en", "url": root + "subtitles/s1"},
-                    {"id": "s2", "label": "Français", "language": "fr", "pictures": True, "url": root + "pictures/s2"}]
+        proto = "file" if method == "direct" else "hls"
+        out = {"id": pid, "method": method, "stream": {"url": root + ("file" if proto == "file" else "master.m3u8"),
+                                                       "protocol": proto},
+               "etag": cp["etag"] + ("x" if "etag" in self.faults and purpose == "download" else ""), "positionMs": j.get("startPositionMs", 0) if purpose == "play" else 0,
+               "durationMs": cp["durationMs"], "versionId": cp["id"]}
+        if proto == "hls":
+            out["stream"]["mimeType"] = "application/vnd.apple.mpegurl"
+        audio = [dict((f, a[f]) for f in ("id", "language", "channels", "default") if f in a)
+                 for a in cp.get("audioTracks") or [{"id": "a0", "channels": 2}]]
+        at = j.get("audioTrack")
+        if at not in [a["id"] for a in audio]:
+            at = next((a["id"] for a in audio if j.get("audioLanguage") and a.get("language") == j["audioLanguage"]),
+                      next((a["id"] for a in audio if j.get("audioLanguage") and a.get("language", "").split("-")[0] ==
+                            j["audioLanguage"].split("-")[0]), audio[0]["id"] if audio else None))
+        out["audioTracks"] = audio
+        # Audio renditions when asked and served as HLS (playback 2.3).
+        out["audioRenditions"] = proto == "hls" and j.get("audioRenditions") is True
+        made = out["audioRenditions"] and "renditions" not in self.faults
+        if at:
+            out["audioTrack"] = at
+        if video_key(t):
+            listed = []
+            for s in subs:
+                e = {"id": s["id"], "language": s["language"], "format": s["format"]}
+                if s["format"] in PICTURES:
+                    e["url"] = root + "pictures/" + s["id"]
+                elif s["format"] in TEXTS:
+                    e["url"] = root + "subtitles/" + s["id"]
+                if s["format"] in ("ass", "ssa"):
+                    e["assUrl"] = root + "ass/" + s["id"]
+                listed.append(e)
             st = j.get("subtitleTrack")
-            if st not in ("s1", "s2", "off"):
-                st = next((x["id"] for x in subs if j.get("subtitleLanguage") and x["language"] ==
-                           j["subtitleLanguage"].lower().split("-")[0]), None)
-            out.update({"subtitleTracks": subs, "subtitleStretchSeconds": 120,
-                        "segments": [{"kind": "intro", "startMs": 0, "endMs": 30000}],
-                        "trickplay": {"tileWidth": 160, "tileHeight": 90, "columns": 10, "rows": 10, "intervalMs": 10000,
-                                      "tileCount": 50, "sheets": [root + "trickplay/0"]}})
+            if st not in [s["id"] for s in subs] + ["off"]:
+                st = next((s["id"] for s in subs if j.get("subtitleLanguage") and s["language"] == j["subtitleLanguage"]), None)
+            if listed:
+                out["subtitleTracks"] = listed
             if st and st != "off":
                 out["subtitleTrack"] = st
-        self.playbacks[pid] = {"peer": peer, "live": True, "method": method, "ticket": ticket}
+            if any(s["format"] in ("ass", "ssa") for s in subs):
+                out["fonts"] = [root + "fonts/0"]
+            if cp.get("previews"):
+                out["trickplay"] = dict(self.TRICKPLAY, sheets=[root + "trickplay/0"])
+        queue = []
+        for n, qk in enumerate(j.get("queue") or []):
+            qc = self._copies(qk)
+            if not qc:
+                continue
+            qproto = "file" if method == "direct" else "hls"
+            e = {"title": qk, "versionId": qc[0]["id"], "method": method,
+                 "stream": {"url": root + "queue/%d/%s" % (n, "file" if qproto == "file" else "master.m3u8"),
+                            "protocol": qproto}, "durationMs": qc[0]["durationMs"]}
+            queue.append(e)
+        if j.get("queue") is not None:
+            out["queue"] = queue
+        self.playbacks[pid] = {"peer": peer, "live": True, "method": method, "ticket": ticket, "purpose": purpose,
+                               "copy": cp, "title": t, "queue": [e["title"] for e in queue], "proto": proto,
+                               "renditions": made, "sent": 0, "played": now,
+                               "kind": "playback"}
+        if purpose == "download":
+            peer.downloads.append(now)
+        if purpose == "scan":
+            peer.scans.append(now)
         self.tickets[ticket] = pid
         return 200, dumps(out), sk
 
-    def progress(self, peer, j, on, sk):
+    def _report_refusal(self, j, call):
         pid = j.get("id")
-        if not isinstance(pid, str) or not re.fullmatch(r"play_[a-z2-7]{26}", pid):
-            return 400, BAD, sk
+        if not isinstance(pid, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", pid):
+            return True
         if "positionMs" in j and not (is_int(j["positionMs"]) and 0 <= j["positionMs"] <= 8640000000):
+            return True
+        if call == "progress" and "paused" in j and not isinstance(j["paused"], bool):
+            return True
+        now = time.time()
+        if "at" in j and not (is_int(j["at"]) and now - 30 * 86400 <= j["at"] <= now + 300):
+            return True
+        if "title" in j:
+            p = self.playbacks.get(pid)
+            if not isinstance(j["title"], str) or (p and j["title"] != p["title"] and j["title"] not in p["queue"]):
+                return True
+        return False
+
+    def progress(self, peer, j, on, sk):
+        if self._report_refusal(j, "progress"):
             return 400, BAD, sk
-        if "paused" in j and not isinstance(j["paused"], bool):
-            return 400, BAD, sk
-        p = self.playbacks.get(pid)
+        p = self.playbacks.get(j["id"])
+        if p and p["peer"] is peer and not p["live"] and p["purpose"] == "download" and "at" in j \
+                and time.time() <= p["played"] + 30 * 86400:
+            return 200, b"{}", sk
         if (not p or not p["live"] or p["peer"] is not peer) and "progress" not in self.faults:
             return 410, problem(410, "playback-stopped", "Playback was stopped"), sk
         return 200, b"{}", sk
 
     def stop(self, peer, j, on, sk):
-        pid = j.get("id")
-        if not isinstance(pid, str) or not re.fullmatch(r"play_[a-z2-7]{26}", pid):
+        if self._report_refusal(j, "stop"):
             return 400, BAD, sk
-        if "positionMs" in j and not (is_int(j["positionMs"]) and 0 <= j["positionMs"] <= 8640000000):
-            return 400, BAD, sk
-        p = self.playbacks.get(pid)
+        p = self.playbacks.get(j["id"])
         if p and p["peer"] is peer:
             p["live"] = False
         return 200, b"{}", sk
 
-    # ---- media (media 2, 3; video 6) ----------------------------------------------------------
+    TRICKPLAY = {"tileWidth": 160, "tileHeight": 90, "columns": 10, "rows": 10, "intervalMs": 10000, "tileCount": 50}
+
+    def _ticket(self, peer, kind, **extra):
+        ticket = b64u(os.urandom(24))
+        pid = "t_" + ticket
+        self.playbacks[pid] = dict({"peer": peer, "live": True, "kind": kind, "purpose": kind, "until": time.time() + 600,
+                                    "ticket": ticket, "method": None}, **extra)
+        self.tickets[ticket] = pid
+        return self.address + "/api/v1/stream/" + ticket + "/"
+
+    def previews(self, peer, j, on, sk):
+        if "video" not in on:
+            return 404, NS, sk
+        if check_previews_request(j):
+            return 400, BAD, sk
+        cp = next((c for c in self._copies(j["title"]) if c["id"] == j["versionId"]), None)
+        if cp is None or not cp.get("previews"):
+            return 404, NF, sk
+        root = self._ticket(peer, "previews")
+        return 200, dumps({"trickplay": dict(self.TRICKPLAY, sheets=[root + "trickplay/0"])}), sk
+
+    def image(self, peer, j, on, sk):
+        if not ({"video", "music"} & on):
+            return 404, NS, sk
+        if not isinstance(j, dict) or not isinstance(j.get("title"), str):
+            return 400, BAD, sk
+        t = self.titles.get(j["title"])
+        if not t or not t.get("local") or not peer.local or t.get("image") is not True:
+            return 404, NF, sk
+        return 200, dumps({"url": self._ticket(peer, "image") + "image"}), sk
+
+    def lyrics(self, peer, j, on, sk):
+        if "music" not in on:
+            return 404, NS, sk
+        if check_lyrics_request(j):
+            return 400, BAD, sk
+        cp = next((c for c in self._copies(j["title"]) if c["id"] == j["versionId"]), None)
+        if cp is None or cp.get("lyrics") not in ("plain", "synced"):
+            return 404, NF, sk
+        return 200, dumps({"structuredLyrics": [{"lang": "en", "synced": True, "line": [
+            {"start": 0, "value": "I am just a poor boy"}, {"start": 4000, "value": ""}]}]}), sk
+
+    # ---- media (media 2, 3, 4; video 6) ----------------------------------------------------------
+
+    def _master(self, p):
+        lines = ["#EXTM3U", "#EXT-X-VERSION:7", "#EXT-X-INDEPENDENT-SEGMENTS"]
+        audio = p["copy"]["audioTracks"] if p.get("renditions") else []
+        for i, a in enumerate(audio):
+            lines.append('#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="%s",%sDEFAULT=%s,AUTOSELECT=YES,%sURI="%s.m3u8"' % (
+                a["id"], 'LANGUAGE="%s",' % a["language"] if a.get("language") else "", "YES" if i == 0 else "NO",
+                'CHANNELS="%d",' % a["channels"] if a.get("channels") else "", a["id"]))
+        lines.append('#EXT-X-STREAM-INF:BANDWIDTH=5000000,CODECS="avc1.640028,mp4a.40.2",RESOLUTION=1920x1080%s' % (
+            ',AUDIO="audio"' if audio else ""))
+        lines.append("v0.m3u8")
+        return ("\n".join(lines) + "\n").encode()
 
     def handle_get(self, h, head=False):
         u = urllib.parse.urlsplit(h.path)
         if not h.path.startswith("/api/v1/stream/"):
             return self.send(h, 404, b"")
+        if h.command != "GET":
+            if h.command == "HEAD" and "head" in self.faults:
+                return self.send(h, 404, b"")
+            return self.send(h, 405, b"", extra=[("Allow", "GET")])
         if ((u.query or "?" in h.path) and "query" not in self.faults) or any(h.headers.get(x) for x in ("Origin", "Sec-Fetch-Site", "Sec-Fetch-Mode")):
             return self.send(h, 404, b"")
         parts = u.path[len("/api/v1/stream/"):].split("/")
         with self.lock:
             pid = self.tickets.get(parts[0])
-            live = pid and self.playbacks[pid]["live"]
+            p = self.playbacks.get(pid) if pid else None
+            live = p is not None and p["live"] and (p["kind"] == "playback" or p["until"] > time.time())
         if not live:
             return self.send(h, 404, b"")
         name = "/".join(parts[1:])
+        q = re.fullmatch(r"queue/([0-4])/(.+)", name)
+        if q and p["kind"] == "playback" and int(q.group(1)) < len(p["queue"]):
+            name = q.group(2)
         vec = {c["name"]: c for c in self.media["hls"]}
         body, ctype, ranged = None, "application/octet-stream", False
-        if name == "master.m3u8":
-            body, ctype = vec["a master playlist"]["text"].encode(), "application/vnd.apple.mpegurl"
-        elif name == "v0.m3u8":
+        kind, proto = p["kind"], p.get("proto")
+        m = re.fullmatch(r"(subtitles|ass|pictures)/(s[0-9]+)/(0|[1-9][0-9]{0,3}|whole)", name)
+        sub = None
+        if m and kind == "playback" and p["purpose"] != "scan":
+            sub = next((s for s in p["copy"].get("subtitleTracks") or [] if s["id"] == m.group(2)), None)
+        if kind == "image":
+            if name == "image":
+                body, ctype = JPEG, "image/jpeg"
+        elif kind == "previews":
+            if name == "trickplay/0":
+                body, ctype = JPEG, "image/jpeg"
+        elif p["purpose"] == "scan" and name != "file":
+            pass
+        elif name == "master.m3u8" and proto == "hls":
+            body, ctype = self._master(p), "application/vnd.apple.mpegurl"
+        elif proto == "hls" and (name == "v0.m3u8" or re.fullmatch(r"a[0-9]+\.m3u8", name)):
             body, ctype = vec["a media playlist"]["text"].encode(), "application/vnd.apple.mpegurl"
-        elif name in ("init.mp4", "seg0.mp4", "seg-1.mp4", "file"):
-            body, ctype, ranged = (bytes(range(256)) * 40)[: 4000 if name != "file" else 10000], "video/mp4", True
-        elif name == "subtitles/s1/0":
+            if "growing" in self.faults:
+                body = body.replace(b"#EXT-X-ENDLIST\n", b"")
+        elif proto == "hls" and name in ("init.mp4", "seg0.mp4", "seg-1.mp4"):
+            body, ctype, ranged = (bytes(range(256)) * 40)[:4000], "video/mp4", True
+        elif name == "file" and proto == "file":
+            return self._file(h, p)
+        elif sub and m.group(1) == "subtitles" and sub["format"] in TEXTS:
             body, ctype = self.media["webvtt"][0]["output"].encode(), "text/vtt; charset=utf-8"
             if "vtt" in self.faults:
                 body = self.media["webvtt"][1]["text"].encode()
-        elif name == "pictures/s2/0":
+        elif sub and m.group(1) == "ass" and sub["format"] in ("ass", "ssa"):
+            body, ctype = next(c for c in self.media["ass"] if c["valid"])["output"].encode(), "text/x-ass; charset=utf-8"
+        elif sub and m.group(1) == "pictures" and sub["format"] in PICTURES and m.group(3) != "whole":
             body = bytes.fromhex(self.media["pgs"][0]["hex"])
-        elif name == "trickplay/0":
+        elif name == "fonts/0" and any(s["format"] in ("ass", "ssa") for s in p["copy"].get("subtitleTracks") or []):
+            body, ctype = bytes.fromhex(self.media["fonts"][0]["hex"]), "font/ttf"
+        elif name == "trickplay/0" and p["copy"].get("previews"):
             body, ctype = JPEG, "image/jpeg"
         if body is None:
             return self.send(h, 404, b"")
         rng = h.headers.get_all("Range") or []
         if ranged and rng:
-            if len(rng) != 1:
+            got = self._range(rng, len(body))
+            if got is None:
                 return self.send(h, 416, b"")
-            r0 = rng[0].split(",")[0] if "range" in self.faults else rng[0]
-            m = re.fullmatch(r"bytes=([0-9]{1,15})-([0-9]{1,15})?|bytes=-([0-9]{1,15})", r0)
-            if not m:
-                return self.send(h, 416, b"")
-            total = len(body)
-            if m.group(3) is not None:
-                cnt = int(m.group(3))
-                if cnt < 1:
-                    return self.send(h, 416, b"")
-                start, end = max(total - cnt, 0), total - 1
-            else:
-                start = int(m.group(1))
-                end = int(m.group(2)) if m.group(2) is not None else total - 1
-                if (m.group(2) is not None and start > end) or start >= total:
-                    return self.send(h, 416, b"")
-                end = min(end, total - 1)
+            start, end = got
             return self.send(h, 206, body[start:end + 1], ctype=ctype,
-                             extra=[("Content-Range", "bytes %d-%d/%d" % (start, end, total))])
+                             extra=[("Content-Range", "bytes %d-%d/%d" % (start, end, len(body)))])
         self.send(h, 200, body, ctype=ctype)
+
+    def _range(self, rng, total):
+        """Media 2.1: (start, end) of one well-formed, satisfiable Range, or None (416)."""
+        if len(rng) != 1:
+            return None
+        r0 = rng[0].split(",")[0] if "range" in self.faults else rng[0]
+        m = re.fullmatch(r"bytes=([0-9]{1,15})-([0-9]{1,15})?|bytes=-([0-9]{1,15})", r0)
+        if not m:
+            return None
+        if m.group(3) is not None:
+            cnt = int(m.group(3))
+            if cnt < 1 or total == 0:
+                return None
+            return max(total - cnt, 0), total - 1
+        start = int(m.group(1))
+        end = int(m.group(2)) if m.group(2) is not None else total - 1
+        if (m.group(2) is not None and start > end) or start >= total:
+            return None
+        return start, min(end, total - 1)
+
+    def _file(self, h, p):
+        """Media 3.2: the copy as it is, by ranges, with its ETag; a scan's
+        cap (media 4.2) and a download's pace (media 4.1)."""
+        cp = p["copy"]
+        size, data = cp["size"], self.file_bytes(cp)
+        common = [("Accept-Ranges", "bytes"), ("ETag", '"%s"' % cp["etag"])]
+        rng = h.headers.get_all("Range") or []
+        unsat = [("Content-Range", "bytes */%d" % size)]
+        if p["purpose"] == "scan" and not rng:
+            return self.send(h, 416, b"", extra=unsat)
+        if not rng:
+            start, end, status = 0, size - 1, 200
+        else:
+            got = self._range(rng, size)
+            if got is None:
+                return self.send(h, 416, b"", extra=unsat)
+            (start, end), status = got, 206
+        if p["purpose"] == "scan" and "scancap" not in self.faults:
+            with self.lock:
+                # Its announced scanBytes (media 4.2); the fault scanfloor
+                # cuts at the floor instead, as if nothing were announced.
+                cap = scan_cap(None if "scanfloor" in self.faults else self.limits.get("scanBytes"))
+                left = cap - p["sent"]
+                if left <= 0:
+                    return self.send(h, 416, b"", extra=unsat)
+                end = min(end, start + left - 1)
+                p["sent"] += end - start + 1
+        extra = common + ([("Content-Range", "bytes %d-%d/%d" % (start, end, size))] if status == 206 else [])
+        kbps = self.limits["downloadKbps"] if p["purpose"] == "download" else 0
+        if not kbps:
+            return self.send(h, status, data[start:end + 1], ctype="video/mp4", extra=extra)
+        try:
+            h.send_response(status)
+            h.send_header("Content-Type", "video/mp4")
+            for k, v in extra:
+                h.send_header(k, v)
+            h.send_header("Content-Length", str(end - start + 1))
+            h.end_headers()
+            rate, t0, sent = kbps * 125, time.time(), 0
+            for i in range(start, end + 1, 32768):
+                chunk = data[i:min(i + 32768, end + 1)]
+                h.wfile.write(chunk)
+                sent += len(chunk)
+                wait = t0 + sent / rate - time.time()
+                if wait > 0:
+                    time.sleep(wait)
+        except OSError:
+            pass
+
+    _files = {}
+
+    def file_bytes(self, cp):
+        key = (cp["etag"], cp["size"])
+        if key not in self._files:
+            self._files[key] = (bytes(range(251)) * (cp["size"] // 251 + 1))[:cp["size"]]
+        return self._files[key]
 
     # ---- calls to a peer ----------------------------------------------------------------------
 

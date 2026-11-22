@@ -286,7 +286,7 @@ class PeerServer:
         if call == "group-sync":
             return self._group_sync(j)
         if call == "play":
-            return self._play(j)
+            return self._play(j, rec)
         if call == "progress":
             return self._progress(j, rec)
         if call == "stop":
@@ -319,26 +319,91 @@ class PeerServer:
 
     EXPIRY = 120    # playback 6.3: neither progress nor a media request for 2 minutes
 
-    def _play(self, j):
-        """Playback 2: a film of this suite's catalog, served as it is (the
-        same short clip for each), with a ticket under the stream root."""
+    def _play(self, j, rec):
+        """Playback 2: a film of this suite's catalog (the same short clip
+        for each), with a ticket under the stream root. delivery file: the
+        clip as it is; no delivery (the baseline, playback 2.7: its streams
+        already are H.264 and AAC) or a remux to mpegts: complete HLS of the
+        clip in MPEG-TS; any other delivery, container or codec: 409
+        delivery-refused."""
+        bad = self._play_faults(j)
+        for b in bad:
+            rec["faults"].append("its play would be refused with 400: %s (playback 2.1, 2.2, 2.7; core 8.5)" % b)
+        if bad:
+            return 400, problem(400, "invalid-request", "Invalid request")
         keys = {t["key"] for page in self.pages.values() for t in page.get("titles", [])}
-        if not isinstance(j.get("title"), str) or j["title"] not in keys:
+        if j["title"] not in keys:
             return 404, NOT_FOUND
+        delivery = j.get("delivery")
+        if delivery == "file":
+            proto = "file"
+        elif delivery is None or (delivery == "remux" and j.get("container") == "mpegts"):
+            proto = "hls"
+        else:
+            return 409, problem(409, "delivery-refused", "This delivery is refused")
+        if "capabilities" in j:
+            rec["notes"].append("its play sends capabilities, which proposal 17 removed (an unknown member, ignored)")
         alphabet = "abcdefghijklmnopqrstuvwxyz234567"
         pid = "play_" + "".join(alphabet[b % 32] for b in os.urandom(26))
         ticket = b64u(os.urandom(24))
         now = time.time()
         self.playbacks[pid] = {"title": j["title"], "ticket": ticket, "opened": now, "progress": [], "media": [],
-                               "stopped": None, "expired": None}
+                               "stopped": None, "expired": None, "proto": proto, "delivery": delivery}
         self.tickets[ticket] = pid
         root = self.suite.address + STREAM + ticket + "/"
-        return 200, dumps({"id": pid, "method": "direct",
-                           "stream": {"url": root + "file", "protocol": "file", "mimeType": "video/mp4"},
-                           "positionMs": 0, "durationMs": clip.DURATION_MS,
-                           "audioTracks": [{"id": "a0", "label": "Silence", "language": "en", "channels": 1,
-                                            "default": True}],
-                           "audioTrack": "a0"})
+        if proto == "file":
+            stream = {"url": root + "file", "protocol": "file", "mimeType": "video/mp4"}
+        else:
+            stream = {"url": root + "master.m3u8", "protocol": "hls", "mimeType": "application/vnd.apple.mpegurl"}
+        return 200, dumps({"id": pid, "method": "direct" if proto == "file" else "remux", "stream": stream,
+                           "etag": clip.ETAG, "positionMs": 0, "durationMs": clip.DURATION_MS, "versionId": "c_clip",
+                           "audioTracks": [{"id": "a1", "language": "en", "channels": 1, "default": True}],
+                           "audioTrack": "a1", "audioRenditions": False})
+
+    @staticmethod
+    def _play_faults(j):
+        """What in a play request the owning server refuses with 400
+        (playback 2.1, 2.2 step 1, 2.7; core 8.5: a value that isn't a
+        token is malformed, an unknown token isn't)."""
+        tok = re.compile(r"[a-z0-9._-]{1,32}")
+        bad = []
+        if not isinstance(j.get("title"), str):
+            bad.append("title missing or not a string")
+        purpose = j.get("purpose", "play")
+        if purpose not in ("play", "download", "scan"):
+            bad.append("purpose %r isn't play, download or scan" % purpose)
+        d = j.get("delivery")
+        if "delivery" in j and not (isinstance(d, str) and tok.fullmatch(d)):
+            bad.append("delivery %r isn't a token" % (d,))
+        if "container" in j:
+            c = j["container"]
+            if d != "remux":
+                bad.append("container without delivery remux")
+            elif not (isinstance(c, str) and tok.fullmatch(c)):
+                bad.append("container %r isn't a token" % (c,))
+        elif d == "remux":
+            bad.append("delivery remux without container")
+        if "transcode" in j:
+            t = j["transcode"]
+            if d != "transcode":
+                bad.append("a transcode object without delivery transcode")
+            elif not isinstance(t, dict):
+                bad.append("transcode isn't an object")
+            else:
+                for f in ("videoCodec", "audioCodec"):
+                    if f in t and not (isinstance(t[f], str) and tok.fullmatch(t[f])):
+                        bad.append("transcode.%s %r isn't a token" % (f, t[f]))
+        if purpose == "download" and d not in ("file", "transcode"):
+            bad.append("download with delivery %r" % (d,))
+        if purpose == "scan" and d != "file":
+            bad.append("scan with delivery %r" % (d,))
+        for f in ("startPositionMs", "maxBitrateKbps"):
+            v = j.get(f)
+            if f in j and not (isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= (MAX_POSITION if f[0] == "s" else 10000000)):
+                bad.append("%s %r out of its range" % (f, v))
+        if "audioRenditions" in j and not isinstance(j["audioRenditions"], bool):
+            bad.append("audioRenditions isn't a boolean")
+        return bad
 
     def live(self, pb, now=None):
         """Whether a playback is live: not stopped, and heard of (progress
@@ -357,13 +422,16 @@ class PeerServer:
         """Playback 3 and 4: a progress or stop body this suite refuses with
         400, noted as the server's fault."""
         bad = []
-        if not isinstance(j.get("id"), str) or not re.fullmatch(r"play_[a-z2-7]{26}", j["id"]):
-            bad.append("id %r isn't play_ and 26 base32 characters" % j.get("id"))
+        if not isinstance(j.get("id"), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", j["id"]):
+            bad.append("id %r isn't 1 to 64 characters of A-Z a-z 0-9 _ - (playback 2.3)" % j.get("id"))
         pos = j.get("positionMs")
         if "positionMs" in j and not (isinstance(pos, int) and not isinstance(pos, bool) and 0 <= pos <= MAX_POSITION):
             bad.append("positionMs %r isn't an integer from 0 to 8,640,000,000" % pos)
         if call == "progress" and "paused" in j and not isinstance(j["paused"], bool):
             bad.append("paused %r isn't a boolean" % j["paused"])
+        at, now = j.get("at"), time.time()
+        if "at" in j and not (isinstance(at, int) and not isinstance(at, bool) and now - 30 * 86400 <= at <= now + 300):
+            bad.append("at %r isn't Unix seconds from 30 days ago to 5 minutes ahead" % at)
         for b in bad:
             rec["faults"].append("its %s would be refused with 400: %s (playback %s)" % (call, b, "3" if call == "progress" else "4"))
         return bool(bad)
@@ -383,15 +451,32 @@ class PeerServer:
         ranges, for a live playback's ticket."""
         rest = h.path[len(STREAM):].split("?")[0].split("/")
         with self.lock:
-            pid = self.tickets.get(rest[0]) if len(rest) == 2 and rest[1] == "file" else None
+            pid = self.tickets.get(rest[0]) if len(rest) == 2 else None
             pb = self.playbacks.get(pid) if pid else None
-            ok = pb is not None and self.live(pb)
+            names = ("file",) if pb is None or pb.get("proto", "file") == "file" else ("master.m3u8", "media.m3u8", "0.ts")
+            ok = pb is not None and rest[1] in names and self.live(pb)
             if ok:
                 pb["media"].append(time.time())
             self._record(listener=label, method=h.command, path=h.path, call="media", faults=[], notes=[], body=b"",
                          host=None, json=None, status=200 if ok else 404)
-        data = clip.MP4
+        data, ctype = clip.MP4, "video/mp4"
+        if ok and rest[1] == "master.m3u8":
+            data, ctype = ('#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-INDEPENDENT-SEGMENTS\n'
+                           '#EXT-X-STREAM-INF:BANDWIDTH=200000,CODECS="avc1.42c00c,mp4a.40.2",RESOLUTION=160x90\n'
+                           'media.m3u8\n').encode(), "application/vnd.apple.mpegurl"
+        elif ok and rest[1] == "media.m3u8":
+            data, ctype = ("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:0\n"
+                           "#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:2.000,\n0.ts\n#EXT-X-ENDLIST\n").encode(), \
+                "application/vnd.apple.mpegurl"
+        elif ok and rest[1] == "0.ts":
+            data, ctype = clip.TS, "video/mp2t"
         try:
+            if h.command != "GET":
+                h.send_response(405)
+                h.send_header("Allow", "GET")
+                h.send_header("Content-Length", "0")
+                h.end_headers()
+                return
             if not ok:
                 h.send_response(404)
                 h.send_header("Content-Length", "0")
@@ -413,8 +498,10 @@ class PeerServer:
                     return
                 status = 206
             h.send_response(status)
-            h.send_header("Content-Type", "video/mp4")
+            h.send_header("Content-Type", ctype)
             h.send_header("Accept-Ranges", "bytes")
+            if rest[1] == "file":
+                h.send_header("ETag", '"%s"' % clip.ETAG)
             if status == 206:
                 h.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, len(data)))
             h.send_header("Content-Length", str(end - start + 1))

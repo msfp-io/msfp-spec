@@ -51,6 +51,9 @@ def parser():
                     help="seconds to wait for the pairing to be accepted (default 600; 60 with --no-operator)")
     ap.add_argument("--watch-changes", type=int, default=0,
                     help="seconds to wait for the operator to add and remove a title (0: skip that check)")
+    ap.add_argument("--watch-local", type=int, default=0,
+                    help="seconds to wait for the operator to stop sharing local titles with this suite, then share "
+                         "them again (T12; 0: skip it)")
     ap.add_argument("--watch-pause", type=int, default=0,
                     help="seconds the operator keeps one of this suite's films paused on the server, then stops it "
                          "(checks the server as a viewer, VW1 to VW4; 0: skip them)")
@@ -79,12 +82,15 @@ def main():
         suite.run()
     except KeyboardInterrupt:
         report.note("interrupted")
+    for section, text in suite.defaults:
+        report.note("a recommended default not followed (%s; not a conformance failure): %s" % (section, text))
     for section, text in suite.unclear:
         report.note("unclear in the specification (%s): %s" % (section, text))
     n, _ = report.summary()
     if a.json:
         report.write_json(a.json, {"version": __version__, "target": suite.target, "time": time.time(),
-                                   "unclear": [{"section": s, "text": t} for s, t in suite.unclear]})
+                                   "unclear": [{"section": s, "text": t} for s, t in suite.unclear],
+                                   "defaults": [{"section": s, "text": t} for s, t in suite.defaults]})
     return 1 if n["fail"] else 0
 
 
