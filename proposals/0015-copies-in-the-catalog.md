@@ -1,7 +1,7 @@
 # Proposal 15: Copies in the catalog
 
 Status: Proposed (2026-11-21), under review: open points 1 to 5 and 7
-settled the same day, 6 open. On hold since 2026-11-21: it becomes part
+settled the same day, 6 on 2026-11-22. On hold since 2026-11-21: it becomes part
 of one revision of the protocol, prepared from a survey of what other
 platforms need (Jellyfin, Emby, Plex, Kodi, Infuse, Swiftfin,
 Navidrome/Subsonic), applied everywhere at once.
@@ -321,7 +321,8 @@ MSFP is version 0, a draft: no version number changes.
    becomes required for films and episodes, with a small required core
    (version ID, length, track languages); the details stay optional.
    MSFP is a draft and both implementations are ours: now is the time.
-6. **Chapters** (section 5): 256 and 64 characters enough?
+6. ~~**Chapters** (section 5): 256 and 64 characters enough?~~ Decided
+   2026-11-22: kept.
 7. ~~**Previews before a first play** (section 6): (a) or (b)?~~ Decided
    2026-11-21: (a), the call `previews`.
 
