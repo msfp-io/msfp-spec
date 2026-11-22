@@ -472,7 +472,7 @@ sends a small description of it, for films and series only:
 |-------|------|---------|
 | `name` | string | the title's name, at most 128 characters |
 | `year` | integer, optional | its year, 1800 to 9,999 |
-| `image` | boolean, optional | `true` when the owner shares one image of it, asked for with `previews` without `versionId` (sections 5.6 and 6.7) |
+| `image` | boolean, optional | `true` when the owner shares one image of it, asked for with the catalog's `image` call ([catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)) |
 
 - The caller makes `name` plain text and cuts it to 128 characters; a
   local film or series without a `name` left is skipped. A `year` out of
@@ -866,25 +866,22 @@ The same object comes in `play`'s answer, for the copy playing, and in
 
 `previews`, under the peer's base path, signed as every call is. The
 viewer's server asks for a copy's seek-bar previews before anyone plays
-it, so that a viewer sees them from the first play; or for a local
-title's image (section 3.10). [Music](music.md#4-pictures) uses the same
-call, without `versionId`, for the image of a `local` artist or album:
-a server answers `previews` while `video` or `music` is on between the
-two, for the titles of the parts that are on.
+it, so that a viewer sees them from the first play. (A `local` title's
+image comes with the catalog's own `image` call,
+[catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image).)
 
 Request:
 
 | Field | Type | Required | Content |
 |-------|------|----------|---------|
-| `title` | string | yes | the key of a film, an episode or an extra, or of a local film or series (or a `local` artist or album of `music`), as the owning server sent it in `titles` |
-| `versionId` | string | no | the copy's `id`: required for previews; absent asks for a local title's image |
+| `title` | string | yes | the key of a film, an episode or an extra, as the owning server sent it in `titles` |
+| `versionId` | string | yes | the copy's `id` |
 
 Answer `200`:
 
 | Field | Type | Content | What the viewer's server requires or does |
 |-------|------|---------|-------------------------------------------|
-| `trickplay` | trickplay object, optional | with `versionId`: the copy's previews (section 5.5) | checked as section 5.5 says |
-| `image` | string, optional | without `versionId`: the image's URL (section 6.1) | exactly the URL section 6.1 gives; otherwise dropped |
+| `trickplay` | trickplay object | the copy's previews (section 5.5) | checked as section 5.5 says |
 
 - The URLs carry a ticket of the answer's own, made as every ticket is
   ([media section 1](media.md#1-the-urls)). It works for 10 minutes from the answer,
@@ -892,8 +889,8 @@ Answer `200`:
   `streams`, starts no conversion, and gets no `progress` or `stop`.
 - The owning server answers `404` for a title or a copy it doesn't offer
   the caller, a copy without previews (`previews` not `true` in the
-  catalog) or a title without an image; `400` for a malformed request;
-  `404` `not-supported` when neither `video` nor `music` is on; and may refuse with `429`
+  catalog); `400` for a malformed request; `404` `not-supported` when
+  `video` isn't on; and may refuse with `429`
   `rate-limited` when asked too often
   ([core section 8.3](core.md#83-limits-and-overload)).
 - A viewer's server asks once per copy whose `previews` is `true`, after
@@ -928,7 +925,6 @@ owning server's stream root:
   `<stream root><ticket>/ass/<track>`. `<track>` is the track's ID.
 - `fonts[n]` is exactly `<stream root><ticket>/fonts/<n>`.
 - `trickplay.sheets[n]` is exactly `<stream root><ticket>/trickplay/<n>`.
-- A local title's `image` is exactly `<stream root><ticket>/image`.
 
 `<ticket>` is the playback's, or the `previews` answer's own
 (section 5.6). `<n>` is the entry's index in decimal, without leading
@@ -962,7 +958,9 @@ read whole, with plain `GET`s and no `Range`, within the sizes of
   playback starts or when the viewer needs them; under a playback's
   ticket, the fetches count as media requests for
   [media section 4](media.md#4-how-long-a-ticket-works).
-- **A local title's image** (`image`): as section 6.7 says.
+- **A local title's image** (`image`): as
+  [catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)
+  says.
 
 The viewer's server checks again everything it relays, as
 [media section 3](media.md#3-what-is-fetched) says, and besides:
@@ -1384,17 +1382,9 @@ only, `font/ttf` for `00 01 00 00` and `font/otf` for `OTTO`.
 ### 6.7 The image of a local title
 
 A local film or series with `image: true` (section 3.10) has one image,
-fetched at the `image` URL a `previews` answer gives (section 5.6),
-within that answer's 10 minutes.
-
-- The answer is `200`, a JPEG or a PNG of at most 1 MiB (1,048,576
-  bytes), no wider and no taller than 4,096 pixels.
-- The viewer's server reads it whole, refuses it past 1 MiB, checks from
-  its header, before decoding, that it is a JPEG or a PNG (by its
-  content, whatever its `Content-Type`) within those sizes, and
-  re-encodes it in the same format, so that only its pixels reach its
-  people. It keeps the image, marked as the owner's, with the title, and
-  asks again only when the title changes.
+asked for with the catalog's `image` call and checked as
+[catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)
+says.
 
 ## 7. Security considerations
 

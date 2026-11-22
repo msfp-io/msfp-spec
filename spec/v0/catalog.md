@@ -412,13 +412,10 @@ server, beside the members of section 3:
   cleans a server's name (with 128 instead of 80), never markup. It is
   never a file name: an owning server that has no other name for the
   title doesn't send it.
-- `image` is asked for with a `previews` call without `versionId`
-  ([video section 5.6](video.md#56-previews)), and fetched under that
-  answer's short ticket, no playback, as
+- `image` is asked for with the `image` call (section 4.4), and fetched
+  under that answer's short ticket, no playback, as
   [media section 3.4](media.md#34-subtitles-fonts-sheets-and-images)
-  says. It is JPEG or PNG, at most 1 MiB (1,048,576 bytes); the viewer's
-  server refuses anything else
-  ([video section 6.7](video.md#67-the-image-of-a-local-title)).
+  says.
 - A viewer's server shows the description as the owning server's, never
   as data from a public source, and never sends it on to another peer.
 - `year` that isn't an integer in range, or `image` that isn't a
@@ -433,6 +430,51 @@ give, metadata beyond keys stays out of `titles`.
 Test cases: `localTitles` in
 [vectors/v0/video.json](../../vectors/v0/video.json) and
 [vectors/v0/music.json](../../vectors/v0/music.json).
+
+### 4.4 The image of a `local` title: `image`
+
+`image`, under the peer's base path, signed as every call is. The
+viewer's server asks for the one image of a `local` title whose
+description says `image: true` (section 4.3): a film or a series of
+[video](video.md), an artist or an album of [music](music.md). A server
+answers `image` while a content part with `local` titles is on between
+the two, for the titles of the parts that are on.
+
+Request:
+
+| Field | Type | Required | Content |
+|-------|------|----------|---------|
+| `title` | string | yes | the key of a `local` title, as the owning server sent it in `titles` |
+
+Answer `200`:
+
+| Field | Type | Content | What the viewer's server requires or does |
+|-------|------|---------|-------------------------------------------|
+| `url` | string | the image's URL, `<stream root><ticket>/image` ([media section 1](media.md#1-the-urls)) | exactly that form; otherwise the answer is dropped |
+
+- The URL carries a ticket of the answer's own, made as every ticket is
+  ([media section 1](media.md#1-the-urls)). It works for 10 minutes from
+  the answer, for that URL only, and is no playback: it doesn't count
+  against `streams` and gets no `progress` or `stop`.
+- The owning server answers `404` for a title it doesn't offer the
+  caller, a title that isn't `local`, or one without an image; `400` for
+  a malformed request; `404` `not-supported` when no content part with
+  `local` titles is on between the two; and may refuse with `429`
+  `rate-limited` when asked too often
+  ([core section 8.3](core.md#83-limits-and-overload)).
+- The image is a JPEG or a PNG of at most 1 MiB (1,048,576 bytes), no
+  wider and no taller than 4,096 pixels. The viewer's server reads it
+  whole, refuses it past 1 MiB, checks from its header, before decoding,
+  that it is a JPEG or a PNG (by its content, whatever its
+  `Content-Type`) within those sizes, and re-encodes it in the same
+  format, so that only its pixels reach its people. It keeps the image,
+  marked as the owner's, with the title, and asks again only when the
+  title changes.
+- A viewer's server asks for one image at a time per peer, and waits
+  after a `429` as core section 8.3 says.
+
+Test cases: `localImages` in
+[vectors/v0/strict.json](../../vectors/v0/strict.json).
 
 ## 5. What is shared
 
@@ -525,7 +567,8 @@ gave no bound for them):
    IDs: 1 to 64 characters of `A–Z a–z 0–9 _ -`.
 8. **The description's `year`** is 1800 to 9999, as video's (music's
    titles carry dates, not `year`); its image bound is 1 MiB, and the
-   image is fetched with video's `previews` call.
+   image is fetched with the catalog's own `image` call (section 4.4),
+   shared by video and music.
 9. **`local` sharing on a link** follows the union of its relations, as
    offers do (section 5).
 10. **Extras** are sent only with their title, in its library, and go

@@ -7,9 +7,9 @@ hold them: albums by edition, tracks by their place on an album. It is a
 content part: it says what the shared parts carry for music: the title
 kinds, keys and descriptions in [catalog](catalog.md), and what
 [playback](playback.md)'s `play` takes and answers for a track. It has
-one call of its own, `lyrics` (section 6), and uses the `previews` call
-of [video section 5.6](video.md#56-previews) for the images of `local`
-artists and albums (section 4). It needs the
+one call of its own, `lyrics` (section 6), and uses the catalog's `image`
+call ([catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image))
+for the images of `local` artists and albums (section 4). It needs the
 [core](core.md), `catalog`, `playback` and `media`; if any of them is
 off between two servers, `music` is off too
 ([core section 10](core.md#10-versions-and-parts)). A server lists
@@ -340,13 +340,10 @@ knows artists by MBID (TheAudioDB, fanart.tv…), fetched by the viewer's
 server itself and cached. Nothing in the protocol carries them.
 
 **A `local` artist or album** has no public picture. When its `image` is
-`true`, the viewer's server asks for it with a `previews` call without
-`versionId` ([video section 5.6](video.md#56-previews)), fetches it
-under that answer's ticket as
-[media section 3.4](media.md#34-subtitles-fonts-sheets-and-images) says
-(JPEG or PNG, at most 1 MiB), checks and re-encodes it as
-[video section 6.7](video.md#67-the-image-of-a-local-title) says, and
-shows it as the owner's.
+`true`, the viewer's server asks for it with the catalog's `image` call,
+fetches, checks and re-encodes it as
+[catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)
+says, and shows it as the owner's.
 
 A track, of either scheme, shows its album's art.
 
@@ -551,8 +548,8 @@ the same paging and the same changes.
   when it asks MusicBrainz anything.
 - **Pictures of `local` titles are images from another server**: a
   viewer's server checks and re-encodes them as
-  [video section 6.7](video.md#67-the-image-of-a-local-title) says, so
-  that only pixels reach the viewer.
+  [catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)
+  says, so that only pixels reach the viewer.
 - **ReplayGain from a peer** sets a volume: a viewer's player applies
   a gain within the ranges of section 3.3 only, and should not amplify
   past full scale (it lowers the gain to fit the peak).

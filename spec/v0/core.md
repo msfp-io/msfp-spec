@@ -1222,7 +1222,7 @@ statuses are in section 8.4.
 |--------|--------|---------|-------|---------|----------------------|
 | 200 | (none) | | every call | done; the body is the answer | uses it |
 | 202 | (none) | | `rotate` | accepted, waiting for the receiver's operator (section 9.3) | waits |
-| 400 | `invalid-request` | `Invalid request` | `rotate`, `revoke`, `play`, `progress`, `stop`, `previews`, `lyrics` | the body is malformed, or a value is out of range | gives up; a correct caller never gets it |
+| 400 | `invalid-request` | `Invalid request` | `rotate`, `revoke`, `play`, `progress`, `stop`, `previews`, `lyrics`, `image` | the body is malformed, or a value is out of range | gives up; a correct caller never gets it |
 | 404 | `not-found` | `Not found` | every call | not heard, not known, not paired yet, no such code, or no such title for this peer; signed or not tells them apart (section 6.6) | as section 6.6 says |
 | 404 | `not-supported` | `Not supported` | a call of a part that is off; every call but `hello` when no core is common | the receiver doesn't speak that part, or no core, with the caller (sections 10.3, 10.4) | makes no more calls of that part (or none but `hello`) until a newer `hello` |
 | 409 | (no body) | | `pair` | the caller's key is already a peer of the maker (section 9.1) | tells its operator |
@@ -1637,10 +1637,10 @@ suspended, since its current key is the new one.
 | Name | What it holds | Calls | Needs |
 |------|---------------|-------|-------|
 | core | encodings, transport, keys, the code, signatures, pairing, states, rotation, addresses, versions | `pair`, `hello`, `rotate`, `revoke` | — |
-| `catalog` | libraries, titles, the general rules of title keys | `libraries`, `titles` | the core |
+| `catalog` | libraries, titles, the general rules of title keys, the description and image of `local` titles | `libraries`, `titles`, `image` | the core |
 | `playback` | starting, keeping and stopping a playback; limits | `play`, `progress`, `stop` | `catalog` and `media` |
 | `media` | what the stream URLs serve: HLS, the file by byte ranges, subtitles, fonts, sheets and images; the kinds of ticket | plain `GET`s under the stream root | the core |
-| `video` | films, series and extras by TMDB, TheTVDB or the owner's own keys: title keys, episode order, copies, subtitles (WebVTT, ASS, PGS), fonts, skip markers, previews | `previews` (answered for `music`'s `local` images too); it adds to `titles`, `play` and the media | `catalog`, `playback` and `media` |
+| `video` | films, series and extras by TMDB, TheTVDB or the owner's own keys: title keys, episode order, copies, subtitles (WebVTT, ASS, PGS), fonts, skip markers, previews | `previews`; it adds to `titles`, `play` and the media | `catalog`, `playback` and `media` |
 | `music` | artists, albums and tracks by MusicBrainz or the owner's own keys: keys, descriptions, copies, cover art, lyrics, audio-only playback, queues | `lyrics`; it adds to `titles`, `play`, `progress`, `stop` and `limits` | `catalog`, `playback` and `media` |
 | `groups` | groups of servers: events, mail, pairing through a group | `group-sync`, `group-push`, `group-pair`, `group-join` | the core |
 

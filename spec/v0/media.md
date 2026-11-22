@@ -5,8 +5,8 @@
 The `media` part says what the stream URLs serve, and how a viewer's
 server fetches them: HLS, and the file itself read by byte ranges. It
 says which tickets open them: a playback's, a download's, a scan's, and
-the short ticket of a `previews` call, for preview sheets and the image
-of a `local` title. The content parts add their own URLs, whose forms,
+the short tickets of a `previews` call, for preview sheets, and of an
+`image` call, for the image of a `local` title. The content parts add their own URLs, whose forms,
 fetches and sizes are all here: [video](video.md#6-media) adds text and
 picture subtitles, fonts, seek-bar preview sheets and the image; what
 their bytes must be is video's to say. It needs only the
@@ -99,7 +99,7 @@ Every media URL is absolute, under the owning server's stream root:
 | `<stream root><ticket>/pictures/<track>/<part>` | a stretch of a picture track, as PGS, `<part>` from 0 to 9,999 |
 | `<stream root><ticket>/fonts/<n>` | font *n* of the copy, `<n>` from 0 to 7 |
 | `<stream root><ticket>/trickplay/<n>` | preview sheet *n*, `<n>` from 0 to 999 |
-| `<stream root><ticket>/image` | the image of a `local` title, under a `previews` ticket |
+| `<stream root><ticket>/image` | the image of a `local` title, under an `image` ticket |
 
 A content part's answer gives a subtitle track by its **track URL**,
 without the last part: `<stream root><ticket>/subtitles/<track>`,
@@ -475,7 +475,7 @@ server's URLs to the viewer.
 | a stretch of a picture track | `pictures/<track>/<part>` | playback, download | PGS (a VobSub or DVB track converted by the owning server), checked ([video section 6.5](video.md#65-picture-subtitles)) | `application/octet-stream` |
 | a font | `fonts/<n>` | playback, download | a TrueType or OpenType file ([video section 6.6](video.md#66-fonts)) | `font/ttf` or `font/otf` |
 | a preview sheet | `trickplay/<n>` | playback, previews | a JPEG ([video section 5.5](video.md#55-seek-bar-previews)) | `image/jpeg` |
-| the image of a `local` title | `image` | previews | a JPEG or a PNG ([video section 6.7](video.md#67-the-image-of-a-local-title)) | `image/jpeg` or `image/png` |
+| the image of a `local` title | `image` | image | a JPEG or a PNG ([catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)) | `image/jpeg` or `image/png` |
 
 - **Stretches** cover 120 seconds of the copy each, part *n* from
   *n* × 120 seconds to (*n* + 1) × 120 seconds, starting 10 seconds
@@ -501,11 +501,11 @@ server's URLs to the viewer.
 - **Images.** The image of a `local` title
   ([video section 3.10](video.md#310-the-description-of-a-local-title),
   [music section 4](music.md#4-pictures)) is fetched under the ticket of
-  a `previews` call without `versionId`
-  ([video section 5.6](video.md#56-previews)), which opens that image
-  only. The viewer's server tells JPEG from PNG by content (`FF D8 FF`,
-  or the 8-byte PNG signature), and checks and re-encodes it as
-  [video section 6.7](video.md#67-the-image-of-a-local-title) says.
+  an `image` call
+  ([catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)),
+  which opens that image only. The viewer's server tells JPEG from PNG by
+  content (`FF D8 FF`, or the 8-byte PNG signature), and checks and
+  re-encodes it as catalog section 4.4 says.
 
 ## 4. How long a ticket works
 
@@ -517,7 +517,8 @@ its kind opens:
 | playback | `play`, to watch ([playback](playback.md#2-play)) | the stream (`hls` or `file`) and what the content parts add for it | its playback ends (below) |
 | download | `play` with `purpose: download` ([playback section 7](playback.md#7-downloads)) | the stream, its subtitles and fonts | its playback ends, without the 2-minute rule; at most 24 hours after the answer (section 4.1) |
 | scan | `play` with `purpose: scan` and `delivery: file` ([playback section 8](playback.md#8-scan-access)) | `file` only, by ranges, within 32 MiB (section 4.2) | its playback ends (below); at most 10 minutes after the answer |
-| previews | a `previews` call ([video section 5.6](video.md#56-previews)) | the sheets or the image its answer lists | 10 minutes after the answer |
+| previews | a `previews` call ([video section 5.6](video.md#56-previews)) | the sheets its answer lists | 10 minutes after the answer |
+| image | an `image` call ([catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)) | the image its answer gives | 10 minutes after the answer |
 
 A playback's ticket works while its playback is live. The playback ends,
 and the ticket with it, when:
@@ -643,7 +644,7 @@ show):
 8. **Sizes**: a whole text track 16 MiB; a font 10 MiB, an image 1 MiB
    and the scan cap 32 MiB, reading the proposal's MB as MiB
    (sections 2.4 and 4.2).
-9. **Tickets**: a `local` title's image comes under a previews ticket,
+9. **Tickets**: a `local` title's image comes under an `image` ticket,
    of 10 minutes; a scan ticket follows a playback's 2-minute rule, and
    lasts 10 minutes at most (section 4).
 10. **The file**: `ETag: "<etag>"` and `Accept-Ranges: bytes` on every
