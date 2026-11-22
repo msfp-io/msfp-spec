@@ -15,7 +15,7 @@ from .report import PASS
 from .wire import b64u
 
 TEXT_FORMATS = ("subrip", "webvtt", "mov_text", "ttml", "ass", "ssa")
-PICTURE_FORMATS = ("pgs", "vobsub", "dvb")
+PICTURE_FORMATS = ("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle")   # ffmpeg names (video 3.5)
 MALFORMED = ["bytes=0-1,5-9", "bytes=-", "bytes=5-1", "items=0-9", "bytes = 0-9", "bytes=0-1234567890123456",
              "bytes=-0", "bytes=a-b"]
 
@@ -324,7 +324,8 @@ class StreamChecks:
             if not fs:
                 raise Skip("no fonts in the answer (a copy whose ASS tracks use fonts gives them)")
             out, bad = [], []
-            for i, u in enumerate(fs[:8]):
+            total = 0
+            for i, u in enumerate(fs[:64]):
                 status, hdrs, body = c.get(u, limit=10 * 1024 * 1024 + 1)
                 if status != 200:
                     bad.append("font %d: %d" % (i, status))
@@ -338,13 +339,17 @@ class StreamChecks:
                 if ct != typ:
                     bad.append("font %d: a %s served as %r" % (i, typ, ct))
                 out.append("%s %d bytes" % (typ, len(body)))
+                total += len(body)
+            if total > 64 * 1024 * 1024:
+                bad.append("the copy's fonts hold %d bytes in all, over 64 MiB (video 6.6)" % total)
             s2, _, _ = c.get(fs[0].rsplit("/", 1)[0] + "/%d" % len(fs))
-            if s2 != 404 and len(fs) < 8:
+            if s2 != 404 and len(fs) < 64:
                 bad.append("fonts/%d, past the list: %d, not 404" % (len(fs), s2))
             if bad:
                 raise Fail("\n".join(bad))
             return "%d font(s): %s" % (len(out), ", ".join(out))
-        self.check(prefix + "12", "video 6.6, media 3.4, 2.4", "fonts: TrueType or OpenType within 10 MiB, at most 8",
+        self.check(prefix + "12", "video 6.6, media 3.4, 2.4", "fonts: TrueType or OpenType, each within 10 MiB, "
+                   "at most 64 and 64 MiB in all",
                    fonts)
 
     # ---- ranges, on a segment or the file (media 2.1, 3.2) ---------------------------------

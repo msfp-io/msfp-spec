@@ -4,11 +4,10 @@ catalog.md sections 2 to 4, video.md sections 3 and 4, music.md sections
 
 import re
 
-from .copies import EXTRA_TYPES, copy_problems, keep_video_title, video_key
+from .copies import MAX_COPIES, copy_problems, keep_video_title, token, video_key
 from .music import music_key, music_problems
 from .wire import is_int
 
-KINDS = {"movies", "tvshows", "music", "musicvideos", "homevideos", "boxsets", "books", "photos", "mixed", ""}
 LIBRARY_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 # ---- a title as the owning server sends it --------------------------------------------
@@ -25,9 +24,16 @@ def _height(c):
     return max(v["height"], -(-v["width"] * 9 // 16)) if v["width"] * 9 > v["height"] * 16 else v["height"]
 
 
+def library_kind(lib):
+    """The kind a caller keeps of a library (catalog 2, core 8.5): a token,
+    known or not; None when absent or not a token."""
+    return token(lib.get("kind")) if isinstance(lib, dict) else None
+
+
 def copies_order_problems(key, cs):
-    """Video 3.7: copies best first (height, then HDR, then more hdr
-    formats); a copy without video after those with one."""
+    """Video 3.7's recommended default (proposal 17: the copies come in the
+    owner's order of preference; best first is a default, not a rule):
+    height, then HDR, then more hdr formats. A note, never a failure."""
     def rank(c):
         v = c.get("video") if isinstance(c.get("video"), dict) else {}
         hdr = v.get("hdr") if isinstance(v.get("hdr"), list) else []
@@ -35,7 +41,7 @@ def copies_order_problems(key, cs):
     rs = [rank(c) for c in cs if isinstance(c, dict)]
     for i in range(1, len(rs)):
         if rs[i] > rs[i - 1]:
-            return ["%s: copies not best first (video 3.7): copy %d (height %d, %d HDR formats) after a lesser one"
+            return ["%s: copies not best first (video 3.7's recommended default): copy %d (height %d, %d hdr tokens) after a lesser one"
                     % (key, i, rs[i][0], rs[i][2])]
     return []
 
@@ -56,19 +62,18 @@ def video_problems(t, libs):
             bad.append("%s carries %s, a title summary video 0 removed (video 3.2: its copies say it)" % (k, f))
     if kind in ("movie", "episode", "extra"):
         cs = t.get("copies")
-        if len(cs) > 8:
-            bad.append("%s: %d copies; at most 8 (video 3.2)" % (k, len(cs)))
+        if len(cs) > MAX_COPIES:
+            bad.append("%s: %d copies; at most 16 (video 3.2)" % (k, len(cs)))
         ids = [c.get("id") for c in cs if isinstance(c, dict)]
         if len(set(map(str, ids))) != len(ids):
             bad.append("%s: a copy ID twice" % k)
         for c in cs:
             bad += ["%s %s" % (k, x) for x in copy_problems(c)]
-        bad += copies_order_problems(k, cs)
     elif "copies" in t:
         bad.append("%s (%s) carries copies (video 3: films, episodes and extras only)" % (k, kind))
     if kind == "extra":
-        if t.get("extraType") not in EXTRA_TYPES:
-            bad.append("%s: extraType %r isn't one of video 3.9's" % (k, t.get("extraType")))
+        if token(t.get("extraType")) is None:
+            bad.append("%s: extraType %r isn't a token (video 3.9, core 8.5)" % (k, t.get("extraType")))
         if "name" in t and kept.get("name") != t["name"]:
             bad.append("%s: an extra's name isn't plain text of at most 64 characters (video 3.9)" % k)
     elif vk.scheme == "local" and kind in ("movie", "series"):
@@ -99,7 +104,7 @@ def video_problems(t, libs):
             bad.append("%s: ids isn't an object" % k)
         else:
             for s, v in t["ids"].items():
-                if s in ("imdb", "tvdb") and kept.get("ids", {}).get(s) != v:
+                if (s in ("imdb", "tvdb") or s == "tmdb" and vk.scheme == "tvdb") and kept.get("ids", {}).get(s) != v:
                     bad.append("%s: ids.%s %r isn't in its form (video 4.3)" % (k, s, v))
     return bad
 

@@ -1,22 +1,23 @@
 """The checks of what proposal 16 added to playback, video and music, as a
 peer sees them: deliveries (file, remux, transcode, a copy of several
 parts), restarts on the same etag, audio renditions, downloads (limits,
-late reports, the speed cap), scan access (limits, the 32 MiB cap, the
-ticket), the previews call, and music's tracks, queue and lyrics."""
+late reports, the speed cap), scan access (limits, the cap the owner
+announces as scanBytes, the ticket), the previews call, and music's
+tracks, queue and lyrics; with proposal 17's: the answer's
+audioRenditions, and unknown values in requests (core 8.5)."""
 
 import time
 
 from .copies import keep_previews_answer, video_key
-from .media import SCAN_CAP, check_owner_playlist, scan_answer
+from .media import check_owner_playlist, scan_answer
 from .music import keep_lyrics, keep_queue, music_key
 from .playback import keep_limits
 from .report import PASS
 from .wire import dumps
 
-BROAD_CAPS = {"containers": ["aac", "flac", "m4a", "m4v", "mkv", "mov", "mp3", "mp4", "ogg", "opus", "ts", "wav", "webm"],
-              "audioCodecs": ["aac", "ac3", "alac", "eac3", "flac", "mp3", "opus", "pcm_s16le", "vorbis"],
-              "videoCodecs": ["av1", "h264", "hevc", "vp8", "vp9"], "hdr": ["hdr10", "hlg"]}
-NO_LIMITS = {"streams": None, "downloads": 0, "downloadsPerDay": 0, "downloadKbps": 0, "scansPerDay": 0}
+NO_LIMITS = {"streams": None, "downloads": 0, "downloadsPerDay": 0, "downloadKbps": 0, "scansPerDay": 0,
+             "scanBytes": 4 * 1024 * 1024}
+READ_AT_MOST = 64 * 1024 * 1024     # PB22 reads a larger cap only this far
 
 
 def _x():
@@ -190,23 +191,75 @@ class RevisionChecks:
             self.signed(a, 200)
             try:
                 if a.json["stream"]["protocol"] != "hls":
-                    raise Skip("served as the file, which holds every track: no renditions to give")
+                    raise Fail("without delivery, served as %s (playback 2.7: the baseline is HLS)"
+                               % a.json["stream"]["protocol"])
+                said = a.json.get("audioRenditions")
+                if "audioRenditions" in a.json and not isinstance(said, bool):
+                    raise Fail("audioRenditions %r isn't a boolean (playback 2.3)" % (said,))
                 s, _, m = self.client.get(a.json["stream"]["url"])
                 if s != 200:
                     raise Fail("master.m3u8: %d" % s)
-                bad, _ = check_owner_playlist(m, True, ids)
                 names = [x.split('NAME="', 1)[1].split('"', 1)[0] for x in m.decode("utf-8", "replace").split("\n")
-                         if x.startswith("#EXT-X-MEDIA:") and 'NAME="' in x]
-                if sorted(names) != sorted(ids[:32]):
-                    bad.append("audioRenditions asked: the master playlist names renditions %s; the copy's audio tracks "
-                               "are %s (media 3.1: one #EXT-X-MEDIA per track)" % (names, ids))
+                         if x.startswith("#EXT-X-MEDIA:") and "TYPE=AUDIO" in x and 'NAME="' in x]
+                if said is True:
+                    bad, _ = check_owner_playlist(m, True, ids)
+                    if sorted(names) != sorted(ids[:32]):
+                        bad.append("audioRenditions true: the master playlist names renditions %s; the copy's audio "
+                                   "tracks are %s (media 3.1: one #EXT-X-MEDIA per track)" % (names, ids))
+                    what = "%d audio rendition(s), named by track ID, as the answer's audioRenditions true says" % len(names)
+                else:
+                    bad = []
+                    if names:
+                        bad.append("the answer's audioRenditions is %s, and the master playlist names renditions %s "
+                                   "(playback 2.3: false or absent means none made)" % (
+                                       "false" if said is False else "absent", names))
+                    if said is None:
+                        bad.append("no audioRenditions in the answer to a play asking for them (playback 2.3: the "
+                                   "answer says whether it made them)")
+                    what = "audioRenditions false: none made (allowed: a request for them is never refused), and the " \
+                           "playlist has none"
             finally:
                 self.stop(a.json)
             if bad:
                 raise Fail("\n".join(bad))
-            return "%d audio rendition(s), named by track ID, every EXT-X-STREAM-INF with AUDIO=\"audio\"" % len(names)
-        self.check("PB17", "media 3.1, playback 2.1", "audioRenditions: every audio track of the copy as an #EXT-X-MEDIA "
-                   "rendition", renditions)
+            return what
+        self.check("PB17", "playback 2.1, 2.3, media 3.1", "audioRenditions asked: the answer says whether they were made, "
+                   "and the playlist matches (every audio track, or none)", renditions)
+
+        def unknown_values():
+            """Core 8.5 in play: an unknown token naming what to serve is 409
+            delivery-refused; an unknown member is ignored. (Values that
+            aren't tokens are PB1's 400s.)"""
+            cp = self.copy_of(k)
+            cases = [("delivery dash, an unknown token", {"delivery": "dash"}),
+                     ("remux to matroska, a container no HLS segment has", {"delivery": "remux", "container": "matroska"}),
+                     ("remux to ts, not ffmpeg's name", {"delivery": "remux", "container": "ts"}),
+                     ("transcode audioCodec conformance-codec, a token no encoder has",
+                      {"delivery": "transcode", "transcode": {"audioCodec": "conformance-codec"}})]
+            if video_key(k):
+                cases.append(("transcode videoCodec h265, not ffmpeg's name", {"delivery": "transcode",
+                                                                                 "transcode": {"videoCodec": "h265"}}))
+            bad, out = [], []
+            for name, extra in cases:
+                a = self.play(dict(extra, title=k, versionId=cp["id"]))
+                self.answers.append(a)
+                if a.status == 200:
+                    self.stop(a.json)
+                if not (a.status == 409 and a.signed and a.problem_type() == "delivery-refused"):
+                    bad.append("%s: %s, not a signed 409 delivery-refused" % (name, a.short()))
+            out.append("%d unknown tokens refused with 409 delivery-refused" % len(cases))
+            a = self.play({"title": k, "versionId": cp["id"], "conformanceUnknownMember": {"x": [1]}})
+            self.answers.append(a)
+            if a.status == 200:
+                self.stop(a.json)
+                out.append("an unknown member ignored (200)")
+            else:
+                bad.append("a play with an unknown member: %s (core 8.5: unknown members are ignored)" % a.short())
+            if bad:
+                raise Fail("\n".join(bad))
+            return "; ".join(out)
+        self.check("PB24", "core 8.5, playback 2.1, 2.2, 2.7", "unknown values in play: a token naming what to serve "
+                   "refused with 409 delivery-refused, an unknown member ignored", unknown_values)
 
     # ---- downloads (playback 7, media 4.1) ----------------------------------------------
 
@@ -241,7 +294,7 @@ class RevisionChecks:
                 n = lim.get("streams")
                 if isinstance(n, int) and 1 <= n <= 4:
                     for _ in range(n):
-                        j, a2 = self.started({"title": k, "capabilities": BROAD_CAPS})
+                        j, a2 = self.started(self.stream_body(k))
                         if j is None:
                             raise Fail("with a download live, play %d of %d streams: %s (playback 7: a download never "
                                        "counts against streams)" % (len(extra) + 1, n, a2.short()))
@@ -340,7 +393,7 @@ class RevisionChecks:
                 n = lim.get("streams")
                 if isinstance(n, int) and 1 <= n <= 4:
                     for _ in range(n):
-                        j, a2 = self.started({"title": k, "capabilities": BROAD_CAPS})
+                        j, a2 = self.started(self.stream_body(k))
                         if j is None:
                             raise Fail("play %d of %d streams: %s" % (len(extra) + 1, n, a2.short()))
                         extra.append(j)
@@ -361,16 +414,17 @@ class RevisionChecks:
             if "pb" not in st:
                 raise Skip("no scan started")
             u, size = st["pb"]["stream"]["url"], st["copy"]["size"]
+            cut = lim["scanBytes"]
             c = self.client
             bad, sent, n = [], 0, 0
             s, h, _ = c.get(u)
             if s != 416:
                 bad.append("a fetch without Range: %d, not 416 (media 4.2)" % s)
-            while n < 600:
+            while n < 600 and sent < READ_AT_MOST:
                 n += 1
                 rng = "bytes=0-"
-                want = scan_answer(sent, rng, size)
-                s, h, body = c.get(u, [("Range", rng)], limit=SCAN_CAP + 1)
+                want = scan_answer(sent, rng, size, cut)
+                s, h, body = c.get(u, [("Range", rng)], limit=min(cut, READ_AT_MOST) + 1)
                 got = (s, (_h(h, "content-range") or "").strip())
                 if got != want:
                     bad.append("read %d (%d bytes sent before): %d %s; media 4.2: %d %s" % (n, sent, got[0], got[1],
@@ -379,14 +433,19 @@ class RevisionChecks:
                 if s == 416:
                     break
                 sent += len(body)
-            if not bad and sent != SCAN_CAP:
-                bad.append("%d bytes served in all, not the cap of %d" % (sent, SCAN_CAP))
+            if not bad and sent < READ_AT_MOST and sent != cut:
+                bad.append("%d bytes served in all, not the cap of %d (scanBytes %s)" % (
+                    sent, cut, "as announced" if isinstance(self.limits, dict) and "scanBytes" in self.limits
+                    else "absent: the floor, 4 MiB"))
             if bad:
                 raise Fail("\n".join(bad))
-            return "416 without Range; %d reads of bytes=0- served %d bytes, the last cut at the cap, then 416 bytes */%d" % (
-                n - 1, sent, size)
-        self.check("PB22", "playback 8, media 4.2", "a scan's reads: within 32 MiB in all, cut at the cap, then 416",
-                   cap)
+            if sent >= READ_AT_MOST:
+                return (PASS, "416 without Range; %d reads of bytes=0- served %d bytes within the cap of %d, read no "
+                        "further" % (n, sent, cut))
+            return "416 without Range; %d reads of bytes=0- served %d bytes, the last cut at the cap of %d (scanBytes), " \
+                   "then 416 bytes */%d" % (n - 1, sent, cut, size)
+        self.check("PB22", "playback 8, 5, media 4.2", "a scan's reads: within the announced scanBytes (absent: 4 MiB) in "
+                   "all, cut at the cap, then 416", cap)
 
         def ticket():
             if "pb" not in st:

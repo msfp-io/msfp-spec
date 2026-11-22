@@ -82,12 +82,15 @@ def main():
         suite.run()
     except KeyboardInterrupt:
         report.note("interrupted")
+    for section, text in suite.defaults:
+        report.note("a recommended default not followed (%s; not a conformance failure): %s" % (section, text))
     for section, text in suite.unclear:
         report.note("unclear in the specification (%s): %s" % (section, text))
     n, _ = report.summary()
     if a.json:
         report.write_json(a.json, {"version": __version__, "target": suite.target, "time": time.time(),
-                                   "unclear": [{"section": s, "text": t} for s, t in suite.unclear]})
+                                   "unclear": [{"section": s, "text": t} for s, t in suite.unclear],
+                                   "defaults": [{"section": s, "text": t} for s, t in suite.defaults]})
     return 1 if n["fail"] else 0
 
 

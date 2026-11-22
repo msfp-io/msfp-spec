@@ -77,6 +77,7 @@ class Suite(PartChecks, KeyChecks, GroupChecks):
         self.seq = None
         self.answers = []                       # every answer that had to be signed
         self.unclear = []
+        self.defaults = []
 
     # ---- running a check ---------------------------------------------------------
 
@@ -169,6 +170,12 @@ class Suite(PartChecks, KeyChecks, GroupChecks):
         elif typ is not None and a.problem_type() != typ:
             raise Fail("a signed %d of type %r; expected %r (core 8.2)" % (status, a.problem_type(), typ))
         return a
+
+    def note_default(self, section, text):
+        """A recommended default the server doesn't follow (proposal 17:
+        copy, track and subtitle choice): a note, never a failure."""
+        if (section, text) not in self.defaults and len(self.defaults) < 50:
+            self.defaults.append((section, text))
 
     def note_unclear(self, section, text):
         if (section, text) not in self.unclear:
