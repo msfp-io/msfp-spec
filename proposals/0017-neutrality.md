@@ -1,8 +1,12 @@
 # Proposal 17: Neutrality
 
 Status: Adopted (2026-11-22); written into spec/v0 in one batch
-with proposal 16's remaining work. Every choice below is the owner's,
-taken on 2026-11-22, except those listed in "Points to confirm".
+with proposal 16's remaining work. Amended 2026-11-23: format names from
+outside vocabularies and the registry instead of ffmpeg's (section 3.2),
+colour as H.273 numbers (3.3), seek-bar previews fetched only when used
+(3.7), and the points left open settled ("Points settled"); the
+amendment is not yet written into spec/v0. Every choice
+below is the owner's, taken on 2026-11-22 and 2026-11-23.
 
 Amends [proposal 16](0016-version-0-revision.md) and reverses some of its
 decisions (listed below).
@@ -49,8 +53,8 @@ refused (`400`) in transcode targets, collapsed to `other` or dropped in
 the catalog.
 
 **The rule this proposal applies.** The protocol carries universal facts
-in outside vocabularies (ffmpeg names, RFC 6381, ITU-T H.273, the DASH
-role scheme, MusicBrainz, IANA media types) and generic mechanisms with
+in outside vocabularies (IANA media types, RFC 6381, ITU-T H.273, the DASH
+role scheme, MusicBrainz, and the registry's crosswalk to them) and generic mechanisms with
 open lists. No product text in normative sections. Policy is a
 recommended default, except the safety defaults the owner kept
 normative. Implementations map their media server's names to these
@@ -90,6 +94,11 @@ One rule, in the core, for every part:
 
 - A **token** is 1 to 32 characters of `a–z 0–9 . _ -`. Fields this
   proposal calls open take tokens unless they say otherwise.
+- A **media type** (amended 2026-11-23) is an IANA-form media type,
+  lowercase, with exactly one `/`, no parameters, at most 64 characters
+  of `a–z 0–9 . + - _ /` (`video/mp4`, `application/ttml+xml`). It
+  follows the token rules below: unknown ones are kept in facts and
+  answered `409` in requests.
 - **In a fact** (the catalog, `play`'s answer): an unknown token is
   **kept** as it is, never turned into `other`, never dropped. A value
   that isn't a token (wrong type, too long, other characters) is dropped
@@ -140,40 +149,75 @@ Art Archive" (music 4), not "from the Cover Art Archive".
 
 - `durationMs`: the length in milliseconds as known; no rounding.
 - `bitrateKbps`: as known, in kbit/s, for video and music copies alike.
-- `fps` becomes a rational: the string `"<num>/<den>"`, as ffmpeg prints
-  `avg_frame_rate` (`"24000/1001"`, `"25/1"`), each 1 to 1,000,000,
-  reduced. A value not in that form is dropped.
+- `fps` becomes a rational: the string `"<num>/<den>"`, the frame rate
+  as the stream states it (`"24000/1001"`, `"25/1"`; ffprobe's
+  `avg_frame_rate` gives it in this form), each 1 to 1,000,000, reduced.
+  A value not in that form is dropped.
 
-#### 3.2 Names from ffmpeg, plus RFC 6381 (video 3.3, 3.5; music 3.3)
+#### 3.2 Format names: outside vocabularies and the registry (video 3.3, 3.5; music 3.3)
 
-- `container`: the ffmpeg muxer name of the file's format, the name
-  `ffmpeg -f` takes (`matroska`, `webm`, `mp4`, `mov`, `mpegts`, `avi`,
-  `flac`, `ogg`), open.
-- Video and audio `codec`: ffmpeg's `codec_name` (`h264`, `hevc`, `av1`,
-  `vvc`, `prores`; `aac`, `eac3`, `truehd`, `dts`, `opus`, `pcm_s24le`),
-  open.
-- Subtitle `format`: ffmpeg's subtitle `codec_name` (`subrip`, `ass`,
-  `webvtt`, `mov_text`, `ttml`, `hdmv_pgs_subtitle`, `dvd_subtitle`,
-  `dvb_subtitle`, `dvb_teletext`, `eia_608`), open. So `pgs`, `vobsub`
-  and `dvb` become ffmpeg's names. The rule that a track gets no URL for
+Amended 2026-11-23. The first version took ffmpeg's names; ffmpeg is a
+product, and ffprobe doesn't even give the muxer name it asked for (its
+demuxer names are lists: `mov,mp4,m4a,3gp,3g2,mj2`, `matroska,webm`).
+Research: the owner's notes, `msfp-format-names-research`.
+
+- **Container.** `container` gives way to **`mediaType`**, the file's
+  media type (section 1): `video/mp4`, `video/quicktime`,
+  `video/matroska`, `video/webm`, `video/mp2t`, `video/ogg`,
+  `audio/mp4`, `audio/flac`… It is what MSE, `canPlayType`, AVPlayer and
+  Media3 test, and any implementation reads it from the file's first
+  bytes. Where IANA has nothing, the registry names the type in use
+  (`video/x-msvideo` for AVI; `video/webm` comes from the WebM project).
+  A WebM file whose DocType isn't known may be sent as `video/matroska`:
+  less precise, never wrong.
+- **Brand.** New, optional: **`brand`**, the ISO BMFF major brand from
+  the file's `ftyp` box (`isom`, `mp42`, `qt  `, `M4V `), 4 characters,
+  as RFC 6381's `profiles` carries brands; or the Matroska DocType
+  (`matroska`, `webm`).
+- **Codec and subtitle names.** Video and audio `codec`, and subtitle
+  `format`, are open tokens **defined by the registry**
+  (`spec/registry.md`), not by a product. Each registry entry gives the
+  token and its equivalents: the MP4RA sample entries, the Matroska codec
+  ID, the IANA type where one exists, and ffmpeg's `codec_name`. Tokens
+  are spelled as ffmpeg spells them where ffmpeg has a name (`h264`,
+  `hevc`, `av1`, `aac`, `eac3`, `truehd`, `dts`, `opus`, `subrip`,
+  `ass`, `webvtt`, `hdmv_pgs_subtitle`, `dvd_subtitle`), so a producer
+  reading ffprobe maps nothing, while one reading the file otherwise maps
+  through the same table. A new codec is a registry entry; unknown tokens
+  are kept meanwhile (section 1). The rule that a track gets no URL for
   what the owner can't serve stays.
-- New, optional, on the video stream and each audio track: `codecs`, the
-  stream's RFC 6381 codecs string (`avc1.640028`, `hvc1.2.4.L153.B0`,
-  `dvh1.08.06`, `mp4a.40.2`, `ec-3`), at most 64 characters of
-  `A–Z a–z 0–9 . -`. It is what MSE, ExoPlayer and AVPlayer test against.
+- **Subtitle `kind`.** New, optional, on each subtitle track: `text` or
+  `image`, from the owning server, which holds the file. A viewer's
+  server reads `kind`, else the registry's entry for the format; with
+  neither, it offers the track only as it is.
+- **`codecs`** (RFC 6381), on the video stream and each audio track:
+  **recommended**, the main fact a player decides on (`avc1.640028`,
+  `hvc1.2.4.L153.B0`, `dvh1.08.06`, `mp4a.40.2`, `ec-3`, `ec+3`), at
+  most 64 characters of `A–Z a–z 0–9 . - +`. No `/`: Dolby Vision's
+  layers are said by `dv` (section 3.3), not by HLS's supplemental form.
+  Codes are compared as written; the notes say to accept lowercase
+  variants in use (`opus` for `Opus`).
 - The names table (video 3.5) and its two columns are dropped.
-- Video and audio `profile`: as ffmpeg prints the stream's profile
-  (`Main 10`, `High`, `LC`, `HE-AAC`, `DTS-HD MA`,
-  `Dolby TrueHD + Dolby Atmos`), plain text, at most 64 characters, open;
-  not a token. MSFP's audio profile list (`atmos`, `dtsx`…) is dropped.
+- Video and audio **`profile`**: display text, as the producer's tool
+  prints it (`Main 10`, `LC`, `DTS-HD MA`), plain text, at most 64
+  characters; never used for a decision (video profile and level are in
+  `codecs`). MSFP's audio profile list (`atmos`, `dtsx`…) is dropped.
+- **`objects`.** New, optional, on an audio track: the object-based
+  format it carries, an open token from the registry (`atmos`, `dtsx`).
+  No outside vocabulary names these; a viewer's server picks an Atmos or
+  DTS:X track by it, not by guessing from `profile`.
 - `codecTag` and `level` stay.
 
 #### 3.3 HDR from the signal (video 3.3)
 
-- `colour` (`primaries`, `transfer`, `matrix`, `range`, ITU-T H.273 names
-  as ffmpeg prints them) is the base fact. HDR10 and HLG follow from
-  `transfer` (`smpte2084`, `arib-std-b67`); a copy with no `colour` says
-  nothing about its range.
+- `colour` is the base fact: `primaries`, `transfer` and `matrix` as
+  **ITU-T H.273 code points**, integers 0 to 255 (amended 2026-11-23:
+  numbers, the standard's own form, not ffmpeg's names), and `range`
+  (`tv` or `pc`, open). They are what the file stores (the video
+  stream's VUI, Matroska's colour elements, MP4's `colr` box). HDR10 and
+  HLG follow from `transfer` (16 = PQ, 18 = HLG); a copy with no
+  `colour` says nothing about its range. The table from ffmpeg's names
+  to the numbers goes to the notes.
 - `hdr` keeps only enhancement layers and dynamic metadata, as open
   tokens: `hdr10plus`, `dv`, later ones. `hdr10` and `hlg` leave it. The
   fixed order goes; the array is sorted, each token once.
@@ -183,11 +227,12 @@ Art Archive" (music 4), not "from the Cover Art Archive".
 
 #### 3.4 Other bounds and facts (video 3.2, 3.3)
 
-- `copies`: at most **16**. `audioTracks` at most 32, `subtitleTracks` at
+- `copies`: at most **16**, for video titles and music tracks alike
+  (music too, 2026-11-23). `audioTracks` at most 32, `subtitleTracks` at
   most 64, unchanged.
 - Video `bitDepth`: 1 to 16 (not only 8, 10, 12).
 - New, optional, on the video stream: `sampleAspect`, the sample (pixel)
-  aspect ratio as ffmpeg prints it (`"32:27"`), each side 1 to 65,535;
+  aspect ratio as width:height (`"32:27"`), each side 1 to 65,535;
   absent means square pixels. `rotation`: the degrees clockwise the
   picture must be turned to show upright, `0`, `90`, `180` or `270`;
   absent means 0.
@@ -221,6 +266,29 @@ Each becomes open, unknown values kept (section 1):
   becomes "should". One rule stays a must: a viewer's server never sends
   a `local` description on to another server and never looks it up
   elsewhere.
+
+#### 3.7 Seek-bar previews: fetched only when used (video 5.5, 5.6; media 1)
+
+Amended 2026-11-23. Proposal 16 has a viewer's server ask `previews` for
+every copy and fetch every sheet at once, to show previews from the first
+play. A library's previews can weigh tens of gigabytes; every paired
+server would download them all.
+
+- **The layout goes in the catalog.** A copy's `previews: true` gives way
+  to **`previewLayout`**: `tileWidth`, `tileHeight`, `columns`, `rows`,
+  `intervalMs` and `tileCount`, with video 5.5's bounds, and no URLs. A
+  viewer's server knows from the catalog that previews exist and what
+  they look like, and can present them as local ones before any play.
+- **Sheets only when used.** A viewer's server fetches a sheet only when
+  a person needs it (a scrub on the seek bar): it asks `previews` for the
+  ticketed URLs (10 minutes, as today), then that sheet alone. It never
+  fetches a copy's sheets ahead, in bulk, or for copies nobody plays.
+- **Caching optional.** A viewer's server may keep the sheets it fetched,
+  keyed by the copy's `etag`, and fetch none again while the `etag`
+  stays; it need not keep any.
+- `play`'s answer keeps its `trickplay` object for the copy playing.
+  The tiled sheets themselves, their checks and re-encoding are
+  unchanged.
 
 ### 4. Choice is the viewer's (playback 2.2, 2.6; video 3.7, 5.4; review P-6)
 
@@ -263,14 +331,14 @@ play themes in the background at each page view goes to the notes.
   for a film, an episode or an extra; AAC in HLS, audio only, for a
   track. It may play a copy as it is when the copy already meets it.
 - **Transcode targets** (`videoCodec`, `audioCodec`, `maxHeight`,
-  `maxBitrateKbps`, `audioChannels`, `burnSubtitle`) take ffmpeg names
-  for codecs; an unknown or unsupported codec gets `409`
+  `maxBitrateKbps`, `audioChannels`, `burnSubtitle`) take the registry's
+  codec tokens (section 3.2); an unknown or unsupported codec gets `409`
   `delivery-refused` (section 1). A target left out takes the baseline's
   value: `h264`, `aac`, the copy's own height, no cap, at most 2 channels.
   The targets' steps (`maxHeight`, `maxBitrateKbps` in 1,000s,
   `audioChannels` 2, 6 or 8) stay.
-- **Remux** (playback 2.7): the `container` is `mpegts` or `mp4`
-  (fragmented MP4), the two HLS segment formats. Any other container
+- **Remux** (playback 2.7): the target is a media type, `video/mp2t` or
+  `video/mp4` (fragmented MP4), the two HLS segment formats. Any other container
   gets `409` `delivery-refused`. A remux is always served as complete
   HLS.
 - **Audio renditions**: `audioRenditions` stays a request; there is no
@@ -315,6 +383,10 @@ most 1 MiB. The DNL rule moves to "Decoding safely" (section 2).
   all, 4,194,304 (4 MiB) to 1,073,741,824 (1 GiB). Absent, or out of
   range, a caller counts on the floor, 4 MiB. The recommended default
   for owners is 32 MiB.
+- `play`'s answer for a scan states the **`scanBytes` that applies to
+  its ticket** (amended 2026-11-23): an owner sharing through a pairing
+  and groups has one cap per pool, and only the owner knows which pool
+  counted the scan. The announced `limits` stay a hint for planning.
 - The owning server cuts and refuses reads past its `scanBytes` as it
   does today past 32 MiB (`206` ending at the cap, then `416`).
 - The normative text says only what any media server reading files to
@@ -342,8 +414,9 @@ most 1 MiB. The DNL rule moves to "Decoding safely" (section 2).
   to its own types. `compilation` (the tag) stays.
 - A track may carry its own `date`, `originalDate` and `genres` (at most
   8, as on albums), optional: compilations have them per track.
-- A track copy's `container` and `codec` take ffmpeg names (section 3.2);
-  `bitrateKbps` and `durationMs` exact (section 3.1).
+- A track copy's `mediaType`, `brand` and `codec` follow section 3.2;
+  `bitrateKbps` and `durationMs` exact (section 3.1); at most 16 copies
+  a track (section 3.4).
 
 ### 8. Identity schemes in a registry (catalog 4, video 4.3, music 3.1; review P-14)
 
@@ -369,7 +442,8 @@ read and restarts on the same `etag`; complete VOD HLS and its tag
 subset; one playback per viewer session; the WebVTT, ASS, PGS and font
 rebuilds; image re-encoding; exact `size` and `etag`; `parts`, `with`
 and `startMs`; chapters; the music queue of 5; lyrics; downloads (24-hour
-ticket, speed cap, late reports); the `previews` call; the `tvdb` and
+ticket, speed cap, late reports); the `previews` call itself (its use
+changes, section 3.7); the tiled sheets; the `tvdb` and
 `local` schemes and the `local` description; catalog paging.
 
 ## Alternatives considered
@@ -380,15 +454,24 @@ ticket, speed cap, late reports); the `previews` call; the `tvdb` and
 2. **Open the capability values only** (review P-2). Keeps the owner
    choosing for a device it can't see, and the coarsening. Rejected with
    decision 8.
-3. **IANA media types for containers.** Fewer values, but no names for
-   many containers (`matroska` has one, `mpegts` has `video/mp2t`, many
-   have none). ffmpeg's names cover every file a media server reads.
+3. **ffmpeg's names for every format** (this proposal's first version).
+   They cover every file a media server reads, but tie the protocol to a
+   product, and ffprobe gives no muxer name. Replaced on 2026-11-23 by
+   media types for containers and the registry for codecs (section
+   3.2). No single outside vocabulary covers codecs and subtitles: RFC
+   6381 codes miss ASS, PGS and VobSub and give two codes for one codec,
+   Matroska IDs miss AC-4 and Dolby Vision, IANA misses most audio and
+   subtitle formats.
+4. **Fetching every preview sheet ahead** (proposal 16). Previews from
+   the first play, but every paired server downloads a library's
+   previews whole. Replaced by the layout in the catalog and sheets on
+   demand (section 3.7).
 
 ## Costs
 
 - **Spec and vectors.** Text in the sections listed under Touches; the
   new `implementers.md` and `registry.md`. Vectors: the names table's
-  cases replaced by ffmpeg names and unknown values kept; the
+  cases replaced by registry tokens and media types, unknown values kept; the
   capabilities and coarsening cases removed; rounding cases made exact;
   `hdr`, `dv`, `fps`, `sampleAspect`, `rotation`, 16 copies, 64 fonts,
   `scanBytes`, `audioRenditions` in the answer, new limits ranges,
@@ -411,7 +494,8 @@ ticket, speed cap, late reports); the `previews` call; the `tvdb` and
 - **msfp-dotnet** (branch `revision`). The same as msfp-go, plus no
   ffprobe-names helper to write (review G2 no longer needed). Med to high.
 - **Overfin.** As an owning server: send its media server's names as
-  ffmpeg names, exact values, the new stream facts, up to 16 copies;
+  registry tokens and media types, exact values, the new stream facts,
+  up to 16 copies;
   set `scanBytes`; offer themes as extras behind an operator switch; the
   answer's `audioRenditions` (`false` until it builds renditions). As a
   viewer's server: always choose the copy and send `delivery`; keep
@@ -425,6 +509,14 @@ ticket, speed cap, late reports); the `previews` call; the `tvdb` and
   extras as Jellyfin theme songs and videos, behind a setting. Med; most
   of the rest is proposal 16's migration (review A-1 to A-4).
 
+- **The 2026-11-23 amendment** (sections 3.2, 3.3, 3.7, 6.4) on work
+  already done: the registry's codec and subtitle table with its
+  crosswalk; `mediaType` and `brand` read from the file's first bytes
+  (the engines' extension map goes); H.273 numbers; `objects`, subtitle
+  `kind`; 16 music copies; `previewLayout` in the catalog, `previews`
+  called only on a scrub, the engines' sheet prefetch removed; the
+  scan's cap in its answer. Vectors and conformance checks follow. Med.
+
 The engine work the review lists beyond this proposal (a `RemoteFile`
 helper, .NET's headers and image encoder, peer-catalog helpers, API
 cleanup) is not protocol; it goes in the same engine release.
@@ -435,26 +527,26 @@ None needed: version 0 is a draft and both implementations are the
 owner's. This proposal and proposal 16 reach every implementation in one
 release.
 
-## Points to confirm
+## Points settled
 
-Details the owner's answers leave open, with the choice made here:
+The details the owner's first answers left open, settled on 2026-11-23:
 
-1. **`fps`**: a rational string `"24000/1001"`, as ffmpeg prints it
-   (not 3 decimals, not two integers).
-2. **`container` names**: the ffmpeg muxer name (`ffmpeg -f`), which
-   tells `mp4` from `mov`; not ffprobe's comma list of demuxer names.
-3. **Remux containers** written as ffmpeg names: `mpegts` and `mp4`.
-4. **Upper bound of `streams` and `downloads`**: 1,000 (to confirm).
-5. **`scanBytes`**: the field's name, its range up to 1 GiB, and 4 MiB
-   when absent.
-6. **Audio `profile`**: ffmpeg's printed profile (plain text, 64), with
-   no separate `objects` flag for Atmos and DTS:X.
-7. **Transcode targets left out** take the baseline's values (`h264`,
-   `aac`, at most 2 channels); the targets' steps are kept.
+1. **`fps`**: a rational string, `"24000/1001"`. Kept.
+2. **Container**: the file's media type plus an optional `brand`, not an
+   ffmpeg name (section 3.2).
+3. **Remux targets**: `video/mp2t` and `video/mp4` (section 5).
+4. **Upper bound of `streams` and `downloads`**: 1,000. Kept.
+5. **`scanBytes`**: its name, 4 MiB to 1 GiB, 4 MiB when absent. Kept;
+   the scan's answer states its cap (section 6.4).
+6. **Audio `profile`**: display text, never for decisions; Atmos and
+   DTS:X said by the new `objects` (section 3.2).
+7. **Transcode targets left out** take the baseline's values (H.264,
+   AAC, at most 2 channels). Kept.
 8. **New field names**: `codecs`, `sampleAspect`, `rotation`, `el`,
    `bl`, `rpu`, `primaryType`, `secondaryTypes`, `themesong`,
-   `themevideo`, and `audioRenditions` in the answer.
-9. **MusicBrainz types** lowercased, with spaces and `/` allowed.
-10. **File names and places**: `spec/v0/implementers.md` for the notes,
-    `spec/registry.md` for the schemes, the unknown-values rule as core
-    section 8.5.
+   `themevideo`, `audioRenditions`. Kept; added since: `mediaType`,
+   `brand`, `objects`, `kind` (subtitles), `previewLayout`.
+9. **MusicBrainz types** lowercased, spaces and `/` allowed. Kept.
+10. **Files and places**: `spec/v0/implementers.md`, `spec/registry.md`,
+    the unknown-values rule as core section 8.5. Kept.
+11. **`tvdb` IDs on films** (in `ids`, TheTVDB's movie IDs): kept.
