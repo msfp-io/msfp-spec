@@ -1,6 +1,6 @@
-# MSFP format names: research for proposal 17, section 3.2
+# MSFP format names: research for proposal 17, sections 3.1 to 3.3
 
-Research behind [proposal 17](0017-neutrality.md) section 3.2. The owner
+Research behind [proposal 17](0017-neutrality.md) sections 3.1 to 3.3. The owner
 decided afterwards (2026-11-22), so this report goes further than what
 was adopted in places: the container is the IANA media type with **no**
 `brand` field (the owner reads the brand to choose the media type);
