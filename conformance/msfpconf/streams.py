@@ -1,23 +1,28 @@
 """The media checks (spec/v0/media.md, video.md section 6, as revised by
-proposal 16): HLS complete from the first fetch and the same on every
-fetch, segments, ranges, refusals and HEAD; the file by byte ranges
+proposals 16 and 17): HLS complete from the first fetch and the same on
+every fetch, segments, ranges, refusals and HEAD; the file by byte ranges
 (206, Content-Range against the exact size, ETag, Accept-Ranges, 416);
-WebVTT, ASS, PGS and fonts within their bounds; preview sheets."""
+WebVTT, ASS, PGS and fonts within their bounds; preview sheets under the
+playback's ticket; the names built from the ticket served exactly, 404
+past their counts. pb is a play answer as parts.view keeps it (url and
+base built from its ticket)."""
 
 import os
 import re
 import time
 
-from .copies import video_key
+from .copies import sheet_count, video_key
 from .media import (Refused, check_206, check_file_answer, check_font, check_owner_playlist, check_pgs, jpeg_size,
                     rebuild_ass, rebuild_vtt)
 from .report import PASS
 from .wire import b64u
 
-TEXT_FORMATS = ("subrip", "webvtt", "mov_text", "ttml", "ass", "ssa")
-PICTURE_FORMATS = ("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle")   # ffmpeg names (video 3.5)
 MALFORMED = ["bytes=0-1,5-9", "bytes=-", "bytes=5-1", "items=0-9", "bytes = 0-9", "bytes=0-1234567890123456",
              "bytes=-0", "bytes=a-b"]
+
+
+TEXT_FORMATS = ("subrip", "webvtt", "mov_text", "ttml", "ass", "ssa")
+PICTURE_FORMATS = ("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle")   # video 5.4's table
 
 
 def _x():
@@ -52,8 +57,7 @@ class StreamChecks:
     def media_checks(self, pb, title, prefix):
         Fail, Skip = _x()
         c = self.client
-        url = pb["stream"]["url"]
-        base = url.rsplit("/", 1)[0] + "/"
+        url, base = pb["url"], pb["base"]
         copy = self.copy_of(title, pb.get("versionId"))
         st = {}
 
@@ -61,7 +65,7 @@ class StreamChecks:
             return c.get(u, headers, method)
 
         def master():
-            if pb["stream"]["protocol"] != "hls":
+            if pb["protocol"] != "hls":
                 raise Skip("a file stream (the F checks read it)")
             status, hdrs, body = fetch(url)
             if status != 200:
@@ -102,7 +106,7 @@ class StreamChecks:
                    "every fetch, the media subset, bare names", media_playlist)
 
         def segment():
-            if pb["stream"]["protocol"] == "file":
+            if pb["protocol"] == "file":
                 st["ranged"] = url
                 return "a file stream: ranges checked below"
             if "segment" not in st:
@@ -120,7 +124,7 @@ class StreamChecks:
         self.check(prefix + "3", "media 3", "the first segment of the media playlist: 200", segment)
 
         def refusals():
-            if pb["stream"]["protocol"] == "hls" and "variant" not in st:
+            if pb["protocol"] == "hls" and "variant" not in st:
                 raise Skip("no playlist read")
             bad = []
             for name, u, hs, method in (("a query string", url + "?x=1", (), "GET"),
@@ -146,30 +150,66 @@ class StreamChecks:
                    "and HEAD: 405", refusals)
 
         def range_on_playlist():
-            if pb["stream"]["protocol"] != "hls":
+            if pb["protocol"] != "hls":
                 raise Skip("a file stream")
             status, hdrs, body = fetch(url, [("Range", "bytes=0-9")])
             if status != 200:
                 raise Fail("a Range on master.m3u8 gave %d; media 2.1: the owning server ignores it and sends the whole" % status)
             return "200, the whole playlist"
         self.check(prefix + "5", "media 2.1", "a Range on a playlist is ignored: 200 and the whole", range_on_playlist)
-        self.range_checks(prefix + "9", st, copy if pb["stream"]["protocol"] == "file" else None)
+        self.range_checks(prefix + "9", st, copy if pb["protocol"] == "file" else None)
 
         if not video_key(title):
             return
         self.subtitle_checks(pb, title, prefix)
 
         def sheets():
-            tp = pb.get("trickplay")
-            if not isinstance(tp, dict) or not tp.get("sheets"):
-                raise Skip("no previews in the answer")
-            return self.sheet_check(tp)
-        self.check(prefix + "8", "video 5.5, 6.2, media 3.4", "a preview sheet: 200 image/jpeg within the layout; 404 past "
-                   "the count", sheets)
+            tp = (copy or {}).get("previewLayout")
+            if not isinstance(tp, dict):
+                raise Skip("the copy playing has no previewLayout in the catalog")
+            return self.sheet_check(base, tp) + " (the playback's ticket opens its copy's sheets, with no previews call)"
+        self.check(prefix + "8", "video 5.5, 6.1, 6.2, media 3.4", "a preview sheet under the playback's ticket: 200 "
+                   "image/jpeg within the catalog's layout; 404 past the count", sheets)
 
-    def sheet_check(self, tp):
+        def names():
+            bad, out = [], []
+            n = pb.get("fontCount", 0)
+            tries = [("fonts/%d" % n, "a font at fontCount")]
+            layout = (copy or {}).get("previewLayout")
+            if isinstance(layout, dict):
+                tries.append(("trickplay/%d" % sheet_count(layout), "the sheet at the sheet count"))
+            else:
+                tries.append(("trickplay/0", "a sheet of a copy without previewLayout"))
+            served = {x["id"]: x for x in pb.get("subtitles", [])}
+            ids = [t.get("id") for t in (copy or {}).get("subtitleTracks") or [] if isinstance(t, dict)]
+            for sid in ids:
+                x = served.get(sid)
+                if x is None:
+                    tries.append(("subtitles/%s/0" % sid, "track %s, not served apart" % sid))
+                elif x["form"] == "text":
+                    tries.append(("pictures/%s/0" % sid, "track %s as pictures, served as text" % sid))
+                    if not x.get("ass"):
+                        tries.append(("ass/%s/0" % sid, "track %s as ASS, without ass" % sid))
+                else:
+                    tries.append(("subtitles/%s/0" % sid, "track %s as text, served as pictures" % sid))
+            tries.append(("subtitles/s999/0", "a track the copy doesn't have"))
+            tries.append(("queue/0/master.m3u8", "a queue entry not asked"))
+            for name, what in tries:
+                status, _, _ = c.get(base + name)
+                if status != 404:
+                    bad.append("%s (%s): %d, not 404" % (name, what, status))
+                out.append(name)
+            if bad:
+                raise Fail("\n".join(bad) + "\n(video 6.1, media 1: the owning server serves exactly the names built "
+                           "from the answer and the catalog, and 404 past a count)")
+            return "404 for %d names past the answer's counts: %s" % (len(out), ", ".join(out))
+        self.check(prefix + "10", "video 6.1, media 1", "the names built from the ticket: 404 past fontCount, the sheet "
+                   "count, and for a track not served apart in that form", names)
+
+    def sheet_check(self, base, tp):
+        """Sheet 0 of the layout tp under base (<stream root><ticket>/)."""
         Fail, _ = _x()
-        u = tp["sheets"][0]
+        u = base + "trickplay/0"
         status, hdrs, body = self.client.get(u, limit=8 * 1024 * 1024 + 1)
         if status != 200:
             raise Fail("sheet 0: %d" % status)
@@ -184,7 +224,7 @@ class StreamChecks:
             bad.append("not a JPEG by its header")
         elif size[0] > tp["columns"] * tp["tileWidth"] or size[1] > tp["rows"] * tp["tileHeight"]:
             bad.append("%dx%d, bigger than a full sheet" % size)
-        n = len(tp["sheets"])
+        n = sheet_count(tp)
         root = u.rsplit("/", 1)[0]
         for name, x in (("the sheet count", "%s/%d" % (root, n)), ("a leading zero", "%s/00" % root), ("a query", u + "?x=1")):
             s2, _, _ = self.client.get(x)
@@ -203,13 +243,20 @@ class StreamChecks:
         c = self.client
 
         def tracks_of(j):
-            return [t for t in (j.get("subtitleTracks") or []) + (j.get("forcedTracks") or []) if isinstance(t, dict)]
+            """The subtitle tracks served apart, each with its URLs built from
+            the ticket (video 6.1)."""
+            out = []
+            for x in j.get("subtitles", []):
+                t = dict(x, url=j["base"] + ("subtitles/" if x["form"] == "text" else "pictures/") + x["id"])
+                if x.get("ass"):
+                    t["assUrl"] = j["base"] + "ass/" + x["id"]
+                out.append(t)
+            return out
 
         def has(t, kind):
             if kind == "ass":
                 return bool(t.get("assUrl"))
-            u = t.get("url") or ""
-            return "/pictures/" in u if kind == "pictures" else "/subtitles/" in u
+            return t["form"] == ("picture" if kind == "pictures" else "text")
         subs = tracks_of(pb)
 
         def find(kind):
@@ -222,7 +269,8 @@ class StreamChecks:
             formats = {"ass": ("ass", "ssa"), "pictures": PICTURE_FORMATS, "subtitles": TEXT_FORMATS}[kind]
             tried = []
             for x in self.whole or []:
-                if len(tried) >= 8 or x.get("key") == title or x.get("kind") not in ("movie", "episode", "extra"):
+                if len(tried) >= 8 or x.get("key") == title or not video_key(x.get("key")) or \
+                        video_key(x["key"]).kind not in ("movie", "episode", "extra"):
                     continue
                 cp = next((cc for cc in x.get("copies") or [] if isinstance(cc, dict) and any(
                     isinstance(s, dict) and s.get("format") in formats for s in cc.get("subtitleTracks") or [])), None)
@@ -232,10 +280,16 @@ class StreamChecks:
                 if a.status != 200 or not isinstance(a.json, dict):
                     tried.append("%s: %s" % (x["key"], a.short()))
                     continue
-                t = next((s for s in tracks_of(a.json) if has(s, kind)), None)
+                try:
+                    other = self.view(a.json, x["key"])
+                except ValueError as e:
+                    tried.append("%s: its answer refused: %s" % (x["key"], e))
+                    self.stop(a.json)
+                    continue
+                t = next((s for s in tracks_of(other) if has(s, kind)), None)
                 if t:
-                    return t, a.json, x["key"]
-                tried.append("%s: no %s URL in its answer" % (x["key"], kind))
+                    return t, other, x["key"]
+                tried.append("%s: no track served as %s in its answer" % (x["key"], kind))
                 self.stop(a.json)
             return None, None, "; ".join(tried) or "no other title's copy lists such a track"
 
@@ -320,9 +374,9 @@ class StreamChecks:
               "rebuilt form", with_track("ass", "ASS or SSA track with an assUrl", ass_part), "ass")
 
         def fonts():
-            fs = pb.get("fonts")
+            fs = [pb["base"] + "fonts/%d" % i for i in range(pb.get("fontCount", 0))]
             if not fs:
-                raise Skip("no fonts in the answer (a copy whose ASS tracks use fonts gives them)")
+                raise Skip("fontCount 0 in the answer (a copy whose ASS tracks use fonts gives their count)")
             out, bad = [], []
             total = 0
             for i, u in enumerate(fs[:64]):
@@ -342,14 +396,14 @@ class StreamChecks:
                 total += len(body)
             if total > 64 * 1024 * 1024:
                 bad.append("the copy's fonts hold %d bytes in all, over 64 MiB (video 6.6)" % total)
-            s2, _, _ = c.get(fs[0].rsplit("/", 1)[0] + "/%d" % len(fs))
-            if s2 != 404 and len(fs) < 64:
-                bad.append("fonts/%d, past the list: %d, not 404" % (len(fs), s2))
+            s2, _, _ = c.get(pb["base"] + "fonts/%d" % len(fs))
+            if s2 != 404:
+                bad.append("fonts/%d, at fontCount: %d, not 404 (video 6.1)" % (len(fs), s2))
             if bad:
                 raise Fail("\n".join(bad))
             return "%d font(s): %s" % (len(out), ", ".join(out))
-        self.check(prefix + "12", "video 6.6, media 3.4, 2.4", "fonts: TrueType or OpenType, each within 10 MiB, "
-                   "at most 64 and 64 MiB in all",
+        self.check(prefix + "12", "video 6.1, 6.6, media 3.4, 2.4", "fonts 0 to fontCount - 1: TrueType or OpenType, each "
+                   "within 10 MiB, 64 MiB in all; 404 at fontCount",
                    fonts)
 
     # ---- ranges, on a segment or the file (media 2.1, 3.2) ---------------------------------
@@ -423,7 +477,7 @@ class StreamChecks:
         F3 stable bytes, F4 HEAD and conditional headers."""
         Fail, Skip = _x()
         c = self.client
-        u = pb["stream"]["url"]
+        u = pb["url"]
         size, etag = copy.get("size"), copy.get("etag")
         st = {"ranged": u}
 

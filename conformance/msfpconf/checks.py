@@ -309,15 +309,24 @@ class Suite(PartChecks, KeyChecks, GroupChecks):
         ctx = self.cert.context() if self.cert else None
         self.peer.listen("main", self.address, a.listen, ctx)
         self.peer.hosts.add(host_of(self.address))
-        self.peer.offer = [{"id": "lib_conformance", "name": "Conformance films", "kind": "movies"}]
-        clip_copy = [{"id": "c_clip", "durationMs": clip.DURATION_MS, "container": "mp4", "size": len(clip.MP4),
-                      "etag": clip.ETAG, "video": {"codec": "h264", "width": 160, "height": 90},
-                      "audioTracks": [{"id": "a1", "language": "en", "channels": 1, "codec": "aac", "default": True}]}]
+        self.peer.offer = [{"id": "lib_conformance", "name": "Conformance films"}]
+        # The clip (clip.py): H.264 Constrained Baseline 1.2 and AAC-LC mono
+        # at 22,050 Hz in MP4, track IDs its stream indexes (video 3.7), a
+        # preview layout of one sheet so that a server reading the catalog
+        # is seen not to fetch previews ahead (video 5.5).
+        clip_copy = [{"id": "c_clip", "durationMs": clip.DURATION_MS, "mediaType": "video/mp4", "size": len(clip.MP4),
+                      "etag": clip.ETAG, "video": {"codec": "h264", "codecs": "avc1.42C00C", "width": 160, "height": 90,
+                                                   "bitDepth": 8, "colour": {"primaries": 1, "transfer": 1, "matrix": 1},
+                                                   "fps": "10/1"},
+                      "audioTracks": [{"id": "a1", "language": "en", "channels": 1, "default": True, "codec": "aac",
+                                       "codecs": "mp4a.40.2", "sampleRate": 22050}],
+                      "previewLayout": {"tileWidth": 160, "tileHeight": 90, "columns": 1, "rows": 1, "intervalMs": 2000,
+                                        "tileCount": 1}}]
         self.peer.pages = {
-            "": {"titles": [{"key": "movie/tmdb/550", "kind": "movie", "library": "lib_conformance", "copies": clip_copy},
-                            {"key": "movie/tmdb/603", "kind": "movie", "library": "lib_conformance", "copies": clip_copy}],
+            "": {"titles": [{"key": "movie/tmdb/550", "library": "lib_conformance", "copies": clip_copy},
+                            {"key": "movie/tmdb/603", "library": "lib_conformance", "copies": clip_copy}],
                  "next": "movie/tmdb/603", "seq": 1},
-            "movie/tmdb/603": {"titles": [{"key": "movie/tmdb/949", "kind": "movie", "library": "lib_conformance",
+            "movie/tmdb/603": {"titles": [{"key": "movie/tmdb/949", "library": "lib_conformance",
                                            "copies": clip_copy}], "seq": 1},
         }
 

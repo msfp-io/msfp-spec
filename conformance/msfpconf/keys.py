@@ -83,6 +83,17 @@ class KeyChecks:
                 raise Fail("the server didn't ask for the page after next = movie/tmdb/603")
             return "followed next (the suite sends next on a short page on purpose: a caller follows any next above its after)"
         self.check("Q3", "catalog 3.1", "the server follows next to the following page", follows, operator=True)
+
+        def ahead():
+            calls = s.since(0, call="previews")
+            sheets = [r for r in s.since(0, call="media") if "/trickplay/" in r["path"]]
+            if calls or sheets:
+                raise Fail("reading the catalog, with nobody opening a copy: %d previews call(s) and %d sheet fetch(es) "
+                           "for this suite's copies (video 5.5: never previews for a whole library, nor in bulk for "
+                           "copies nobody opened)" % (len(calls), len(sheets)))
+            return "no previews call and no sheet fetched while reading the catalog (its copies carry a previewLayout)"
+        self.check("Q4", "video 5.5", "the server fetches no previews ahead: none while it reads the catalog", ahead,
+                   operator=True)
         self.viewer_checks()
 
     # ---- the server as a viewer of this suite's films (playback 2 to 4, 6.3) -------------
@@ -98,7 +109,7 @@ class KeyChecks:
         sections = ("playback 2 to 4; core 6.4", "playback 3, 6.3", "playback 3", "playback 4")
         titles = ("the server's play, progress and stop for this suite's film are well signed and well formed",
                   "while its viewer pauses, the server keeps the playback: never 2 minutes without progress or media",
-                  "the pause is reported (progress with paused true)",
+                  "the pause is reported at once (a progress soon after the play, the viewer pausing at once)",
                   "the server sends stop when its viewer stops")
         levels = ("MUST", "SHOULD", "SHOULD", "SHOULD")
 
@@ -154,9 +165,15 @@ class KeyChecks:
         self.check("VW2", sections[1], titles[1], kept, level="SHOULD", operator=True)
 
         def paused():
-            if not any(p for _, _, p in pb["progress"]):
-                raise Fail("no progress with paused true (%d progress reports)" % len(pb["progress"]))
-            return "reported paused"
+            first = min([t for t, _, _ in pb["progress"]] or [None]) if pb["progress"] else None
+            if first is None or first - pb["opened"] > 60:
+                raise Fail("no progress within 60 s of the play, its viewer pausing at once (playback 3: at once when "
+                           "the viewer pauses; %d progress reports in all)" % len(pb["progress"]))
+            if any(p for _, _, p in pb["progress"]):
+                rec_note = "; paused sent, an unknown member since proposal 17"
+            else:
+                rec_note = ""
+            return "a progress %d s after the play%s" % (first - pb["opened"], rec_note)
         self.check("VW3", sections[2], titles[2], paused, level="SHOULD", operator=True)
 
         def stopped():

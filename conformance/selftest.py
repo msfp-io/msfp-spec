@@ -11,9 +11,9 @@
    over HTTPS both ways, with the self-test playing the server's
    operator. Every check must pass.
 
-3. The same run against the fake with deliberate faults (FAULTS below):
-   the checks aimed at each fault must fail, so the suite is seen to
-   catch what it checks.
+3. The same run against the fake with deliberate faults (FAULTS below,
+   then CHOICE in a pass of its own): the checks aimed at each fault must
+   fail, so the suite is seen to catch what it checks.
 
     python3 conformance/selftest.py [-v] [--vectors-only] [--quick]
 
@@ -65,18 +65,28 @@ FAULTS = {
     "etag": ["PB18"],               # a download's answer whose etag isn't the catalog's (playback 2.3)
     "head": ["M4", "F4"],           # HEAD on media answered 404, not 405 (media 2.2)
     "growing": ["M2"],              # a media playlist without EXT-X-ENDLIST (media 3.1)
-    "scancap": ["PB22"],            # a scan's reads past its cap served (media 4.2)
-    "scanfloor": ["PB22"],          # scans cut at the 4 MiB floor, not at the scanBytes announced (playback 5)
+    "scancap": ["PB22"],            # a scan's reads past the answer's scanBytes served (media 4.2)
+    "scanfloor": ["PB22"],          # scans cut at the 4 MiB floor, not at the scanBytes their answer states (playback 8)
     "tokens": ["PB24"],             # an unknown delivery token refused with 400, not 409 (core 8.5)
-    "remux": ["PB24"],              # a remux to matroska served, not refused (playback 2.7: mpegts or mp4)
+    "remux": ["PB24"],              # a remux to video/matroska served, not refused (playback 2.7: mp2t or mp4)
+    "rangetoken": ["PB24"],         # an unknown range token refused with 400, not 409 (playback 2.7)
     "baseline": ["PB4"],            # the file served without delivery (playback 2.7: the baseline is HLS)
+    "baselinecopy": ["PB4"],        # without delivery, a copy outside the baseline left unchanged (playback 2.7)
     "renditions": ["PB17"],         # audioRenditions true in the answer, none in the playlist (playback 2.3)
-    "oldnames": ["T1"],             # a copy's container mkv, MSFP's old name, not ffmpeg's matroska (video 3.5)
+    "container": ["T1"],            # a copy with container matroska, no mediaType (video 3.2: skipped by a caller)
+    "nocodecs": ["T1"],             # an H.264 stream without codecs (video 3.5: required for the six)
+    "urls": ["PB3"],                # a URL in play's answer (playback 2.3: answers carry no URLs)
+    "pastcount": ["M10"],           # fonts/<fontCount> served (video 6.1: 404 past a count)
+    "burncopy": ["PB8"],            # burnSubtitle with video copy served, not refused (playback 2.7)
+    "prefetch": ["Q4"],             # as a viewer, every copy's previews fetched while reading a catalog (video 5.5)
+    "groupname": ["GM5", "GM6"],    # a name in the mail and in group-pair's answer (groups 5, 8.3)
 }
-# Faults in what the spec only recommends since proposal 17: the checks
-# named must still pass (a recommended default is a note, never a failure).
-DEFAULTS = {
-    "lastcopy": ["PB9", "T1"],      # the last copy plays without versionId, not the first (playback 2.6)
+# Faults in the choice of copy and audio (playback 2.6), in a pass of their
+# own: playing another copy than the one the checks expect would hide the
+# faults of the first pass aimed at that copy's tracks and fonts.
+CHOICE = {
+    "lastcopy": ["PB9"],            # the last copy plays without versionId (playback 2.6: the first)
+    "defaultaudio": ["PB7"],        # without audioTrack, not the file's default audio (playback 2.6)
 }
 
 
@@ -421,19 +431,16 @@ def main():
     status = {r.id: r.status for r in report.results}
     missed = ["%s (fault %s): %s" % (cid, f, status.get(cid, "not run")) for f, ids in FAULTS.items() for cid in ids
               if status.get(cid) != "fail"]
-    _, _, _, report2, suite2 = end_to_end(verbose, faults=list(DEFAULTS))
+    _, _, _, report2, _ = end_to_end(verbose, faults=list(CHOICE))
     status2 = {r.id: r.status for r in report2.results}
-    missed += ["%s (default %s, only recommended): %s, should pass with a note" % (cid, f, status2.get(cid, "not run"))
-               for f, ids in DEFAULTS.items() for cid in ids if status2.get(cid) != "pass"]
-    if not any("versionId" in t for _, t in suite2.defaults):
-        missed.append("lastcopy: no note of the recommended default not followed")
+    missed += ["%s (fault %s): %s" % (cid, f, status2.get(cid, "not run")) for f, ids in CHOICE.items() for cid in ids
+               if status2.get(cid) != "fail"]
     if missed:
         print("the fake server with deliberate faults: these checks should have failed and didn't:\n" + "\n".join(missed))
         return 1
-    print("with %d deliberate faults in the fake server, the %d checks aimed at them all failed (%d checks in %.0f s); "
-          "with %d recommended defaults not followed, the %d checks concerned passed, with notes"
-          % (len(FAULTS), sum(len(v) for v in FAULTS.values()), n, took, len(DEFAULTS),
-             sum(len(v) for v in DEFAULTS.values())))
+    print("with %d deliberate faults in the fake server (in two passes), the %d checks aimed at them all failed "
+          "(%d checks in %.0f s in the first)" % (len(FAULTS) + len(CHOICE), sum(len(v) for v in FAULTS.values())
+                                                   + sum(len(v) for v in CHOICE.values()), n, took))
     return 0
 
 

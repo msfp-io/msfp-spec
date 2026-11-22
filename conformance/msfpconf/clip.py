@@ -470,3 +470,8 @@ TS = base64.b64decode(
     "////////////////////////////////////////////////////////////////////AAAB"
     "wAATgIAFIQALnL3/8VxAAX/8ARggBw=="
 )
+
+# The clip's one preview sheet (video 5.5): a JPEG header of 160x90, its
+# frame header only, as the self-test's fake serves its own.
+SHEET = (b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+         b"\xff\xc0\x00\x11\x08\x00\x5a\x00\xa0\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01\xff\xd9")

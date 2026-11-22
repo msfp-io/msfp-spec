@@ -4,7 +4,7 @@ catalog.md sections 2 to 4, video.md sections 3 and 4, music.md sections
 
 import re
 
-from .copies import MAX_COPIES, copy_problems, keep_video_title, token, video_key
+from .copies import MAX_COPIES, copy_problems, dropped_members, keep_video_title, token, video_key
 from .music import music_key, music_problems
 from .wire import is_int
 
@@ -24,26 +24,46 @@ def _height(c):
     return max(v["height"], -(-v["width"] * 9 // 16)) if v["width"] * 9 > v["height"] * 16 else v["height"]
 
 
-def library_kind(lib):
-    """The kind a caller keeps of a library (catalog 2, core 8.5): a token,
-    known or not; None when absent or not a token."""
-    return token(lib.get("kind")) if isinstance(lib, dict) else None
+def kind_of(t):
+    """The kind a title's key names (catalog 3: a title carries no kind),
+    or None."""
+    k = t.get("key") if isinstance(t, dict) else t
+    vk = video_key(k)
+    return vk.kind if vk else music_key(k)
 
 
 def copies_order_problems(key, cs):
-    """Video 3.7's recommended default (proposal 17: the copies come in the
-    owner's order of preference; best first is a default, not a rule):
-    height, then HDR, then more hdr formats. A note, never a failure."""
+    """Video 3.7: the copies come in the owner's order of preference; best
+    first by height, then PQ or HLG (H.273 transfer 16 or 18), is the
+    notes' advice (proposal 17), not a rule. A note, never a failure."""
     def rank(c):
         v = c.get("video") if isinstance(c.get("video"), dict) else {}
-        hdr = v.get("hdr") if isinstance(v.get("hdr"), list) else []
-        return (_height(c), 1 if hdr else 0, len(hdr))
+        col = v.get("colour") if isinstance(v.get("colour"), dict) else {}
+        return (_height(c), 1 if col.get("transfer") in (16, 18) else 0)
     rs = [rank(c) for c in cs if isinstance(c, dict)]
     for i in range(1, len(rs)):
         if rs[i] > rs[i - 1]:
-            return ["%s: copies not best first (video 3.7's recommended default): copy %d (height %d, %d hdr tokens) after a lesser one"
-                    % (key, i, rs[i][0], rs[i][2])]
+            return ["%s: copies not best first by height and range (the notes' advice for video 3.7): copy %d "
+                    "(height %d) after a lesser one" % (key, i, rs[i][0])]
     return []
+
+
+def title_notes(t):
+    """Members a title still sends that proposal 17 dropped: unknown to a
+    caller, which ignores them (notes, not failures)."""
+    if not isinstance(t, dict):
+        return []
+    k = t.get("key")
+    out = ["%s carries kind, dropped by proposal 17 (catalog 3: the key names it)" % k] if "kind" in t else []
+    kind = kind_of(t)
+    if kind == "extra" and "name" in t:
+        out.append("%s: an extra carries name, dropped by proposal 17 (video 3.9)" % k)
+    if kind == "album" and "sortName" in t:
+        out.append("%s carries sortName, dropped by proposal 17 (music 3)" % k)
+    for c in t.get("copies") if isinstance(t.get("copies"), list) else []:
+        if isinstance(c, dict):
+            out += dropped_members(c, "%s copy %s" % (k, c.get("id")))
+    return out
 
 
 def video_problems(t, libs):
@@ -51,7 +71,7 @@ def video_problems(t, libs):
     3.1 to 3.10, 4): what a caller would skip, drop, clean or change."""
     k = t["key"]
     vk = video_key(k)
-    kind = t.get("kind")
+    kind = vk.kind
     try:
         kept = keep_video_title(t, libs)
     except ValueError as e:
@@ -74,8 +94,6 @@ def video_problems(t, libs):
     if kind == "extra":
         if token(t.get("extraType")) is None:
             bad.append("%s: extraType %r isn't a token (video 3.9, core 8.5)" % (k, t.get("extraType")))
-        if "name" in t and kept.get("name") != t["name"]:
-            bad.append("%s: an extra's name isn't plain text of at most 64 characters (video 3.9)" % k)
     elif vk.scheme == "local" and kind in ("movie", "series"):
         if kept.get("name") != t.get("name"):
             bad.append("%s: name isn't plain text of at most 128 characters (video 3.10)" % k)
@@ -84,7 +102,7 @@ def video_problems(t, libs):
         if "image" in t and not isinstance(t["image"], bool):
             bad.append("%s: image isn't a boolean" % k)
     else:
-        for f in ("extraType", "name", "year", "image"):
+        for f in ("extraType", "year", "image") + (("name",) if kind != "extra" else ()):
             if f in t:
                 bad.append("%s (%s%s) carries %s (video 3: extras and local films and series only)"
                            % (k, kind, ", " + vk.scheme if vk.scheme != "tmdb" else "", f))
@@ -98,8 +116,9 @@ def video_problems(t, libs):
     if not vk.by_id and "place" in t:
         bad.append("%s (%s) carries place (video 3: episodes keyed by their TMDB ID only)" % (k, kind))
     if "ids" in t:
-        if vk.scheme == "local" or kind in ("season", "extra"):
-            bad.append("%s: %s carries ids (video 4.3: films, series and episodes of tmdb and tvdb)" % (k, kind))
+        if not (kind == "episode" and vk.scheme != "local") and not (kind == "series" and vk.scheme == "tvdb"):
+            bad.append("%s: a %s of %s carries ids (video 4.3: only episodes and titles keyed under tvdb; TMDB's "
+                       "lookup by key gives a tmdb title's)" % (k, kind, vk.scheme))
         elif not isinstance(t["ids"], dict):
             bad.append("%s: ids isn't an object" % k)
         else:
@@ -114,9 +133,10 @@ def title_problems(t, libs, parts_on):
     sent it (catalog 3, 3.3; video 3, 4; music 2, 3). Returns (kind, problems)."""
     if not isinstance(t, dict):
         return None, ["an entry that isn't an object"]
-    k, kind, lib = t.get("key"), t.get("kind"), t.get("library")
-    if not all(isinstance(x, str) for x in (k, kind, lib)):
-        return None, ["%r: key, kind or library isn't a string" % (k,)]
+    k, lib = t.get("key"), t.get("library")
+    if not all(isinstance(x, str) for x in (k, lib)):
+        return None, ["%r: key or library isn't a string" % (k,)]
+    kind = kind_of(t)
     vk, mk = video_key(k), music_key(k)
     bad = []
     if vk:

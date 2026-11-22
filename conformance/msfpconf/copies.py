@@ -907,16 +907,15 @@ DROPPED = {"copy": ("name", "container", "bitrateKbps", "added", "previews"),
 
 
 def dropped_members(c, where):
-    """Members a copy still sends that proposal 17 dropped, and hdr values
-    colour or dv now say (video 3.3: hdr holds only enhancement layers and
-    dynamic metadata)."""
+    """Members a copy still sends that proposal 17 dropped (unknown to a
+    caller, which ignores them: notes, not failures)."""
     out = []
 
     def one(what, o, group):
         if isinstance(o, dict):
             for f in DROPPED[group]:
                 if f in o:
-                    out.append("%s: %s sends %s, dropped by proposal 17" % (where, what, f))
+                    out.append("%s: %s sends %s, dropped by proposal 17 (ignored by a caller)" % (where, what, f))
     one("the copy", c, "copy")
     v = c.get("video") if isinstance(c.get("video"), dict) else {}
     one("its video", v, "video")
@@ -924,17 +923,20 @@ def dropped_members(c, where):
         one("audio %s" % (t.get("id") if isinstance(t, dict) else "?"), t, "audio")
     for t in c.get("subtitleTracks") if isinstance(c.get("subtitleTracks"), list) else []:
         one("subtitle %s" % (t.get("id") if isinstance(t, dict) else "?"), t, "subtitle")
-    if isinstance(c.get("parts"), list):
-        out.append("%s: parts is an array of sizes and lengths, not the count of files (video 3.2)" % where)
-    hdr = v.get("hdr") if isinstance(v.get("hdr"), list) else []
-    for x in ("hdr10", "hlg", "dv"):
-        if x in hdr:
-            out.append("%s: hdr lists %s, which colour or dv says (video 3.3)" % (where, x))
     if isinstance(v.get("dv"), dict):
         for f in ("bl", "rpu"):
             if f in v["dv"]:
-                out.append("%s: dv sends %s, dropped by proposal 17" % (where, f))
+                out.append("%s: dv sends %s, dropped by proposal 17 (ignored by a caller)" % (where, f))
     return out
+
+
+def _hdr_problems(c, where):
+    """Video 3.6: hdr holds only enhancement layers and dynamic metadata;
+    hdr10, hlg and dv aren't sent there (colour and dv say them)."""
+    v = c.get("video") if isinstance(c.get("video"), dict) else {}
+    hdr = v.get("hdr") if isinstance(v.get("hdr"), list) else []
+    return ["%s: hdr lists %s, which aren't sent there: colour or dv says it (video 3.6)" % (where, x)
+            for x in ("hdr10", "hlg", "dv") if x in hdr]
 
 
 def copy_problems(c, where="copy"):
@@ -947,7 +949,7 @@ def copy_problems(c, where="copy"):
         return ["%s: a caller skips it: %s" % (where, e)]
     where = "%s %s" % (where, kept["id"])
     bad = diff(c, kept, where, _COPY_FIELDS)
-    bad += dropped_members(c, where)
+    bad += _hdr_problems(c, where)
     bad += codecs_problems(kept, where)
     for f in ("subtitleTracks", "chapters", "segments"):
         if f in c and not isinstance(c[f], list):

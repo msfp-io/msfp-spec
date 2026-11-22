@@ -12,6 +12,7 @@ import time
 import urllib.parse
 
 from . import clip, ed25519
+from .copies import media_type
 from .wire import (FED, STREAM, H_SIG, MAX_INT, NotIJSON, answer_message, b64u, commitment, decimal, dumps, has_null,
                    host_of, parse_ijson, read_revocation, read_rotation, request_message, split_hostport,
                    unb64u)
@@ -224,7 +225,8 @@ class PeerServer:
                                host=vals.get("host"), json=vals.get("json"), key=vals.get("key"), status=None,
                                uncallable=not self.suite.inbound)
             j = vals.get("json") if isinstance(vals.get("json"), dict) else None
-            known = call in ("pair", "hello", "rotate", "revoke", "libraries", "titles", "play", "progress", "stop") \
+            known = call in ("pair", "hello", "rotate", "revoke", "libraries", "titles", "play", "progress", "stop",
+                             "previews") \
                 or (call in ("group-push", "group-sync") and self.suite.group_on())
             if not known or vals["refuse"] or call == "pair":
                 rec["status"] = 404
@@ -240,7 +242,8 @@ class PeerServer:
         if self.ended:
             return 404, NOT_FOUND
         if j is None:
-            return (400, problem(400, "invalid-request", "Invalid request")) if call in ("rotate", "revoke", "play", "progress", "stop") \
+            return (400, problem(400, "invalid-request", "Invalid request")) if call in ("rotate", "revoke", "play", "progress",
+                                                                                         "stop", "previews") \
                 else (404, NOT_FOUND)
         if call == "revoke":
             try:
@@ -287,6 +290,8 @@ class PeerServer:
             return self._group_sync(j)
         if call == "play":
             return self._play(j, rec)
+        if call == "previews":
+            return self._previews(j, rec)
         if call == "progress":
             return self._progress(j, rec)
         if call == "stop":
@@ -324,8 +329,9 @@ class PeerServer:
         for each), with a ticket under the stream root. delivery file: the
         clip as it is; no delivery (the baseline, playback 2.7: its streams
         already are H.264 and AAC) or a remux to mpegts: complete HLS of the
-        clip in MPEG-TS; any other delivery, container or codec: 409
-        delivery-refused."""
+        clip in MPEG-TS; any other delivery, media type or codec: 409
+        delivery-refused. The answer carries the ticket, no URL (playback
+        2.3); the ticket opens the clip and its one preview sheet."""
         bad = self._play_faults(j)
         for b in bad:
             rec["faults"].append("its play would be refused with 400: %s (playback 2.1, 2.2, 2.7; core 8.5)" % b)
@@ -337,12 +343,13 @@ class PeerServer:
         delivery = j.get("delivery")
         if delivery == "file":
             proto = "file"
-        elif delivery is None or (delivery == "remux" and j.get("container") == "mpegts"):
+        elif delivery is None or (delivery == "remux" and j.get("mediaType") == "video/mp2t"):
             proto = "hls"
         else:
             return 409, problem(409, "delivery-refused", "This delivery is refused")
-        if "capabilities" in j:
-            rec["notes"].append("its play sends capabilities, which proposal 17 removed (an unknown member, ignored)")
+        for f in ("capabilities", "container", "audioLanguage", "subtitleLanguage", "subtitleTrack"):
+            if f in j:
+                rec["notes"].append("its play sends %s, which proposal 17 removed (an unknown member, ignored)" % f)
         alphabet = "abcdefghijklmnopqrstuvwxyz234567"
         pid = "play_" + "".join(alphabet[b % 32] for b in os.urandom(26))
         ticket = b64u(os.urandom(24))
@@ -350,15 +357,23 @@ class PeerServer:
         self.playbacks[pid] = {"title": j["title"], "ticket": ticket, "opened": now, "progress": [], "media": [],
                                "stopped": None, "expired": None, "proto": proto, "delivery": delivery}
         self.tickets[ticket] = pid
-        root = self.suite.address + STREAM + ticket + "/"
-        if proto == "file":
-            stream = {"url": root + "file", "protocol": "file", "mimeType": "video/mp4"}
-        else:
-            stream = {"url": root + "master.m3u8", "protocol": "hls", "mimeType": "application/vnd.apple.mpegurl"}
-        return 200, dumps({"id": pid, "method": "direct" if proto == "file" else "remux", "stream": stream,
-                           "etag": clip.ETAG, "positionMs": 0, "durationMs": clip.DURATION_MS, "versionId": "c_clip",
-                           "audioTracks": [{"id": "a1", "language": "en", "channels": 1, "default": True}],
-                           "audioTrack": "a1", "audioRenditions": False})
+        return 200, dumps({"id": pid, "ticket": ticket, "protocol": proto, "method": "direct" if proto == "file" else "remux",
+                           "etag": clip.ETAG, "positionMs": 0, "versionId": "c_clip", "audioTrack": "a1",
+                           "audioRenditions": False})
+
+    def _previews(self, j, rec):
+        """Video 5.6: a ticket for the clip's one sheet, for 10 minutes."""
+        keys = {t["key"] for page in self.pages.values() for t in page.get("titles", [])}
+        if not isinstance(j.get("title"), str) or not isinstance(j.get("versionId"), str):
+            return 400, problem(400, "invalid-request", "Invalid request")
+        if j["title"] not in keys or j["versionId"] != "c_clip":
+            return 404, NOT_FOUND
+        ticket = b64u(os.urandom(24))
+        pid = "previews_" + ticket
+        self.playbacks[pid] = {"title": j["title"], "ticket": ticket, "opened": time.time(), "progress": [], "media": [],
+                               "stopped": None, "expired": None, "proto": None, "delivery": None, "previews": True}
+        self.tickets[ticket] = pid
+        return 200, dumps({"ticket": ticket, "etag": clip.ETAG})
 
     @staticmethod
     def _play_faults(j):
@@ -375,14 +390,14 @@ class PeerServer:
         d = j.get("delivery")
         if "delivery" in j and not (isinstance(d, str) and tok.fullmatch(d)):
             bad.append("delivery %r isn't a token" % (d,))
-        if "container" in j:
-            c = j["container"]
+        if "mediaType" in j:
+            c = j["mediaType"]
             if d != "remux":
-                bad.append("container without delivery remux")
-            elif not (isinstance(c, str) and tok.fullmatch(c)):
-                bad.append("container %r isn't a token" % (c,))
+                bad.append("mediaType without delivery remux")
+            elif media_type(c) is None:
+                bad.append("mediaType %r isn't a media type (core 8.5)" % (c,))
         elif d == "remux":
-            bad.append("delivery remux without container")
+            bad.append("delivery remux without mediaType")
         if "transcode" in j:
             t = j["transcode"]
             if d != "transcode":
@@ -390,7 +405,7 @@ class PeerServer:
             elif not isinstance(t, dict):
                 bad.append("transcode isn't an object")
             else:
-                for f in ("videoCodec", "audioCodec"):
+                for f in ("videoCodec", "audioCodec", "range"):
                     if f in t and not (isinstance(t[f], str) and tok.fullmatch(t[f])):
                         bad.append("transcode.%s %r isn't a token" % (f, t[f]))
         if purpose == "download" and d not in ("file", "transcode"):
@@ -427,8 +442,6 @@ class PeerServer:
         pos = j.get("positionMs")
         if "positionMs" in j and not (isinstance(pos, int) and not isinstance(pos, bool) and 0 <= pos <= MAX_POSITION):
             bad.append("positionMs %r isn't an integer from 0 to 8,640,000,000" % pos)
-        if call == "progress" and "paused" in j and not isinstance(j["paused"], bool):
-            bad.append("paused %r isn't a boolean" % j["paused"])
         at, now = j.get("at"), time.time()
         if "at" in j and not (isinstance(at, int) and not isinstance(at, bool) and now - 30 * 86400 <= at <= now + 300):
             bad.append("at %r isn't Unix seconds from 30 days ago to 5 minutes ahead" % at)
@@ -443,24 +456,32 @@ class PeerServer:
         if pb is None or not self.live(pb):
             return 410, problem(410, "playback-stopped", "Playback was stopped")
         pos = j.get("positionMs")
-        pb["progress"].append((time.time(), pos if isinstance(pos, int) else None, j.get("paused") is True))
+        pb["progress"].append((time.time(), pos if isinstance(pos, int) else None, "paused" in j))
         return 200, b"{}"
 
     def _media(self, h, label):
         """Media 1 and 2.1: the clip at <stream root><ticket>/file, with
         ranges, for a live playback's ticket."""
         rest = h.path[len(STREAM):].split("?")[0].split("/")
+        rest = [rest[0], "/".join(rest[1:])] if len(rest) >= 2 else rest
         with self.lock:
             pid = self.tickets.get(rest[0]) if len(rest) == 2 else None
             pb = self.playbacks.get(pid) if pid else None
-            names = ("file",) if pb is None or pb.get("proto", "file") == "file" else ("master.m3u8", "media.m3u8", "0.ts")
-            ok = pb is not None and rest[1] in names and self.live(pb)
+            if pb is not None and pb.get("previews"):
+                names = ("trickplay/0",)
+                ok = rest[1] in names and time.time() < pb["opened"] + 600
+            else:
+                names = (("file",) if pb is None or pb.get("proto", "file") == "file" else
+                         ("master.m3u8", "media.m3u8", "0.ts")) + ("trickplay/0",)
+                ok = pb is not None and rest[1] in names and self.live(pb)
             if ok:
                 pb["media"].append(time.time())
             self._record(listener=label, method=h.command, path=h.path, call="media", faults=[], notes=[], body=b"",
                          host=None, json=None, status=200 if ok else 404)
         data, ctype = clip.MP4, "video/mp4"
-        if ok and rest[1] == "master.m3u8":
+        if ok and rest[1] == "trickplay/0":
+            data, ctype = clip.SHEET, "image/jpeg"
+        elif ok and rest[1] == "master.m3u8":
             data, ctype = ('#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-INDEPENDENT-SEGMENTS\n'
                            '#EXT-X-STREAM-INF:BANDWIDTH=200000,CODECS="avc1.42c00c,mp4a.40.2",RESOLUTION=160x90\n'
                            'media.m3u8\n').encode(), "application/vnd.apple.mpegurl"

@@ -9,15 +9,23 @@ server lists it, [music](../spec/v0/music.md), as revised by
 [proposal 16](../proposals/0016-version-0-revision.md) (copies in the
 catalog, extras, `local` titles and their image, deliveries, restarts,
 downloads, scan access, previews, files by byte ranges and complete HLS)
-and [proposal 17](../proposals/0017-neutrality.md): no capabilities (a
-`play` asks a `delivery`, or none for the H.264/AAC HLS baseline), the
-rule for unknown values of core section 8.5 (tokens kept in facts; in
-requests ignored, or `409` `delivery-refused` when they name what to
-serve; `400` only when malformed), ffmpeg's names and `codecs`, exact
-values, `colour` and `hdr`, 16 copies, 64 fonts within 64 MiB, remuxes to
-`mpegts` or `mp4`, the answer's `audioRenditions`, opaque playback IDs,
-limits up to 1,000, `scanBytes`, themes as extras and music's
-`primaryType` and `secondaryTypes`.
+and [proposal 17](../proposals/0017-neutrality.md) as frozen: no
+capabilities (a `play` asks a `delivery`, or none for the baseline, its
+picture defined), the rule for unknown values of core section 8.5
+(tokens and media types kept in facts; in requests ignored, or `409`
+`delivery-refused` when they name what to serve; `400` only when
+malformed), copies by `mediaType` with the registry's tokens, `codecs`
+required for six codecs, H.273 `colour`, `objects`, `refFrames`,
+`endMs`, `parts` as a count, subtitle `role`, `previewLayout`, the
+dropped fields gone, titles and libraries without `kind`, answers with a
+`ticket` and no URLs (the suite builds them, and checks that the owner
+serves exactly those names, `404` past their counts), `subtitles` in
+video 5.4's forms and `fontCount`, remuxes to an `mp2t` or `mp4` media
+type, a transcode's `copy` and `range`, the scan's cap in its answer,
+previews on demand, the choice of copy and audio reduced to the
+normative minimum, music queue entries with their own copy and delivery,
+lyrics synced by their starts, and no name in groups' `group-pair` and
+mail.
 It tests version 0 only. For the part [groups](../spec/v0/groups.md),
 with `--group-code`, it checks joining a group of the server's, its
 list, `group-sync`, `group-push`, the mail both ways (sealed with HPKE,
@@ -189,19 +197,19 @@ The run goes in this order; the counts are the checks in each group.
 | J | 2 | core 2.3 | I-JSON and types: twice-named members, surrogates, noncharacters, bad UTF-8, a byte order mark, `null`, wrong types refused; white space and unknown members accepted |
 | G | 10 | core 2.2, 2.4, 3, 6.2, 6.4 | signatures: dates, nonces, keys and signatures outside their one form, another host, path or key, duplicate headers, a query, percent-encoding, the media type, `Sec-Fetch-Site`, content codings, a body over 64 KiB |
 | N | 3 | core 6.5, 6.3 | replay, a nonce used again, the answer bound to the nonce and the media type |
-| L | 5 | catalog 2, playback 5, music 5.1 | `libraries`: IDs, kinds (open tokens, or none), `limits` (streams and downloads to 1,000, scans, `scanBytes`) and their ranges, opaque and stable IDs, bad bodies |
-| T | 12 | catalog 3 to 5; video 3, 4; music 2, 3 | `titles`: canonical keys of every scheme (`tmdb`, `tvdb`, `mb`, `local`), kinds, libraries, every copy as a caller keeps it (the required core, bounds, open tokens and ffmpeg's names, not MSFP's former ones, exact values, `fps` as a fraction, `colour` and `hdr`, at most 16 copies, `name` and track `title` within 64), extras (themes among them) and `local` descriptions, `with`, `ids` (`tmdb` for a `tvdb` key), music's descriptions (`primaryType`, `secondaryTypes`, a track's dates and genres); order, paging, pages within 5,000 titles and 3 MiB with `next` whenever titles remain; `since` and `seq`, bad requests, the first library, changes adding up; extras only with their title; (`--watch-local`) `local` titles following the owner's switch |
-| I | 3 | catalog 4.4, media 3.4, 4 | the `image` call: a `local` title's image under a ticket of its own (a JPEG or PNG within 1 MiB and 4,096 pixels), that ticket opening nothing else, HEAD `405`, its refusals (`400`, `404`) |
-| PB | 24 | playback 2 to 8, video 5, media 1, core 8.5 | `play`: the `400`s of `vectors/v0/playback.json` (members, `purpose`, `delivery`, `container`, `transcode`, values that aren't tokens), keys not offered (`404`), the answer as a viewer's server keeps it (an opaque playback ID of 128 bits, its `etag`, `versionId` and track IDs the catalog's), no `delivery` (the baseline: HLS, left as it is only when H.264 and AAC); `progress` and `stop` with `at` and their bounds; the choice of audio, subtitles and copy (only the normative minimum fails: a copy or track named wins, one not of the copy isn't refused, `off` shows none; the recommended defaults are noted); the streams limit and the race for the last stream; `delivery` `file`, `remux` (`mp4`), `transcode` (or `409` `delivery-refused`), a copy of several parts refused as `file`, a restart on the same `etag` and bytes, the answer's `audioRenditions` matching the playlist; downloads (`409` when off, beside the streams, within `downloads`, the speed cap, late reports with `at`); scans (`409` when off, no stream used, cut at the announced `scanBytes`, 4 MiB when absent, then `416`, the ticket opening the file only); unknown tokens naming what to serve (`delivery`, a remux `container`, a transcode codec) refused with `409` `delivery-refused`, an unknown member ignored |
-| M | 11 | media 1 to 4, video 5.5, 6 | the media of the first `play`: the HLS subset, playlists complete from the first fetch and the same on every fetch, renditions' names, segments, ranges (`206` and `416`), refusals (a query, browser headers, an unknown ticket), `405` for HEAD and other methods, WebVTT parts and whole tracks in their rebuilt form, ASS parts and whole tracks, picture parts, fonts, preview sheets |
+| L | 5 | catalog 2, playback 5, music 5.1 | `libraries`: IDs (no `kind`: a note when sent), `limits` (streams and downloads to 1,000, scans; `scanBytes` left them) and their ranges, opaque and stable IDs, bad bodies |
+| T | 12 | catalog 3 to 5; video 3, 4; music 2, 3 | `titles`: canonical keys of every scheme (`tmdb`, `tvdb`, `mb`, `local`), the kind each names (no `kind` member), libraries, every copy as a caller keeps it (`mediaType`, open tokens, `codecs` required and readable for `h264`, `hevc`, `av1`, `vp9`, `aac`, `dts`, exact values, `fps` as a fraction, H.273 `colour`, `hdr` without `hdr10`, `hlg`, `dv`, `parts` as a count, `endMs`, `previewLayout` in its bounds, at most 16 copies), extras (themes among them) and `local` descriptions, `with`, `ids` (only on episodes and `tvdb` titles; music's on `mb` titles), music's descriptions (`mediaType`, `primaryType`, `secondaryTypes`, a track's dates and genres); order, paging, pages within 5,000 titles and 3 MiB with `next` whenever titles remain; `since` and `seq`, bad requests, the first library, changes adding up; extras only with their title; (`--watch-local`) `local` titles following the owner's switch. Members proposal 17 dropped are noted, not failed (a caller ignores them) |
+| I | 3 | catalog 4.4, media 1, 3.4, 4 | the `image` call: `{"ticket"}`, no URL; a `local` title's image at `<stream root><ticket>/image` (a JPEG or PNG within 1 MiB and 4,096 pixels), that ticket opening nothing else, HEAD `405`, its refusals (`400`, `404`) |
+| PB | 24 | playback 2 to 8, video 5, media 1, core 8.5 | `play`: the `400`s of `vectors/v0/playback.json` (members, `purpose`, `delivery`, `mediaType`, `transcode`, values that aren't tokens or media types), keys not offered (`404`), the answer as a viewer's server keeps it (an opaque playback ID and ticket of 128 bits, no URLs, its `etag`, `versionId` and `audioTrack` the catalog's, `subtitles` in video 5.4's forms for the formats it lists, `fontCount`), no `delivery` (the baseline: HLS, left as it is only when within H.264 High 4.1 8-bit SDR BT.709 and AAC-LC stereo 48 kHz); `progress` and `stop` with `at` and their bounds (`paused` an unknown member); the choice (only the normative minimum: a copy or audio track named wins; without one, the first copy and the file's default audio); the streams limit and the race for the last stream; `delivery` `file`, `remux` (`video/mp4`), `transcode` (or `409` `delivery-refused`), a transcode's video `copy` (the playlist's `CODECS` the copy's own) and `range` (`sdr` without `VIDEO-RANGE` PQ or HLG, `keep` made or refused), `burnSubtitle` with video `copy` refused, a copy of several parts refused as `file`, a restart on the same `etag` and bytes, the answer's `audioRenditions` matching the playlist; downloads (`409` when off, beside the streams, within `downloads`, the speed cap, late reports with `at`); scans (`409` when off, no stream used, `scanBytes` in the answer, reads cut at it, then `416`, the ticket opening the file only); unknown tokens and media types naming what to serve (`delivery`, a remux's `mediaType`, a transcode codec, `range`) refused with `409` `delivery-refused`, an unknown member ignored |
+| M | 12 | media 1 to 4, video 5.5, 6 | the media of the first `play`, at the URLs the suite builds from the ticket: the HLS subset, playlists complete from the first fetch and the same on every fetch, renditions' names, segments, ranges (`206` and `416`), refusals (a query, browser headers, an unknown ticket), `405` for HEAD and other methods, WebVTT parts and whole tracks in their rebuilt form, ASS parts and whole tracks, picture parts, fonts 0 to `fontCount` − 1, a preview sheet under the playback's ticket by the catalog's `previewLayout`, and `404` for the names past the answer's counts (a font at `fontCount`, the sheet at the sheet count, a track not served apart in that form, a queue entry not asked) |
 | F | 4 | media 2, 3.2 | the file of a `delivery` `file`: `200` with the catalog's exact size, `ETag` and `Accept-Ranges`; ranges with `Content-Range` against the exact size, `416` with `bytes */<size>`; stable bytes; HEAD `405`, conditional headers ignored |
-| PV | 3 | video 5.5, 5.6, media 4 | `previews`: the trickplay object of a copy with `previews: true` under a ticket of its own, its sheet, the ticket opening only its sheets, its refusals |
-| MU | 4 | music 5, 5.2, 6 | (music on, tracks offered) a track's play, audio only; a queue, its entries and their streams; malformed queues (`400`); lyrics and their refusals |
-| Q | 3 | catalog 2, 3; core 6.4 | the server as a reader of the suite's catalog: its calls well signed, its `titles` requests, following `next` |
-| VW | 4 | playback 2 to 4, 6.3; core 6.4 | (`--watch-pause`) the server as a viewer of the suite's films: its `play` well signed and formed, the playback kept while paused, the pause reported, `stop` at the end |
+| PV | 3 | video 5.5, 5.6, media 4 | `previews`: `{"ticket", "etag"}` for a copy with a `previewLayout`, no URL, the catalog's `etag`; its sheets by the catalog's layout under that ticket, `404` past the count; the ticket opening only its sheets; its refusals (`404` for a copy without `previewLayout`) |
+| MU | 4 | music 5, 5.2, 6 | (music on, tracks offered) a track's play, audio only; a queue of entries (one naming its own copy), no URLs, their streams at `<stream root><ticket>/queue/<n>/`, `404` past the queue; malformed queues (`400`); lyrics and their refusals |
+| Q | 4 | catalog 2, 3; core 6.4; video 5.5 | the server as a reader of the suite's catalog: its calls well signed, its `titles` requests, following `next`; no `previews` call nor sheet fetched while it reads (the suite's copies carry a `previewLayout`) |
+| VW | 4 | playback 2 to 4, 6.3; core 6.4 | (`--watch-pause`) the server as a viewer of the suite's films: its `play` well signed and formed, the playback kept while paused, the pause reported at once (a `progress` within 60 s; `paused` is an unknown member now), `stop` at the end |
 | R | 2 | core 8.3 | (`--load`) a signed `429` or `503` with `retryAfter`, then calls passing again |
 | GR | 17 | groups 2, 3, 6 to 8 | (`--group-code`) groups: the group code; `group-sync` from a non-member and about an unknown group (a `404`, plain or signed: see the notes); `group-join` with a wrong proof, an unknown code (signed `404`s), the code (`200` `{}`), again (`409`); accepted, the list pushed (`founded`, the suite's `joined`, every envelope well signed); `group-sync` (every event, `seq` order, `have`; nothing more with a full `have`); the suite's `profile` and an unknown type kept; a forged signature, a date 10 minutes ahead, another group's event and a payload over 4,096 bytes not kept; `left`, then a `404` (GR17 runs after GM) |
-| GM | 8 | groups 4, 5, 8.3 | (`--group-code`) the mail: named admin, the suite signs `joined` for a second identity N of its own that can't be called, and N its `profile`; N's request, sealed with HPKE to the server's `encryptionKey`, kept; accepted, the server's answer, signed, sealed to N, opened, with its address; N's `group-pair` with it (signed `200`), the same again (`409`), N's `hello`; a mail with a forged signature and an expired one not kept |
+| GM | 8 | groups 4, 5, 8.3 | (`--group-code`) the mail: named admin, the suite signs `joined` for a second identity N of its own that can't be called, and N its `profile`; N's request, sealed with HPKE to the server's `encryptionKey`, no name, kept; accepted, the server's answer, signed, sealed to N, opened, with its address and no name; N's `group-pair` with it (signed `200`, no name), the same again (`409`), N's `hello`; a mail with a forged signature and an expired one not kept |
 | UP | 4 | core 7.5, 9.1, 7.4 | (`--code2`) a pairing as a server that can't be called |
 | K | 11 | core 9.3, 9.4, 12 | the suite's own key: a rotation not matching the commitment (`409`), bad `rotate` and `revoke` bodies (`400`), revocation and suspension (only `rotate` and `revoke` answered), a rotation to the committed key lifting it, a statement with `-`, the previous key heard for 10 minutes, a repeated rotation, `202` `pending` without a commitment, the operator's confirmation |
 | AD | 3 | core 13.2 | address changes: a new address the suite serves, confirmed by a `hello` there before any other call; moving back; an address nothing serves, the old one staying |
@@ -211,8 +219,8 @@ The run goes in this order; the counts are the checks in each group.
 | E | 2 | core 7.4 | (`--end`) `hello` `ended`, then the unsigned `404` |
 | A | 2 | core 6.6, 8.2 | every answer that had to be signed was, and every signed refusal is a problem document |
 
-That is 178 checks in all, with `--code2`, `--group-code`, `--load` and
-`--end`, and 183 with `--watch-local` and `--watch-pause` too. A server that doesn't answer
+That is 180 checks in all, with `--code2`, `--group-code`, `--load` and
+`--end`, and 185 with `--watch-local` and `--watch-pause` too. A server that doesn't answer
 at its address at all gets one failed S0, and nothing else runs.
 
 Every signed answer is also read as I-JSON and checked for `null`; a
@@ -221,11 +229,13 @@ type is signed as core section 6.3's fifth line.
 
 The suite offers the server one library, "Conformance films", with
 three films on two pages, each with one copy (the two-second clip it
-serves, described as catalog section 3.4 says: H.264 and AAC in MP4). It
+serves, described as video section 3 says: `video/mp4`, H.264
+`avc1.42C00C` and AAC `mp4a.40.2`, with a one-sheet `previewLayout`). It
 answers a `play` with `delivery` `file` with the clip as it is, one
-without `delivery`, or with a remux to `mpegts`, with complete HLS of the
-same streams in MPEG-TS (the baseline), and refuses other deliveries with
-`409` `delivery-refused`. Its first page is short
+without `delivery`, or with a remux to `video/mp2t`, with complete HLS of
+the same streams in MPEG-TS (the baseline), and refuses other deliveries
+with `409` `delivery-refused`; its answers carry the ticket, no URL. It
+answers `previews` with a ticket for the clip's one sheet. Its first page is short
 and still has `next`, as catalog section 3.1 allows, to see that the
 server follows it. With `--watch-pause` it plays them; otherwise it
 answers `play` with a playback of that clip all the same.
@@ -255,7 +265,10 @@ answers `play` with a playback of that clip all the same.
   of a kind, M6, M7 or M11 waits for that playback to stop, then plays
   up to 8 other titles whose copies list one in the catalog. The suite
   decodes nothing: it can't tell that a remux kept the streams, nor
-  that a transcode met its targets or burned a subtitle in.
+  that a transcode met its targets or burned a subtitle in; a video
+  `copy` and a `range` `sdr` are judged by the master playlist's
+  `CODECS` and `VIDEO-RANGE` only, and `mp4` segments' `hvc1` not at
+  all.
 - **Deliveries** an owning server may refuse (`409` `delivery-refused`
   for `file`, `remux`, `transcode`; `503` for a transcode) pass as
   refused; only a copy of several parts must be refused as `file`.
@@ -268,11 +281,15 @@ answers `play` with a playback of that clip all the same.
   `stop`, not after a real expiry.
 - **Heuristics**: L3 (library IDs that look like a media server's) can't
   be exact.
-- **Recommended defaults** (proposal 17): the order of copies (best
-  first), the copy and audio chosen by language, the subtitles by
-  language, and a track or copy not of the title taken as absent are the
-  owning server's own choices. The suite notes, at the end of a run, where
-  a server doesn't follow them; they never fail a check.
+- **Notes, not failures**: the order of copies (best first by height
+  and range, the notes' advice), and members proposal 17 dropped that a
+  server still sends (a title's or a library's `kind`, a copy's `name`,
+  `container` beside `mediaType`, `bitrateKbps`, `added`, track `title`,
+  `profile`, `layout`, `paused`, `limits.scanBytes`, the answer's
+  `stream`, `audioTracks`, `durationMs`, `trickplay`, lyrics' `synced`
+  and `offset`): a receiver ignores them, so the suite notes them at the
+  end of a run. A URL in an answer is a failure (answers carry none).
+  The choice of subtitles is the viewer's: no check is left on it.
 - **Not tested**: what a receiver does after a `hello` with no common
   core, beyond V7's signed `404`s; relations and `individual` in `hello`
   (core 7.7), not covered yet; a change of `base` (not announced, core open question 16);
@@ -292,13 +309,16 @@ unclear or couldn't test from outside.
 ## Its self-test
 
 ```sh
-python3 conformance/selftest.py           # about 5 minutes
+python3 conformance/selftest.py           # about 20 minutes
 python3 conformance/selftest.py --quick   # without the fault pass
 ```
 
 It checks the suite's readers against the cases of `vectors/v0/` (keys,
 code, exchanges, rotation, revocation, strict, media, video, playback,
-music and groups; and
+music and groups: every array the suite reads as a caller or a viewer's
+server, the codecs, answers, names, relayed types, previews, queue and
+lyrics among them; the owning server's decisions of playback.json,
+requests to reports, are the fake's and the live checks'; and
 those of `vectors/history/test-draft-strict.json` that core section 17 says hold for
 core 0), then runs the whole suite, over HTTPS both ways, against an
 in-process fake version 0 server (`msfpconf/fake.py`, built from the
@@ -311,14 +331,20 @@ connected to, the old key kept after a rotation, no `progress` while its
 viewer pauses, a `stop` with a negative position, a group event and a
 mail with a forged signature kept, a title summary video 0 removed, a
 download's `etag` other than the catalog's, `HEAD` answered `404`, a
-growing playlist, a scan read past its cap, scans cut at the floor and
-not at the `scanBytes` announced, an unknown `delivery` refused with
-`400`, a remux to `matroska` served, the file served without `delivery`,
-`audioRenditions` `true` with none made, a container named `mkv`), and
-the checks aimed at each fault must fail. A third run has the fake play
-its last copy by default, a recommended default not followed: the checks
-concerned must pass, with a note. The fake founds a group and makes its code, for the
-group checks.
+growing playlist, a scan read past its answer's `scanBytes`, scans cut
+at the floor and not at that `scanBytes`, an unknown `delivery` or
+`range` refused with `400`, a remux to `video/matroska` served, the file
+served without `delivery`, a copy outside the baseline left unchanged
+without `delivery`, `audioRenditions` `true` with none made, a copy with
+`container` and no `mediaType`, an H.264 stream without `codecs`, a URL
+in play's answer, a font served past `fontCount`, the last copy played
+without `versionId`, another audio than the file's default without
+`audioTrack`, `burnSubtitle` with video `copy` served, every copy's
+previews fetched while reading a catalog, a name in the mail and in
+`group-pair`), and the checks aimed at each fault must fail; the two
+faults of choice (the last copy, another audio) run in a pass of their
+own, since playing another copy would hide the first pass's faults. The fake
+founds a group and makes its code, for the group checks.
 
 ## License
 

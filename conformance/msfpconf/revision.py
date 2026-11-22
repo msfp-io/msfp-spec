@@ -4,20 +4,27 @@ parts), restarts on the same etag, audio renditions, downloads (limits,
 late reports, the speed cap), scan access (limits, the cap the owner
 announces as scanBytes, the ticket), the previews call, and music's
 tracks, queue and lyrics; with proposal 17's: the answer's
-audioRenditions, and unknown values in requests (core 8.5)."""
+audioRenditions, unknown values in requests (core 8.5), a transcode's
+copy and range, the scan's cap in its answer, previews on demand (a
+ticket and the etag; the layout is the catalog's), queue entries' URLs
+built from the ticket."""
 
 import time
 
-from .copies import keep_previews_answer, video_key
-from .media import check_owner_playlist, scan_answer
-from .music import keep_lyrics, keep_queue, music_key
-from .playback import keep_limits
+from .copies import keep_previews_answer, sheet_count, video_key
+from .media import check_owner_playlist, hls_attributes, scan_answer
+from .music import keep_lyrics, keep_queue, music_key, queue_urls
+from .playback import SCAN_FLOOR, Refused, keep_limits
 from .report import PASS
 from .wire import dumps
 
-NO_LIMITS = {"streams": None, "downloads": 0, "downloadsPerDay": 0, "downloadKbps": 0, "scansPerDay": 0,
-             "scanBytes": 4 * 1024 * 1024}
+NO_LIMITS = {"streams": None, "downloads": 0, "downloadsPerDay": 0, "downloadKbps": 0, "scansPerDay": 0}
 READ_AT_MOST = 64 * 1024 * 1024     # PB22 reads a larger cap only this far
+
+
+def from_parts_urls(v):
+    from .parts import _urls
+    return _urls(v)
 
 
 def _x():
@@ -36,7 +43,8 @@ class RevisionChecks:
 
     def one_file_copy(self, k):
         """The first copy of k that is one file (no parts, or one)."""
-        return next((c for c in self.copies_of(k) if len(c.get("parts") or []) < 2), None)
+        from .parts import parts_of
+        return next((c for c in self.copies_of(k) if parts_of(c) < 2), None)
 
     def started(self, body):
         """A play expected to start: (its answer's JSON, or None, and the answer)."""
@@ -68,14 +76,16 @@ class RevisionChecks:
             if a.status == 409 and a.signed and a.problem_type() == "delivery-refused":
                 return (PASS, "409 delivery-refused (allowed: the owning server's choice, playback 2.2 step 7)")
             self.signed(a, 200)
-            bad, _ = self.check_playback(a.json, k, "file")
-            if a.json.get("versionId", cp["id"]) != cp["id"]:
-                bad.append("versionId %s asked, %r played" % (cp["id"], a.json.get("versionId")))
-            st["pb"], st["copy"] = a.json, cp
+            bad, pb = self.check_playback(a.json, k, "file")
+            if pb is None:
+                raise Fail("\n".join(bad))
+            if pb["versionId"] != cp["id"]:
+                bad.append("versionId %s asked, %r played" % (cp["id"], pb["versionId"]))
+            st["pb"], st["copy"] = pb, cp
             if bad:
                 raise Fail("\n".join(bad))
-            return "%s: method direct, the file under %s, etag %s as the catalog's" % (
-                a.json["id"], "<stream root><ticket>/file", a.json["etag"])
+            return "%s: method direct, the file at <stream root><ticket>/file, etag %s as the catalog's" % (
+                pb["id"], pb["etag"])
         self.check("PB12", "playback 2.7, 2.3, media 1", "delivery file: 200 direct, the file, the catalog's etag (or 409 "
                    "delivery-refused)", file_)
         if "pb" in st:
@@ -87,18 +97,23 @@ class RevisionChecks:
             cp, a_pb = st["copy"], st["pb"]
             off = min(cp["size"] // 2, 1024 * 1024)
             rng = [("Range", "bytes=%d-%d" % (off, off + 4095))]
-            s1, h1, b1 = self.client.get(a_pb["stream"]["url"], rng)
+            s1, h1, b1 = self.client.get(a_pb["url"], rng)
             self.stop(a_pb)
             time.sleep(0.5)
             j, a = self.started({"title": k, "delivery": "file", "versionId": cp["id"]})
             if j is None:
                 raise Fail("the new play of the same copy: %s" % a.short())
             st["pb"] = j
+            try:
+                j = self.view(j, k, "file")
+            except Refused as e:
+                raise Fail("the new answer is refused: %s" % e)
+            st["pb"] = j
             bad = []
             if j.get("etag") != a_pb.get("etag"):
                 bad.append("the new playback's etag %r isn't the first's %r, and the copy didn't change" % (
                     j.get("etag"), a_pb.get("etag")))
-            s2, h2, b2 = self.client.get(j["stream"]["url"], rng)
+            s2, h2, b2 = self.client.get(j["url"], rng)
             if (s1, s2) != (206, 206):
                 bad.append("bytes %d-%d: %d, then %d under the new ticket" % (off, off + 4095, s1, s2))
             elif b1 != b2:
@@ -116,8 +131,9 @@ class RevisionChecks:
         self.stop(st.get("pb"))
 
         def several_parts():
+            from .parts import parts_of
             multi = [(t["key"], cp) for t in self.whole or [] for cp in (t.get("copies") or [])
-                     if isinstance(cp, dict) and len(cp.get("parts") or []) >= 2]
+                     if isinstance(cp, dict) and parts_of(cp) >= 2]
             if not multi:
                 raise Skip("no copy of several parts in the catalog")
             key, cp = multi[0]
@@ -125,20 +141,23 @@ class RevisionChecks:
             if a.status == 200:
                 self.stop(a.json)
             self.signed(a, 409, "delivery-refused")
-            return "%s, copy %s of %d parts: 409 delivery-refused" % (key, cp["id"], len(cp["parts"]))
+            return "%s, copy %s of %d parts: 409 delivery-refused" % (key, cp["id"], parts_of(cp))
         self.check("PB13", "playback 2.7, media 1", "delivery file of a copy of several parts: 409 delivery-refused",
                    several_parts)
 
-        def hls_of(j):
-            """The master and first media playlist of an HLS playback: problems."""
+        def hls_of(j, keep=None):
+            """The master and first media playlist of an HLS playback (as
+            view keeps it): problems; keep, a dict, gets the master's text."""
             c = self.client
-            s, _, m = c.get(j["stream"]["url"])
+            s, _, m = c.get(j["url"])
             if s != 200:
                 return ["master.m3u8: %d" % s]
+            if keep is not None:
+                keep["master"] = m
             bad, uris = check_owner_playlist(m, True)
             if bad or not uris:
                 return bad or ["no media playlist named"]
-            base = j["stream"]["url"].rsplit("/", 1)[0] + "/"
+            base = j["base"]
             s, _, p = c.get(base + uris[0])
             if s != 200:
                 return ["%s: %d" % (uris[0], s)]
@@ -146,21 +165,22 @@ class RevisionChecks:
 
         def remux():
             cp = self.copy_of(k)
-            a = self.play({"title": k, "delivery": "remux", "container": "mp4", "versionId": cp["id"]})
+            mt = "%s/mp4" % ("video" if cp.get("video") else "audio")
+            a = self.play({"title": k, "delivery": "remux", "mediaType": mt, "versionId": cp["id"]})
             if a.status == 409 and a.signed and a.problem_type() == "delivery-refused":
                 return (PASS, "409 delivery-refused (allowed: the owning server's choice)")
             self.signed(a, 200)
             try:
-                bad, _ = self.check_playback(a.json, k, "remux")
-                if not bad and a.json["stream"]["protocol"] == "hls":
-                    bad += hls_of(a.json)
+                bad, pb = self.check_playback(a.json, k, "remux")
+                if not bad:
+                    bad += hls_of(pb)
             finally:
                 self.stop(a.json)
             if bad:
                 raise Fail("\n".join(bad))
-            return "method remux, as complete HLS"
-        self.check("PB14", "playback 2.7, media 3.1", "delivery remux: 200 remux as complete HLS (or 409 delivery-refused)",
-                   remux)
+            return "mediaType %s: method remux, as complete HLS" % mt
+        self.check("PB14", "playback 2.7, media 3.1", "delivery remux to mp4 segments (mediaType): 200 remux as complete "
+                   "HLS (or 409 delivery-refused)", remux)
 
         def transcode():
             target = {"audioCodec": "aac", "audioChannels": 2}
@@ -171,9 +191,9 @@ class RevisionChecks:
                 return (PASS, "%d %s (allowed)" % (a.status, a.problem_type()))
             self.signed(a, 200)
             try:
-                bad, _ = self.check_playback(a.json, k, "transcode")
+                bad, pb = self.check_playback(a.json, k, "transcode")
                 if not bad:
-                    bad += hls_of(a.json)
+                    bad += hls_of(pb)
             finally:
                 self.stop(a.json)
             if bad:
@@ -190,13 +210,14 @@ class RevisionChecks:
             a = self.play({"title": k, "audioRenditions": True, "versionId": cp["id"]})
             self.signed(a, 200)
             try:
-                if a.json["stream"]["protocol"] != "hls":
-                    raise Fail("without delivery, served as %s (playback 2.7: the baseline is HLS)"
-                               % a.json["stream"]["protocol"])
                 said = a.json.get("audioRenditions")
                 if "audioRenditions" in a.json and not isinstance(said, bool):
                     raise Fail("audioRenditions %r isn't a boolean (playback 2.3)" % (said,))
-                s, _, m = self.client.get(a.json["stream"]["url"])
+                try:
+                    pb = self.view(a.json, k)
+                except Refused as e:
+                    raise Fail("the answer is refused: %s" % e)
+                s, _, m = self.client.get(pb["url"])
                 if s != 200:
                     raise Fail("master.m3u8: %d" % s)
                 names = [x.split('NAME="', 1)[1].split('"', 1)[0] for x in m.decode("utf-8", "replace").split("\n")
@@ -231,14 +252,17 @@ class RevisionChecks:
             delivery-refused; an unknown member is ignored. (Values that
             aren't tokens are PB1's 400s.)"""
             cp = self.copy_of(k)
+            top, other = ("video", "audio") if cp.get("video") else ("audio", "video")
             cases = [("delivery dash, an unknown token", {"delivery": "dash"}),
-                     ("remux to matroska, a container no HLS segment has", {"delivery": "remux", "container": "matroska"}),
-                     ("remux to ts, not ffmpeg's name", {"delivery": "remux", "container": "ts"}),
+                     ("remux to %s/matroska, no HLS segment format" % top, {"delivery": "remux", "mediaType": "%s/matroska" % top}),
+                     ("remux to %s/mp4, the wrong top-level type" % other, {"delivery": "remux", "mediaType": "%s/mp4" % other}),
                      ("transcode audioCodec conformance-codec, a token no encoder has",
                       {"delivery": "transcode", "transcode": {"audioCodec": "conformance-codec"}})]
             if video_key(k):
-                cases.append(("transcode videoCodec h265, not ffmpeg's name", {"delivery": "transcode",
-                                                                                 "transcode": {"videoCodec": "h265"}}))
+                cases.append(("transcode videoCodec h265, not the registry's token", {"delivery": "transcode",
+                                                                                     "transcode": {"videoCodec": "h265"}}))
+                cases.append(("transcode range hdr, a token not of its list", {"delivery": "transcode",
+                                                                               "transcode": {"range": "hdr"}}))
             bad, out = [], []
             for name, extra in cases:
                 a = self.play(dict(extra, title=k, versionId=cp["id"]))
@@ -258,8 +282,73 @@ class RevisionChecks:
             if bad:
                 raise Fail("\n".join(bad))
             return "; ".join(out)
-        self.check("PB24", "core 8.5, playback 2.1, 2.2, 2.7", "unknown values in play: a token naming what to serve "
-                   "refused with 409 delivery-refused, an unknown member ignored", unknown_values)
+        self.check("PB24", "core 8.5, playback 2.1, 2.2, 2.7", "unknown values in play: a token or media type naming what "
+                   "to serve refused with 409 delivery-refused, an unknown member ignored", unknown_values)
+
+        def copy_and_range():
+            """Playback 2.7: a transcode with video copy serves the video
+            unchanged (the master playlist's CODECS names the copy's own);
+            burnSubtitle with video copy is refused; range sdr is SDR (no
+            VIDEO-RANGE PQ or HLG); range keep is made or refused."""
+            if not video_key(k):
+                raise Skip("not a film, an episode or an extra")
+            cp = self.copy_of(k)
+            v = cp.get("video") if isinstance(cp.get("video"), dict) else None
+            if v is None:
+                raise Skip("the copy has no video")
+            bad, out = [], []
+            for name, tr in (("video copy, audio aac", {"videoCodec": "copy", "audioCodec": "aac"}),
+                             ("range sdr", {"videoCodec": "h264", "range": "sdr", "audioCodec": "aac"}),
+                             ("range keep", {"videoCodec": "hevc", "range": "keep", "audioCodec": "aac"})):
+                a = self.play({"title": k, "versionId": cp["id"], "delivery": "transcode", "transcode": tr})
+                self.answers.append(a)
+                if a.status in (409, 503) and a.signed and a.problem_type() in ("delivery-refused", "server-busy"):
+                    out.append("%s: %d %s" % (name, a.status, a.problem_type()))
+                    continue
+                if a.status != 200 or not a.signed:
+                    bad.append("%s: %s, not a signed 200, 409 delivery-refused or 503 server-busy" % (name, a.short()))
+                    continue
+                try:
+                    b, pb = self.check_playback(a.json, k, "transcode")
+                    keep = {}
+                    if not b:
+                        b += hls_of(pb, keep)
+                    text = keep.get("master", b"").decode("utf-8", "replace")
+                    infs = [hls_attributes(x.split(":", 1)[1]) for x in text.split("\n") if x.startswith("#EXT-X-STREAM-INF:")]
+                    infs = [x for x in infs if isinstance(x, dict)]
+                    if not b and tr["videoCodec"] == "copy" and v.get("codecs"):
+                        want = v["codecs"]
+                        if want.startswith("hev1."):
+                            want = "hvc1." + want[5:]   # hvc1 in mp4 segments (playback 2.7)
+                        if not any(want in [c.strip() for c in (x.get("CODECS") or "").strip('"').split(",")] for x in infs):
+                            b.append("video copy: the master playlist's CODECS %s don't name the copy's own %s (playback "
+                                     "2.7: the stream unchanged; media 3.1: CODECS describes what is served)"
+                                     % ([x.get("CODECS") for x in infs], want))
+                    if not b and tr.get("range") == "sdr" and any((x.get("VIDEO-RANGE") or "").strip('"') in ("PQ", "HLG")
+                                                                  for x in infs):
+                        b.append("range sdr: the master playlist says VIDEO-RANGE %s (playback 2.7: tone-mapped to SDR)"
+                                 % [x.get("VIDEO-RANGE") for x in infs])
+                    bad += ["%s: %s" % (name, x) for x in b]
+                    out.append("%s: 200 transcode" % name)
+                finally:
+                    self.stop(a.json)
+            subs = [t.get("id") for t in cp.get("subtitleTracks") or [] if isinstance(t, dict)]
+            if subs:
+                a = self.play({"title": k, "versionId": cp["id"], "delivery": "transcode",
+                               "transcode": {"videoCodec": "copy", "burnSubtitle": subs[0]}})
+                self.answers.append(a)
+                if a.status == 200:
+                    self.stop(a.json)
+                if not (a.status == 409 and a.signed and a.problem_type() == "delivery-refused"):
+                    bad.append("burnSubtitle %s with video copy: %s, not a signed 409 delivery-refused (playback 2.7, "
+                               "video 5.1)" % (subs[0], a.short()))
+                else:
+                    out.append("burnSubtitle with video copy: 409 delivery-refused")
+            if bad:
+                raise Fail("\n".join(bad))
+            return "; ".join(out)
+        self.check("PB8", "playback 2.7, video 5.1, media 3.1", "a transcode's copy and range: video copy served unchanged, "
+                   "range sdr SDR, keep made or refused; burnSubtitle with video copy refused", copy_and_range)
 
     # ---- downloads (playback 7, media 4.1) ----------------------------------------------
 
@@ -286,8 +375,8 @@ class RevisionChecks:
             try:
                 a = self.play(b)
                 self.signed(a, 200)
-                bad, _ = self.check_playback(a.json, k, "file")
-                st["pb"], st["copy"] = a.json, cp
+                bad, pb = self.check_playback(a.json, k, "file")
+                st["pb"], st["copy"] = pb or a.json, cp
                 if bad:
                     raise Fail("\n".join(bad))
                 out = ["a download: 200, the file"]
@@ -329,7 +418,7 @@ class RevisionChecks:
             if st["copy"]["size"] < per10 * 1.3:
                 raise Skip("the copy (%d bytes) is under 13 seconds at the cap of %d kbit/s: too small to tell" % (
                     st["copy"]["size"], kbps))
-            status, hdrs, marks = self.client.get_timed(st["pb"]["stream"]["url"], [("Range", "bytes=0-")], seconds=11)
+            status, hdrs, marks = self.client.get_timed(st["pb"]["url"], [("Range", "bytes=0-")], seconds=11)
             if status != 206:
                 raise Fail("bytes=0- of the download: %d" % status)
             in10 = max(n for t, n in marks if t <= 10.0)
@@ -348,7 +437,7 @@ class RevisionChecks:
             j, c = st["pb"], self.client
             now = int(time.time())
             bad = []
-            s, _, _ = c.get(j["stream"]["url"], [("Range", "bytes=0-99")])
+            s, _, _ = c.get(j["url"], [("Range", "bytes=0-99")])
             if s != 206:
                 bad.append("the download's file, bytes=0-99: %d" % s)
             self.signed(c.call("stop", {"id": j["id"], "positionMs": 0}), 200)
@@ -360,7 +449,7 @@ class RevisionChecks:
                 if a.status != want or not a.signed:
                     bad.append("%s after the download's stop: %s, not a signed %d (playback 7: late reports)" % (
                         name, a.short(), want))
-            s, _, _ = c.get(j["stream"]["url"], [("Range", "bytes=0-99")])
+            s, _, _ = c.get(j["url"], [("Range", "bytes=0-99")])
             if s != 404:
                 bad.append("the download's ticket after stop: %d, not 404" % s)
             if bad:
@@ -399,22 +488,24 @@ class RevisionChecks:
                         extra.append(j)
                 a = self.play(b)
                 self.signed(a, 200)
-                bad, _ = self.check_playback(a.json, k, "file")
-                st["pb"], st["copy"] = a.json, cp
+                bad, pb = self.check_playback(a.json, k, "file", "scan")
+                if pb is not None:
+                    st["pb"], st["copy"] = pb, cp
                 if bad:
                     raise Fail("\n".join(bad))
-                return "a scan: 200, the file%s" % (", with every stream in use (playback 8: it uses none)" if extra else "")
+                return "a scan: 200, the file, scanBytes %d%s" % (pb["scanBytes"], ", with every stream in use (playback 8: "
+                                                                  "it uses none)" if extra else "")
             finally:
                 for j in extra:
                     self.stop(j)
-        self.check("PB21", "playback 8, 5, 2.2", "scans: 409 stream-limit-reached when off; else 200 the file, using no "
-                   "stream", limits)
+        self.check("PB21", "playback 8, 5, 2.2, 2.3", "scans: 409 stream-limit-reached when off; else 200 the file, "
+                   "scanBytes in the answer, using no stream", limits)
 
         def cap():
             if "pb" not in st:
                 raise Skip("no scan started")
-            u, size = st["pb"]["stream"]["url"], st["copy"]["size"]
-            cut = lim["scanBytes"]
+            u, size = st["pb"]["url"], st["copy"]["size"]
+            cut = st["pb"]["scanBytes"]
             c = self.client
             bad, sent, n = [], 0, 0
             s, h, _ = c.get(u)
@@ -434,9 +525,8 @@ class RevisionChecks:
                     break
                 sent += len(body)
             if not bad and sent < READ_AT_MOST and sent != cut:
-                bad.append("%d bytes served in all, not the cap of %d (scanBytes %s)" % (
-                    sent, cut, "as announced" if isinstance(self.limits, dict) and "scanBytes" in self.limits
-                    else "absent: the floor, 4 MiB"))
+                bad.append("%d bytes served in all, not the cap of %d (the scan answer's scanBytes%s)" % (
+                    sent, cut, "" if cut != SCAN_FLOOR else ", or the floor, 4 MiB"))
             if bad:
                 raise Fail("\n".join(bad))
             if sent >= READ_AT_MOST:
@@ -444,20 +534,20 @@ class RevisionChecks:
                         "further" % (n, sent, cut))
             return "416 without Range; %d reads of bytes=0- served %d bytes, the last cut at the cap of %d (scanBytes), " \
                    "then 416 bytes */%d" % (n - 1, sent, cut, size)
-        self.check("PB22", "playback 8, 5, media 4.2", "a scan's reads: within the announced scanBytes (absent: 4 MiB) in "
-                   "all, cut at the cap, then 416", cap)
+        self.check("PB22", "playback 8, 2.3, media 4.2", "a scan's reads: within the scan answer's scanBytes (absent: "
+                   "4 MiB) in all, cut at the cap, then 416", cap)
 
         def ticket():
             if "pb" not in st:
                 raise Skip("no scan started")
             j, c = st["pb"], self.client
-            base = j["stream"]["url"][:-len("file")]
+            base = j["base"]
             bad = []
             for name in ("master.m3u8", "subtitles/s0/0", "trickplay/0", "fonts/0"):
                 s, _, _ = c.get(base + name)
                 if s != 404:
                     bad.append("%s under the scan ticket: %d, not 404 (media 4: file only)" % (name, s))
-            bad += self.head_405([j["stream"]["url"]])
+            bad += self.head_405([j["url"]])
             a = c.call("progress", {"id": j["id"]})
             self.answers.append(a)
             if a.status != 200 or not a.signed:
@@ -484,37 +574,44 @@ class RevisionChecks:
 
         def copies_with(want):
             return [(t["key"], cp) for t in self.whole or [] if video_key(t.get("key")) for cp in (t.get("copies") or [])
-                    if isinstance(cp, dict) and (cp.get("previews") is True) == want]
+                    if isinstance(cp, dict) and isinstance(cp.get("previewLayout"), dict) == want]
 
         def previews():
             need()
             found = copies_with(True)
             if not found:
-                raise Skip("no copy with previews true in the catalog")
+                raise Skip("no copy with a previewLayout in the catalog")
             key, cp = found[0]
             a = self.signed(c.call("previews", {"title": key, "versionId": cp["id"]}), 200)
             try:
-                kept = keep_previews_answer(a.json, self.root)
+                kept = keep_previews_answer(a.json)
             except ValueError as e:
-                raise Fail("the viewer's server refuses the whole answer: %s (video 5.5)" % e)
-            if "trickplay" not in kept:
-                raise Fail("the viewer's server drops the previews (a number out of bounds, or sheets of another count): "
-                           "%s" % dumps(a.json).decode()[:200])
-            bad = self.check_trickplay(a.json["trickplay"], self.root, kept["trickplay"]["sheets"][0][len(self.root):].split("/")[0])
+                raise Fail("the viewer's server refuses the answer, and fetches no sheet: %s (video 5.6)" % e)
+            bad = []
+            if from_parts_urls(a.json):
+                bad.append("the answer carries URLs (video 5.6, media 1: answers carry no URLs)")
+            if "trickplay" in a.json:
+                self.note_default("video 5.6", "previews' answer still sends trickplay, dropped by proposal 17 (the "
+                                  "layout is the catalog's; ignored)")
+            if kept["etag"] != cp.get("etag"):
+                bad.append("etag %r; the catalog's copy has %r, and nothing changed on the server (video 5.6: the "
+                           "copy's etag as the owning server holds it)" % (kept["etag"], cp.get("etag")))
+            if len(kept["ticket"]) < 22:
+                bad.append("a ticket of %d characters can't hold 128 random bits (media 1)" % len(kept["ticket"]))
             if bad:
                 raise Fail("\n".join(bad))
-            st["tp"] = a.json["trickplay"]
-            return "%s, copy %s: %d sheet(s) of %d tiles under a ticket of its own; " % (
-                key, cp["id"], len(st["tp"]["sheets"]), st["tp"]["tileCount"]) + self.sheet_check(st["tp"])
-        self.check("PV1", "video 5.6, 5.5, media 3.4", "previews: 200 signed, the trickplay object within its bounds, "
-                   "sheets under its own ticket", previews)
+            st["base"], st["layout"] = self.root + kept["ticket"] + "/", cp["previewLayout"]
+            return "%s, copy %s: a ticket and the catalog's etag; %d sheet(s) by the catalog's layout; " % (
+                key, cp["id"], sheet_count(cp["previewLayout"])) + self.sheet_check(st["base"], st["layout"])
+        self.check("PV1", "video 5.5, 5.6, media 3.4", "previews: 200 signed, a ticket and the copy's etag, no URL; the "
+                   "sheets of the catalog's previewLayout under that ticket, 404 past the count", previews)
 
         def scope():
-            if "tp" not in st:
+            if "base" not in st:
                 raise Skip("no previews fetched")
-            base = st["tp"]["sheets"][0].rsplit("/", 2)[0] + "/"
+            base = st["base"]
             bad = []
-            for name in ("file", "master.m3u8", "subtitles/s0/0", "image"):
+            for name in ("file", "master.m3u8", "subtitles/s0/0", "fonts/0", "image"):
                 s, _, _ = c.get(base + name)
                 if s != 404:
                     bad.append("%s under the previews ticket: %d, not 404 (media 4: its sheets only)" % (name, s))
@@ -537,7 +634,8 @@ class RevisionChecks:
                           ("a copy it doesn't have", dumps({"title": k, "versionId": "conformance-no-such-copy"}), 404)]
             without = copies_with(False)
             if without:
-                forms.append(("a copy without previews", dumps({"title": without[0][0], "versionId": without[0][1]["id"]}), 404))
+                forms.append(("a copy without previewLayout", dumps({"title": without[0][0],
+                                                                     "versionId": without[0][1]["id"]}), 404))
             for name, b, want in forms:
                 a = c.call("previews", b)
                 self.answers.append(a)
@@ -545,9 +643,9 @@ class RevisionChecks:
                     bad.append("%s: %s, not a signed %d" % (name, a.short(), want))
             if bad:
                 raise Fail("\n".join(bad))
-            return "%d refusals: 400 for malformed requests, 404 for what isn't offered or has no previews" % len(forms)
+            return "%d refusals: 400 for malformed requests, 404 for what isn't offered or has no previewLayout" % len(forms)
         self.check("PV3", "video 5.6", "previews refusals: a signed 400 for a malformed request, 404 for a copy without "
-                   "previews or not offered", refusals)
+                   "previewLayout or not offered", refusals)
 
     # ---- music (music 5, 5.2, 6) -----------------------------------------------------------
 
@@ -560,8 +658,7 @@ class RevisionChecks:
             self.need("music")
             if "playback" not in self.parts_on():
                 raise Skip("playback isn't on")
-            ts = [t for t in self.whole or [] if t.get("kind") == "track" and music_key(t.get("key")) == "track"
-                  and self.copies_of(t["key"])]
+            ts = [t for t in self.whole or [] if music_key(t.get("key")) == "track" and self.copies_of(t["key"])]
             if not ts:
                 raise Skip("no track with copies offered")
             return ts
@@ -571,39 +668,54 @@ class RevisionChecks:
             a = self.play({"title": t["key"]})
             self.signed(a, 200)
             try:
-                bad, _ = self.check_playback(a.json, t["key"])
+                bad, pb = self.check_playback(a.json, t["key"])
             finally:
                 self.stop(a.json)
             if bad:
                 raise Fail("\n".join(bad))
-            return "%s: %s over %s, audio only, the catalog's etag" % (t["key"], a.json["method"], a.json["stream"]["protocol"])
+            return "%s: %s over %s, audio only, the catalog's etag" % (t["key"], pb["method"], pb["protocol"])
         self.check("MU1", "music 5, playback 2.3", "a track's play: 200, audio only, its etag the catalog's", play_track)
 
         def queue():
             ts = tracks()
             if len(ts) < 2:
                 raise Skip("one track offered: no queue to name")
-            req = {"title": ts[0]["key"], "queue": [t["key"] for t in ts[1:6]]}
+            q = [t["key"] for t in ts[1:6]]
+            first = self.copies_of(q[-1])[0]
+            entries = [{"title": x} for x in q[:-1]] + [{"title": q[-1], "versionId": first["id"]}]
+            req = {"title": ts[0]["key"], "queue": entries}
             a = self.play(req)
             self.signed(a, 200)
             try:
-                kept = keep_queue(req, a.json, self.root)
-                sent = a.json.get("queue") or []
                 bad = []
+                try:
+                    pb = self.view(a.json, ts[0]["key"])
+                    kept = keep_queue(req, a.json)
+                except ValueError as e:
+                    raise Fail("the answer is refused: %s" % e)
+                sent = a.json.get("queue") or []
+                if from_parts_urls(sent):
+                    bad.append("queue entries carry URLs (music 5.2, media 1: built from the ticket)")
                 if len(kept) != len(sent):
                     bad.append("%d queue entries sent, the viewer's server keeps %d (music 5.2): %s" % (
                         len(sent), len(kept), dumps(sent).decode()[:300]))
-                for e in kept:
-                    u = e["stream"]["url"]
-                    s, _, _ = c.get(u, [("Range", "bytes=0-99")] if e["stream"]["protocol"] == "file" else ())
+                if kept and kept[-1]["title"] == q[-1] and kept[-1]["versionId"] != first["id"]:
+                    bad.append("the entry naming copy %s played %s" % (first["id"], kept[-1]["versionId"]))
+                for e, u in zip(kept, queue_urls(self.root, pb["ticket"], kept)):
+                    s, _, _ = c.get(u, [("Range", "bytes=0-99")] if e["protocol"] == "file" else ())
                     if s not in (200, 206):
-                        bad.append("queue entry %s: its stream %d" % (e["title"], s))
+                        bad.append("queue entry %s: %s %d" % (e["title"], u[len(self.root):], s))
+                s, _, _ = c.get(pb["base"] + "queue/%d/master.m3u8" % len(q))
+                if s != 404:
+                    bad.append("queue/%d, past the request's queue: %d, not 404 (media 1)" % (len(q), s))
             finally:
                 self.stop(a.json)
             if bad:
                 raise Fail("\n".join(bad))
-            return "%d of %d queued tracks prepared, each with its stream under the playback's ticket" % (len(kept), len(req["queue"]))
-        self.check("MU2", "music 5.2", "a play with a queue: the entries in their forms, their streams served", queue)
+            return "%d of %d queued tracks prepared (one naming its copy), each at <stream root><ticket>/queue/<n>/; 404 " \
+                   "past the queue" % (len(kept), len(q))
+        self.check("MU2", "music 5.2, media 1", "a play with a queue of entries (one with its own versionId): the entries "
+                   "in their forms, no URL, their streams at the names built from the ticket", queue)
 
         def queue_refusals():
             ts = tracks()
@@ -611,9 +723,13 @@ class RevisionChecks:
             other = ts[1]["key"] if len(ts) > 1 else "track/mb/0c000000-0000-4000-8000-00000000000f"
             six = ["track/mb/0c000000-0000-4000-8000-0000000000%02x" % i for i in range(16, 22)]
             bad = []
-            for name, b in (("6 entries", {"title": k, "queue": six}), ("an entry twice", {"title": k, "queue": [other, other]}),
-                            ("the title itself", {"title": k, "queue": [k]}),
-                            ("an album key", {"title": k, "queue": ["album/mb/0b000000-0000-4000-8000-000000000002"]}),
+            E = lambda x: {"title": x}
+            for name, b in (("6 entries", {"title": k, "queue": [E(x) for x in six]}),
+                            ("an entry twice", {"title": k, "queue": [E(other), E(other)]}),
+                            ("the title itself", {"title": k, "queue": [E(k)]}),
+                            ("an album key", {"title": k, "queue": [E("album/mb/0b000000-0000-4000-8000-000000000002")]}),
+                            ("an entry that is a string, not an object", {"title": k, "queue": [other]}),
+                            ("an entry's mediaType without its own remux", {"title": k, "queue": [dict(E(other), mediaType="audio/mp4")]}),
                             ("not an array", {"title": k, "queue": other})):
                 a = self.play(b)
                 self.answers.append(a)
@@ -623,7 +739,7 @@ class RevisionChecks:
                     bad.append("%s: %s" % (name, a.short()))
             if bad:
                 raise Fail("expected a signed 400 for:\n" + "\n".join(bad))
-            return "5 malformed queues refused with a signed 400"
+            return "7 malformed queues refused with a signed 400"
         self.check("MU3", "music 5.2", "a malformed queue: a signed 400", queue_refusals)
 
         def lyrics():
@@ -641,8 +757,12 @@ class RevisionChecks:
             bad = []
             if len(kept["structuredLyrics"]) != len(a.json.get("structuredLyrics") or []):
                 bad.append("sets dropped by the viewer's server")
-            if cp["lyrics"] == "synced" and not any(s.get("synced") for s in kept["structuredLyrics"]):
-                bad.append("the copy says synced; no synced set")
+            if cp["lyrics"] == "synced" and not any(all("start" in ln for ln in s["line"]) for s in kept["structuredLyrics"]):
+                bad.append("the copy says synced; no set whose lines all carry start (music 6)")
+            gone = sorted({f for x in a.json.get("structuredLyrics") or [] if isinstance(x, dict)
+                           for f in ("synced", "offset", "displayArtist", "displayTitle") if f in x})
+            if gone:
+                self.note_default("music 6", "%s: lyrics still send %s, dropped by proposal 17 (ignored)" % (key, ", ".join(gone)))
             for name, b, want in (("no versionId", {"title": key}, 400),
                                   ("a copy it doesn't have", {"title": key, "versionId": "conformance-no-such-copy"}, 404)):
                 r = c.call("lyrics", b)

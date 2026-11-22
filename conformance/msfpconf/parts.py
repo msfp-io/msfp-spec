@@ -9,11 +9,11 @@ import os
 import re
 import time
 
-from .content import LIBRARY_ID, copies_order_problems, library_kind, title_problems
-from .copies import video_key
-from .media import Refused as MediaRefused, image_answer, image_kind
+from .content import LIBRARY_ID, copies_order_problems, kind_of, title_notes, title_problems
+from .copies import SERVED_FORM, sheet_count, video_key
+from .media import Refused as MediaRefused, image_answer, image_kind, image_url
 from .music import music_key
-from .playback import Refused, keep_limits, keep_play_answer, stream_ticket
+from .playback import STREAM_NAME, Refused, keep_limits, keep_play_answer
 from .report import PASS
 from .revision import RevisionChecks
 from .streams import StreamChecks
@@ -24,13 +24,67 @@ TEXT_FORMATS = ("subrip", "webvtt", "mov_text", "ttml", "ass", "ssa")
 PICTURE_FORMATS = ("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle")   # ffmpeg names (video 3.5)
 VECTORS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "vectors", "v0")
 LIMIT_FIELDS = ("streams", "transcodes", "bitrateKbps", "downloads", "downloadsPerDay", "downloadKbps", "scansPerDay",
-                "scanBytes", "audioStreams", "audioTranscodes")
+                "audioStreams", "audioTranscodes")
 MAX = 2**53 - 1
+# Members of play's answer proposal 17 dropped (playback 2.3, video 5.3):
+# unknown to a viewer's server, which ignores them.
+DROPPED_ANSWER = ("stream", "durationMs", "audioTracks", "subtitleTracks", "subtitleTrack", "forcedTrack",
+                  "forcedTracks", "burnedTrack", "fonts", "trickplay", "versions", "info")
+
+
+def _urls(v):
+    """Every string in a JSON value that is an http or https URL."""
+    if isinstance(v, str):
+        return [v] if re.match(r"(?i)https?://", v) else []
+    if isinstance(v, list):
+        return [u for x in v for u in _urls(x)]
+    if isinstance(v, dict):
+        return [u for x in v.values() for u in _urls(x)]
+    return []
 
 
 def _x():
     from .checks import Fail, Skip
     return Fail, Skip
+
+
+def _avc_within(codecs):
+    """An avc1 or avc3 string of a profile up to High (66, 77, 100) and a
+    level up to 4.1 (playback 2.7's baseline)."""
+    m = re.fullmatch(r"(avc1|avc3)\.([0-9A-Fa-f]{2})[0-9A-Fa-f]{2}([0-9A-Fa-f]{2})", codecs or "")
+    return bool(m) and int(m.group(2), 16) in (66, 77, 100) and 10 <= int(m.group(3), 16) <= 41
+
+
+def baseline_outside(cp, audio_id, video):
+    """Playback 2.7: why the copy's streams aren't within the baseline (H.264
+    at most High and level 4.1, 8-bit, progressive, H.273 1/1/1; AAC-LC, at
+    most 2 channels and 48 kHz), or "" when they are. A fact the copy
+    doesn't state isn't known to be within."""
+    why = []
+    v = cp.get("video") if isinstance(cp.get("video"), dict) else None
+    if video and v:
+        col = v.get("colour") if isinstance(v.get("colour"), dict) else {}
+        if v.get("codec") != "h264" or not _avc_within(v.get("codecs")):
+            why.append("video %s %s" % (v.get("codec"), v.get("codecs") or "(no codecs)"))
+        elif v.get("bitDepth") != 8 or v.get("interlaced") is True:
+            why.append("video of %s bits%s" % (v.get("bitDepth"), ", interlaced" if v.get("interlaced") else ""))
+        elif (col.get("primaries"), col.get("transfer"), col.get("matrix")) != (1, 1, 1):
+            why.append("video colour %s, not BT.709 (1/1/1)" % dumps(col).decode())
+    tracks = [t for t in cp.get("audioTracks") or [] if isinstance(t, dict)]
+    t = next((x for x in tracks if x.get("id") == audio_id), None) or next(
+        (x for x in tracks if x.get("default") is True), tracks[0] if tracks else None)
+    if t is not None and not (t.get("codec") == "aac" and t.get("codecs") == "mp4a.40.2"
+                              and is_int(t.get("channels")) and 1 <= t["channels"] <= 2
+                              and is_int(t.get("sampleRate")) and 1 <= t["sampleRate"] <= 48000):
+        why.append("audio %s %s, %s channel(s), %s Hz" % (t.get("id"), t.get("codecs") or t.get("codec"),
+                                                         t.get("channels"), t.get("sampleRate")))
+    return "; ".join(why)
+
+
+def parts_of(cp):
+    """The number of files a copy is made of (video 3.2: parts, absent for one)."""
+    n = cp.get("parts") if isinstance(cp, dict) else None
+    return n if is_int(n) and n >= 2 else 1
 
 
 def scheme_of(key):
@@ -95,16 +149,15 @@ class PartChecks(StreamChecks, RevisionChecks):
                 ids.append(i)
                 if not isinstance(lib.get("name"), str):
                     raise Fail("library %s: name isn't a string" % i)
-                if "kind" in lib and library_kind(lib) is None:
-                    raise Fail("library %s: kind %r isn't a token (catalog 2, core 8.5; absent when it has none)"
-                               % (i, lib.get("kind")))
+                if "kind" in lib:
+                    self.note_default("catalog 2", "library %s carries kind, dropped by proposal 17 (the titles' keys say "
+                                      "what it holds; ignored by a caller)" % i)
             if len(ls) > 200:
                 raise Fail("%d libraries: a caller keeps 200" % len(ls))
             self.libraries = ls
             self.limits = j.get("limits")
-            return "%d librar%s: %s" % (len(ls), "y" if len(ls) == 1 else "ies",
-                                       ", ".join("%s (%s)" % (x["id"], x.get("kind", "no kind")) for x in ls) or "none offered")
-        self.check("L1", "catalog 2", "libraries: 200 signed, IDs and kinds in their forms, no ID twice", libs)
+            return "%d librar%s: %s" % (len(ls), "y" if len(ls) == 1 else "ies", ", ".join(x["id"] for x in ls) or "none offered")
+        self.check("L1", "catalog 2", "libraries: 200 signed, IDs in their form, no ID twice", libs)
 
         def limits():
             self.need("catalog")
@@ -124,12 +177,14 @@ class PartChecks(StreamChecks, RevisionChecks):
             if dropped:
                 raise Fail("out of range, a caller ignores them: %s (playback 5, music 5.1)" % ", ".join(
                     "%s %r" % (f, lim[f]) for f in dropped))
-            return "limits %s; downloads %s, scans %s (cut at %d bytes%s)" % (
+            if "scanBytes" in lim:
+                self.note_default("playback 5", "limits carries scanBytes, which left limits with proposal 17 (a scan's "
+                                  "answer states it; ignored by a caller)")
+            return "limits %s; downloads %s, scans %s" % (
                 dumps(lim).decode(), "offered" if kept["offersDownloads"] else "off",
-                "offered" if kept["offersScans"] else "off", kept["scanBytes"],
-                "" if "scanBytes" in lim else ": scanBytes absent, the floor")
+                "offered" if kept["offersScans"] else "off")
         self.check("L2", "playback 5, music 5.1", "libraries' limits: only with playback on, each in its range "
-                   "(streams and downloads to 1,000, scans, scanBytes 4 MiB to 1 GiB)", limits)
+                   "(streams and downloads to 1,000, scans)", limits)
 
         def opaque():
             self.need("catalog")
@@ -202,6 +257,8 @@ class PartChecks(StreamChecks, RevisionChecks):
             if isinstance(t, dict) and isinstance(t.get("copies"), list):
                 for x in copies_order_problems(t.get("key"), t["copies"]):
                     self.note_default("video 3.7", x)
+            for x in title_notes(t):
+                self.note_default("proposal 17", x)
             if isinstance(t, dict) and isinstance(t.get("key"), str):
                 keys.append(t["key"])
         bk = [k.encode() for k in keys]
@@ -252,7 +309,7 @@ class PartChecks(StreamChecks, RevisionChecks):
                 raise Fail("\n".join(sorted(set(bad))[:25]))
             kinds = {}
             for t in self.whole:
-                kinds[t.get("kind")] = kinds.get(t.get("kind"), 0) + 1
+                kinds[kind_of(t)] = kinds.get(kind_of(t), 0) + 1
             ncopies = sum(len(t.get("copies") or []) for t in self.whole)
             return "%d titles in %d page(s) (%s), %d copies, seq %s" % (
                 len(self.whole), len(pages), ", ".join("%d %s" % (v, k) for k, v in sorted(kinds.items())), ncopies, self.seq)
@@ -412,7 +469,7 @@ class PartChecks(StreamChecks, RevisionChecks):
 
         def extras():
             need()
-            xs = [t for t in self.whole or [] if t.get("kind") == "extra"]
+            xs = [t for t in self.whole or [] if kind_of(t) == "extra"]
             if not xs:
                 raise Skip("no extra offered (a film's or a series' trailer or featurette, say)")
             by = {t["key"]: t for t in self.whole}
@@ -450,19 +507,22 @@ class PartChecks(StreamChecks, RevisionChecks):
 
         def image():
             on()
-            with_image = [t for t in self.local_titles() if t.get("image") is True and t.get("kind") in ("movie", "series",
-                                                                                                         "artist", "album")]
+            with_image = [t for t in self.local_titles() if t.get("image") is True and kind_of(t) in ("movie", "series",
+                                                                                                      "artist", "album")]
             if not with_image:
                 raise Skip("no local title with an image offered (share local titles with this peer, one with an image)")
             t = with_image[0]
             a = self.signed(c.call("image", {"title": t["key"]}), 200)
             try:
-                ticket = image_answer(self.root, a.json)
+                ticket = image_answer(a.json)
             except MediaRefused as e:
-                raise Fail("the answer's url: %s (catalog 4.4: <stream root><ticket>/image)" % e)
+                raise Fail("the answer: %s (catalog 4.4: {\"ticket\"})" % e)
+            if _urls(a.json):
+                raise Fail("the answer carries a URL (catalog 4.4, media 1: answers carry no URLs): %s" % _urls(a.json)[0])
             if len(ticket) < 22:
                 raise Fail("a ticket of %d characters can't hold 128 random bits (media 1)" % len(ticket))
-            status, hdrs, body = c.get(a.json["url"], limit=1024 * 1024 + 1)
+            url = image_url(self.root, ticket)
+            status, hdrs, body = c.get(url, limit=1024 * 1024 + 1)
             if status != 200:
                 raise Fail("the image: %d" % status)
             try:
@@ -472,10 +532,11 @@ class PartChecks(StreamChecks, RevisionChecks):
             ct = dict((k.lower(), v) for k, v in hdrs).get("content-type", "")
             if ct.split(";")[0].strip().lower() != "image/" + fmt:
                 raise Fail("a %s served as %r" % (fmt, ct))
-            st["url"] = a.json["url"]
-            return "%s: a %dx%d %s of %d bytes, under a ticket of its own" % (t["key"], w, h, fmt.upper(), len(body))
-        self.check("I1", "catalog 4.4, media 3.4", "image: 200 signed, <stream root><ticket>/image, a JPEG or PNG within "
-                   "1 MiB and 4,096 pixels", image)
+            st["url"] = url
+            return "%s: a %dx%d %s of %d bytes, at <stream root><ticket>/image built from the answer's ticket" % (
+                t["key"], w, h, fmt.upper(), len(body))
+        self.check("I1", "catalog 4.4, media 1, 3.4", "image: 200 signed, the ticket and no URL; <stream root><ticket>/image "
+                   "a JPEG or PNG within 1 MiB and 4,096 pixels", image)
 
         def scope():
             if "url" not in st:
@@ -512,13 +573,13 @@ class PartChecks(StreamChecks, RevisionChecks):
                 self.answers.append(a)
                 if not (a.status == 404 and a.signed):
                     bad.append("%s, not a local title: %s, not a signed 404" % (public["key"], a.short()))
-            others = [t for t in self.local_titles() if t.get("image") is not True or t.get("kind") not in (
+            others = [t for t in self.local_titles() if t.get("image") is not True or kind_of(t) not in (
                 "movie", "series", "artist", "album")]
             if others:
                 a = c.call("image", {"title": others[0]["key"]})
                 self.answers.append(a)
                 if not (a.status == 404 and a.signed):
-                    bad.append("%s (%s, image %r): %s, not a signed 404" % (others[0]["key"], others[0].get("kind"),
+                    bad.append("%s (%s, image %r): %s, not a signed 404" % (others[0]["key"], kind_of(others[0]),
                                                                           others[0].get("image"), a.short()))
             if bad:
                 raise Fail("\n".join(bad))
@@ -617,157 +678,104 @@ class PartChecks(StreamChecks, RevisionChecks):
             extra and a track; then a copy of one file, with subtitles,
             previews, several audio tracks; a public key before a local one."""
             cp = self.copies_of(t["key"])[0]
-            return (("movie", "episode", "extra", "track").index(t["kind"]), len(cp.get("parts") or []) > 1,
-                    -len(cp.get("subtitleTracks") or []), cp.get("previews") is not True,
+            return (("movie", "episode", "extra", "track").index(kind_of(t)), parts_of(cp) > 1,
+                    -len(cp.get("subtitleTracks") or []), not isinstance(cp.get("previewLayout"), dict),
                     -len(cp.get("audioTracks") or []), scheme_of(t["key"]) == "local")
-        found = [t for t in self.whole if t.get("kind") in ("movie", "episode", "extra", "track")
-                 and ("music" if t["kind"] == "track" else "video") in on
+        found = [t for t in self.whole if kind_of(t) in ("movie", "episode", "extra", "track")
+                 and ("music" if kind_of(t) == "track" else "video") in on
                  and (video_key(t["key"]) or music_key(t["key"])) and self.copies_of(t["key"])]
         if not found:
             raise Skip("no film, episode, extra or track with copies among the titles offered")
         return min(found, key=score)["key"]
 
-    def check_playback(self, j, title, delivery=None):
-        """Playback 2.3, media 1, video 5.3 and 5.5, music 5: the problems
-        of a play answer, and its ticket."""
-        bad = []
+    def view(self, j, title, delivery=None, purpose=None):
+        """What a viewer's server keeps of a play answer (playback 2.3,
+        video 5.3), with "url", the stream's URL, and "base", <stream
+        root><ticket>/, built from the ticket (media 1); raises Refused."""
         vid = j.get("versionId") if isinstance(j, dict) and isinstance(j.get("versionId"), str) else None
-        cat = self.copy_of(title, vid)
+        cat = self.copy_of(title, vid) or {}
+        subs = [t.get("id") for t in cat.get("subtitleTracks") or [] if isinstance(t, dict)]
+        kept = keep_play_answer(j, self.root, delivery, cat.get("etag"), purpose,
+                                "video" if video_key(title) else "music", subs)
+        kept["base"] = self.root + kept["ticket"] + "/"
+        kept["url"] = kept["base"] + STREAM_NAME[kept["protocol"]]
+        return kept
+
+    def check_playback(self, j, title, delivery=None, purpose=None):
+        """Playback 2.3, media 1, video 5.3 and 5.4, music 5: the problems
+        of a play answer, and what a viewer's server keeps of it (view), or
+        None when it refuses it."""
+        bad = []
         try:
-            kept = keep_play_answer(j, self.root, delivery, cat.get("etag") if cat else None)
+            pb = self.view(j, title, delivery, purpose)
         except Refused as e:
             return ["refused by the viewer's server (it sends stop and gives up): %s" % e], None
-        proto = kept["stream"]["protocol"]
-        ticket = stream_ticket(kept["stream"]["url"], self.root, "master.m3u8" if proto == "hls" else "file")
-        if len(ticket) < 22:
-            bad.append("a ticket of %d characters can't hold 128 random bits (media 1)" % len(ticket))
-        if len(kept["id"]) < 22:
-            bad.append("a playback ID of %d characters can't hold 128 random bits (playback 2.3)" % len(kept["id"]))
-        for f in ("versionId", "audioTracks", "audioTrack", "maxBitrateKbps", "durationMs"):
-            if f in j and kept.get(f) != j[f] and not (f == "audioTracks" and isinstance(j[f], list)):
+        if len(pb["ticket"]) < 22:
+            bad.append("a ticket of %d characters can't hold 128 random bits (media 1)" % len(pb["ticket"]))
+        if len(pb["id"]) < 22:
+            bad.append("a playback ID of %d characters can't hold 128 random bits (playback 2.3)" % len(pb["id"]))
+        urls = sorted(set(_urls(j)))
+        if urls:
+            bad.append("the answer carries URLs (playback 2.3, media 1: answers carry no URLs, the viewer's server "
+                       "builds them from the ticket): %s" % ", ".join(u[:80] for u in urls[:3]))
+        for f in ("audioTrack", "maxBitrateKbps"):
+            if f in j and pb.get(f) != j[f]:
                 bad.append("%s %s: a viewer's server cleans it to %s (playback 2.3)" % (
-                    f, dumps(j[f]).decode()[:120], dumps(kept[f]).decode()[:120] if f in kept else "nothing"))
-        for t in j.get("audioTracks") or []:
-            if isinstance(t, dict) and "label" in t:
-                bad.append("audio track %s carries label (playback 2.3: tracks carry no label)" % t.get("id"))
-                break
+                    f, dumps(j[f]).decode()[:120], dumps(pb[f]).decode()[:120] if f in pb else "nothing"))
+        gone = [f for f in DROPPED_ANSWER if f in j]
+        if gone:
+            self.note_default("playback 2.3, video 5.3", "%s: play's answer still sends %s, dropped by proposal 17 "
+                              "(ignored by a viewer's server)" % (title, ", ".join(gone)))
+        if purpose == "scan":
+            sb = j.get("scanBytes")
+            if not (is_int(sb) and 4194304 <= sb <= 1073741824):
+                bad.append("scanBytes %s: a scan's answer must state it, 4,194,304 to 1,073,741,824 (playback 2.3, 8; a "
+                           "caller counts on 4 MiB)" % (dumps(sb).decode() if "scanBytes" in j else "missing"))
+        cat = self.copy_of(title, pb["versionId"])
         if cat is None:
             bad.append("versionId %r is none of the title's copies in the catalog (playback 2.3: version IDs are the "
-                       "copies' ids)" % j.get("versionId"))
+                       "copies' ids)" % pb["versionId"])
         else:
-            if kept.get("readTitleAgain"):
+            if pb.get("readTitleAgain"):
                 bad.append("etag %r; the catalog's copy %s has %r, and nothing changed on the server (playback 2.3, "
-                           "media 3.2: the copy's etag, as the catalog gives it)" % (j["etag"], cat.get("id"), cat.get("etag")))
-            if "versionId" not in j and len(self.copies_of(title)) > 1:
-                bad.append("no versionId, and the title has %d copies: which plays?" % len(self.copies_of(title)))
-            ids = {t.get("id") for t in cat.get("audioTracks") or [] if isinstance(t, dict)} if video_key(title) else set()
-            for t in kept.get("audioTracks") if ids else []:
-                if t["id"] != "off" and t["id"] not in ids:
-                    bad.append("audio track %s isn't one of the copy's in the catalog %s (video 3.2: the same IDs)"
-                               % (t["id"], sorted(ids)))
-            if kept.get("audioTrack") and ids and kept["audioTrack"] not in ids:
-                bad.append("audioTrack %s isn't one of the copy's in the catalog" % kept["audioTrack"])
-            vk = video_key(title)
-            if "durationMs" in kept and is_int(cat.get("durationMs")) and kept["durationMs"] and not (vk and vk.kind == "episode") \
-                    and abs(kept["durationMs"] - cat["durationMs"]) > 1000:
-                bad.append("durationMs %d; the catalog's copy %d" % (kept["durationMs"], cat["durationMs"]))
-        root = self.root
+                           "media 3.2: the copy's etag, as the catalog gives it)" % (pb["etag"], cat.get("id"), cat.get("etag")))
+            ids = {t.get("id") for t in cat.get("audioTracks") or [] if isinstance(t, dict)}
+            if pb.get("audioTrack") and ids and pb["audioTrack"] not in ids:
+                bad.append("audioTrack %s isn't one of the copy's in the catalog %s" % (pb["audioTrack"], sorted(ids)))
         if video_key(title):
-            subs = self.check_sub_tracks(j, "subtitleTracks", root, ticket, cat, bad)
-            self.check_sub_tracks(j, "forcedTracks", root, ticket, cat, bad)
-            if "subtitleTrack" in j and j["subtitleTrack"] not in [t.get("id") for t in subs]:
-                bad.append("subtitleTrack %r isn't one of subtitleTracks" % j["subtitleTrack"])
-            if "segments" in j:
-                bad.append("segments in play's answer: skip markers come with the copy, in the catalog (video 5.3)")
-            if "fonts" in j:
-                fs = j["fonts"]
-                if not isinstance(fs, list) or len(fs) > 64 or any(u != "%s%s/fonts/%d" % (root, ticket, i) for i, u in enumerate(fs)):
-                    bad.append("fonts %s isn't at most 64 URLs <stream root><ticket>/fonts/<n> (video 5.3, 6.1)" % str(fs)[:120])
-            if "burnedTrack" in j and not re.fullmatch(r"s(0|[1-9][0-9]{0,2})", str(j["burnedTrack"])):
-                bad.append("burnedTrack %r isn't s<n>" % j["burnedTrack"])
-            tp = j.get("trickplay")
-            if tp is not None:
-                bad += self.check_trickplay(tp, root, ticket)
+            sent = j.get("subtitles")
+            if sent is not None and not isinstance(sent, list):
+                bad.append("subtitles isn't an array (video 5.3)")
+            elif isinstance(sent, list):
+                if len(sent) > 64:
+                    bad.append("subtitles holds %d entries; a viewer's server keeps 64 (video 5.3)" % len(sent))
+                kept = {x["id"]: x for x in pb.get("subtitles", [])}
+                for e in sent:
+                    if not isinstance(e, dict) or e.get("id") not in kept:
+                        bad.append("subtitles entry %s: dropped by a viewer's server (video 5.3: a track of the copy, "
+                                   "once, form text or picture)" % dumps(e).decode()[:80])
+                    elif "ass" in e and not (e["ass"] is True and e.get("form") == "text"):
+                        bad.append("subtitles entry %s: ass %s counts as absent (video 5.3: true, with text only)"
+                                   % (e["id"], dumps(e["ass"]).decode()))
+            formats = {t.get("id"): t.get("format") for t in (cat or {}).get("subtitleTracks") or [] if isinstance(t, dict)}
+            served = {x["id"]: x for x in pb.get("subtitles", [])}
+            for sid, fmt in sorted(formats.items(), key=lambda x: str(x[0])):
+                want = SERVED_FORM.get(fmt)
+                if want is None or delivery == "file":
+                    continue
+                got = served.get(sid)
+                have = (got["form"], bool(got.get("ass"))) if got else None
+                if have != want:
+                    bad.append("subtitle track %s (%s): served %s; video 5.4's table: %s%s, a must for the formats it "
+                               "lists" % (sid, fmt, "%s%s" % (have[0], ", ass" if have[1] else "") if have else "not at all",
+                                          want[0], ", ass: true" if want[1] else ""))
+            if "fontCount" in j and pb.get("fontCount", 0) != j["fontCount"]:
+                bad.append("fontCount %s: a viewer's server takes 0 (video 5.3: 0 to 64)" % dumps(j["fontCount"]).decode())
         else:
-            for f in ("subtitleTracks", "forcedTracks", "segments", "trickplay", "fonts"):
+            for f in ("subtitles", "fontCount"):
                 if j.get(f):
-                    bad.append("%s in the answer for a track (music 5: audio only; a viewer's server drops it)" % f)
-        return bad, ticket
-
-    @staticmethod
-    def check_sub_tracks(j, name, root, ticket, cat, bad):
-        out = []
-        v = j.get(name)
-        if v is None:
-            return out
-        if not isinstance(v, list):
-            bad.append("%s isn't an array" % name)
-            return out
-        if len(v) > 64:
-            bad.append("%s holds %d tracks; a viewer's server keeps 64" % (name, len(v)))
-        formats = {t.get("id"): t.get("format") for t in (cat or {}).get("subtitleTracks") or [] if isinstance(t, dict)}
-        for t in v:
-            if not isinstance(t, dict):
-                bad.append("a %s entry isn't an object" % name)
-                continue
-            tid = t.get("id")
-            if not isinstance(tid, str) or not re.fullmatch(r"s(0|[1-9][0-9]{0,2})", tid):
-                bad.append("%s: ID %r isn't s<n> without leading zeros" % (name, tid))
-                continue
-            if "label" in t:
-                bad.append("%s %s carries label (video 5.3: no label)" % (name, tid))
-            if "pictures" in t:
-                bad.append("%s %s carries pictures (video 5.3: format says it)" % (name, tid))
-            for f in ("default", "forced", "hearingImpaired", "external"):
-                if f in t and not isinstance(t[f], bool):
-                    bad.append("%s %s: %s isn't a boolean" % (name, tid, f))
-            if cat is not None and tid not in formats:
-                bad.append("%s %s isn't one of the copy's subtitle tracks in the catalog (video 5.4: the same IDs)"
-                           % (name, tid))
-            fmt = t.get("format", formats.get(tid))
-            if "url" in t:
-                kinds = ["pictures"] if fmt in PICTURE_FORMATS else ["subtitles"] if fmt in TEXT_FORMATS else \
-                    ["subtitles", "pictures"]   # another format, or none: either, when it converts it (video 5.4)
-                kind = kinds[0]
-                if t["url"] not in ["%s%s/%s/%s" % (root, ticket, x, tid) for x in kinds]:
-                    bad.append("%s %s: url %r isn't <stream root><ticket>/%s/%s (video 6.1)" % (name, tid, t["url"], kind, tid))
-            if "assUrl" in t:
-                if fmt not in ("ass", "ssa"):
-                    bad.append("%s %s: assUrl for a track of format %s (video 5.4: ass and ssa only)" % (name, tid, fmt))
-                elif t["assUrl"] != "%s%s/ass/%s" % (root, ticket, tid):
-                    bad.append("%s %s: assUrl %r isn't <stream root><ticket>/ass/%s (video 6.1)" % (name, tid, t["assUrl"], tid))
-            out.append(t)
-        return out
-
-    @staticmethod
-    def check_trickplay(tp, root, ticket):
-        bad = []
-        if not isinstance(tp, dict):
-            return ["trickplay isn't an object"]
-        bounds = {"tileWidth": (1, 2048), "tileHeight": (1, 2048), "columns": (1, 100), "rows": (1, 100),
-                  "intervalMs": (100, 3600000), "tileCount": (1, MAX)}
-        for f, (lo, hi) in bounds.items():
-            v = tp.get(f)
-            if not is_int(v):
-                bad.append("trickplay.%s %r isn't an integer (a viewer's server refuses the whole answer)" % (f, v))
-            elif not lo <= v <= hi:
-                bad.append("trickplay.%s %r outside %d to %d" % (f, v, lo, hi))
-        if bad:
-            return bad
-        if tp["columns"] * tp["tileWidth"] > 4096 or tp["rows"] * tp["tileHeight"] > 4096:
-            bad.append("a full sheet wider or taller than 4,096 pixels")
-        sheets = tp.get("sheets")
-        per = tp["columns"] * tp["rows"]
-        n = -(-tp["tileCount"] // per)
-        if not isinstance(sheets, list):
-            return bad + ["trickplay.sheets isn't an array"]
-        if len(sheets) != n or n > 1000:
-            bad.append("trickplay.sheets has %d entries; ceil(tileCount / (columns x rows)) is %d (at most 1,000)" % (len(sheets), n))
-        for i, u in enumerate(sheets):
-            if u != "%s%s/trickplay/%d" % (root, ticket, i):
-                bad.append("sheets[%d] is %r, not <stream root><ticket>/trickplay/%d (video 6.1)" % (i, u, i))
-                break
-        return bad
+                    bad.append("%s in the answer for a track (music 5: audio only; a viewer's server ignores it)" % f)
+        return bad, pb
 
     @staticmethod
     def bad_plays(k):
@@ -780,7 +788,7 @@ class PartChecks(StreamChecks, RevisionChecks):
                 if c.get("call") != "play" or c["valid"] or c["status"] != 400:
                     continue
                 text = c["text"]
-                if not video_key(k) and re.search(r"subtitle|burnSubtitle|videoCodec|maxHeight|dvProfiles", text):
+                if not video_key(k) and re.search(r"subtitle|burnSubtitle|videoCodec|maxHeight|range", text):
                     continue
                 out.append((c["name"], text.replace('"movie/tmdb/949"', json.dumps(k)).encode()))
         return out
@@ -828,16 +836,16 @@ class PartChecks(StreamChecks, RevisionChecks):
             if a.status != 200:
                 raise Fail("play %s: %s (offer a playable copy; limits may be 0)" % (k, a.short()))
             self.signed(a, 200)
-            bad, ticket = self.check_playback(a.json, k)
-            st["pb"], st["ticket"] = a.json, ticket
+            bad, pb = self.check_playback(a.json, k)
+            st["raw"], st["pb"] = a.json, pb or {}
             if bad:
                 raise Fail("\n".join(bad))
-            j = a.json
-            return "%s: %s over %s, etag %s as the catalog's, %d audio, %d subtitle tracks%s" % (
-                j["id"], j["method"], j["stream"]["protocol"], j.get("etag"), len(j.get("audioTracks") or []),
-                len(j.get("subtitleTracks") or []), ", previews" if j.get("trickplay") else "")
-        if not self.check("PB3", "playback 2.3, media 1, video 3.2, 5.3, 5.5", "play: 200 signed, the playback object in "
-                          "its forms, URLs under the stream root, its etag and tracks the catalog's", plain):
+            return "%s: %s over %s, etag %s as the catalog's, %d subtitle track(s) served apart, %d font(s); no URL, " \
+                   "every URL built from the ticket" % (pb["id"], pb["method"], pb["protocol"], pb["etag"],
+                                                        len(pb.get("subtitles", [])), pb.get("fontCount", 0))
+        if not self.check("PB3", "playback 2.3, media 1, video 5.3, 5.4", "play: 200 signed, the playback object in its "
+                          "forms, no URLs (built from the ticket), its etag and tracks the catalog's, video 5.4's "
+                          "formats in their forms", plain) and "url" not in st.get("pb", {}):
             self.stop(st.get("pb"))
             return
 
@@ -849,40 +857,34 @@ class PartChecks(StreamChecks, RevisionChecks):
             a = self.play({"title": st["key"], "startPositionMs": 0})
             if a.status == 200 and isinstance(a.json, dict):
                 self.stop(a.json)
-            one(st["pb"])
+            out = [one(st["pb"])]
             if a.status == 503 and a.signed and a.problem_type() == "server-busy":
-                return "%s over hls (a second play: 503 server-busy, PB3's transcode still live)" % st["pb"]["method"]
+                return "%s (a second play: 503 server-busy, PB3's transcode still live)" % out[0]
             self.signed(a, 200)
-            one(a.json)
-            return "%s over hls, twice" % st["pb"]["method"]
+            out.append(one(a.json))
+            return "; ".join(out)
 
         def one(j):
-            if not isinstance(j.get("stream"), dict) or j["stream"].get("protocol") != "hls":
+            if j.get("protocol") != "hls":
                 raise Fail("without delivery, %s over %s: the baseline is complete HLS, never the file (playback 2.7)"
-                           % (j.get("method"), (j.get("stream") or {}).get("protocol")))
-            if j["method"] != "transcode":
-                # Left unchanged only when the copy already is the baseline.
-                cp = self.copy_of(st["key"], j.get("versionId")) or {}
-                v = cp.get("video") if isinstance(cp.get("video"), dict) else None
-                aid = j.get("audioTrack")
-                tr = next((t for t in cp.get("audioTracks") or [] if isinstance(t, dict) and t.get("id") == aid), None)
-                not_base = []
-                if video_key(st["key"]) and v and v.get("codec") != "h264":
-                    not_base.append("video %s" % v.get("codec"))
-                if tr and tr.get("codec") not in (None, "aac"):
-                    not_base.append("audio %s" % tr.get("codec"))
-                if not_base:
-                    raise Fail("without delivery, method %s of a copy whose %s isn't the baseline's H.264 and AAC "
-                               "(playback 2.7: a transcode then)" % (j["method"], " and ".join(not_base)))
-        self.check("PB4", "playback 2.7, video 5.1, music 5", "play without delivery: the baseline, complete HLS (left "
-                   "as it is only when already H.264 and AAC)", nothing_said)
+                           % (j.get("method"), j.get("protocol")))
+            cp = self.copy_of(st["key"], j.get("versionId")) or {}
+            why = baseline_outside(cp, j.get("audioTrack"), bool(video_key(st["key"])))
+            if j.get("method") != "transcode" and why:
+                raise Fail("without delivery, method %s of a copy whose %s (playback 2.6, 2.7: left unchanged only when "
+                           "already within the baseline, H.264 High 4.1 8-bit SDR BT.709 and AAC-LC stereo 48 kHz; a "
+                           "transcode otherwise)" % (j.get("method"), why))
+            return "%s over hls (%s)" % (j.get("method"), "the copy is outside the baseline: %s" % why if why
+                                         else "the copy is within the baseline")
+        self.check("PB4", "playback 2.6, 2.7, video 5.1, music 5", "play without delivery: the baseline, complete HLS, "
+                   "its picture defined (left as it is only when already within it)", nothing_said)
 
         self.media_checks(st["pb"], st["key"], "M")
 
         def progress():
             j = st["pb"]
             now = int(time.time())
-            for b in ({"id": j["id"], "positionMs": 1000}, {"id": j["id"], "positionMs": 2000, "paused": True}, {"id": j["id"]},
+            for b in ({"id": j["id"], "positionMs": 1000}, {"id": j["id"], "positionMs": 2000, "paused": "yes"}, {"id": j["id"]},
                       {"id": j["id"], "positionMs": 2500, "at": now - 60}):
                 a = self.signed(c.call("progress", b), 200)
                 if a.json != {}:
@@ -891,7 +893,6 @@ class PartChecks(StreamChecks, RevisionChecks):
             for name, b in (("an id of another form", {"id": "play.x"}), ("no id", {}),
                             ("positionMs -1", {"id": j["id"], "positionMs": -1}),
                             ("positionMs over 100 days", {"id": j["id"], "positionMs": 8640000001}),
-                            ("paused not a boolean", {"id": j["id"], "paused": "yes"}),
                             ("positionMs null", {"id": j["id"], "positionMs": None}),
                             ("at over 30 days ago", {"id": j["id"], "at": now - 30 * 86400 - 600}),
                             ("at over 5 minutes ahead", {"id": j["id"], "at": now + 900}),
@@ -910,8 +911,8 @@ class PartChecks(StreamChecks, RevisionChecks):
                 bad.append("a playback ID never given: %s" % e)
             if bad:
                 raise Fail("\n".join(bad))
-            return "200 {} four times (one with at a minute ago); 400 for malformed bodies and at out of its bounds; " \
-                   "410 playback-stopped for an ID never given"
+            return "200 {} four times (one with at a minute ago, one with paused, an unknown member since proposal 17); " \
+                   "400 for malformed bodies and at out of its bounds; 410 playback-stopped for an ID never given"
         self.check("PB5", "playback 3, 6.1, music 5.2", "progress: 200 {}, 400 for a bad body or at, 410 for a playback "
                    "that isn't live", progress)
 
@@ -934,7 +935,7 @@ class PartChecks(StreamChecks, RevisionChecks):
                 self.answers.append(a)
                 if not (a.status == 400 and a.signed):
                     bad.append("stop with %s: %s" % (name, a.short()))
-            status, _, _ = c.get(j["stream"]["url"])
+            status, _, _ = c.get(j["url"])
             if status != 404:
                 bad.append("the ticket still works after stop: %d for %s (media 4: it stops at once)" % (status, "the stream"))
             if bad:
@@ -952,11 +953,10 @@ class PartChecks(StreamChecks, RevisionChecks):
         self.revision_checks(st["key"])
 
     def track_checks(self, k, pb):
-        """Playback 2.6 and video 5.4 since proposal 17: only the normative
-        minimum fails (a copy or track named wins; one not of the copy
-        isn't refused; subtitles off show none; no transcode for a choice).
-        The recommended defaults (the first copy, a language, as if absent)
-        are noted when not followed."""
+        """Playback 2.6 since proposal 17: the viewer's server chooses; the
+        owning server plays what it is asked. Only that minimum is checked:
+        a copy or an audio track named wins; without one, the first copy and
+        the file's default audio (the track marked default, else the first)."""
         Fail, Skip = _x()
 
         def run(body):
@@ -965,120 +965,73 @@ class PartChecks(StreamChecks, RevisionChecks):
             self.stop(a.json)
             return a.json
 
-        cat = self.copy_of(k, pb.get("versionId")) or {}
-        audio = [t for t in pb.get("audioTracks") or cat.get("audioTracks") or [] if isinstance(t, dict)]
-        subs = [t for t in pb.get("subtitleTracks") or cat.get("subtitleTracks") or [] if isinstance(t, dict)]
-
-        def default(text):
-            self.note_default("playback 2.6, video 5.4", "%s: %s" % (k, text))
-
         def audio_rules():
-            if not audio:
-                raise Skip("neither the answer nor the catalog's copy lists audio tracks")
             out = []
-            j = run({"audioTrack": "a999"})
-            if j.get("audioTrack") != pb.get("audioTrack"):
-                default("audioTrack a999 (not of the copy) gave %r; absent gave %r (recommended: as if absent)"
-                        % (j.get("audioTrack"), pb.get("audioTrack")))
-            out.append("a999 (not of the copy) not refused")
-            others = [t for t in audio if t.get("id") != pb.get("audioTrack")]
+            first = self.copy_of(k) or {}
+            audio = [t for t in first.get("audioTracks") or [] if isinstance(t, dict)]
+            if not audio:
+                raise Skip("the catalog's first copy lists no audio track")
+            j = run({"versionId": first.get("id")})
+            want = next((t["id"] for t in audio if t.get("default") is True), audio[0].get("id"))
+            if j.get("audioTrack") != want:
+                raise Fail("without audioTrack, %r played; the file's default audio is %s (playback 2.6: the track the "
+                           "file marks default, else its first)" % (j.get("audioTrack"), want))
+            out.append("without audioTrack, %s (the file's default)" % want)
+            others = [t for t in audio if t.get("id") != want]
             if others:
-                t = others[0]
-                j = run({"audioTrack": t["id"]})
+                t = others[-1]
+                j = run({"versionId": first.get("id"), "audioTrack": t["id"]})
                 if j.get("audioTrack") != t["id"]:
                     raise Fail("audioTrack %s, a track of the copy, gave %r (playback 2.6: a track named wins)"
                                % (t["id"], j.get("audioTrack")))
                 out.append("%s named, played" % t["id"])
-                prev = next((x for x in audio if x.get("id") == pb.get("audioTrack")), {})
-                lang = next((x for x in others if x.get("language") and x.get("language") != prev.get("language")
-                             and x.get("role") in (None, "main", "dub")), None)
-                if lang:
-                    j = run({"audioLanguage": lang["language"]})
-                    got = next((x for x in audio if x.get("id") == j.get("audioTrack")), {})
-                    if (got.get("language") or "").lower().split("-")[0] != lang["language"].lower().split("-")[0] \
-                            or got.get("role") not in (None, "main", "dub"):
-                        default("audioLanguage %s gave %r (%s, role %s); recommended: the title's own sound in it"
-                                % (lang["language"], j.get("audioTrack"), got.get("language"), got.get("role")))
-                    out.append("audioLanguage %s answered" % lang["language"])
             else:
                 out.append("one audio track only")
             return "; ".join(out)
-        self.check("PB7", "playback 2.6", "the audio: a track named wins; one not of the copy isn't refused "
-                   "(defaults noted)", audio_rules)
-
-        def subtitle_rules():
-            if not video_key(k):
-                raise Skip("not a film, an episode or an extra")
-            out = []
-            j = run({"subtitleTrack": "off"})
-            if "subtitleTrack" in j:
-                raise Fail("subtitleTrack off gave subtitleTrack %r (video 5.4: off shows none)" % j["subtitleTrack"])
-            out.append("off shows none")
-            j = run({"subtitleTrack": "s999"})
-            if j.get("subtitleTrack") != pb.get("subtitleTrack"):
-                default("subtitleTrack s999 gave %r; absent gave %r (recommended: as if absent)"
-                        % (j.get("subtitleTrack"), pb.get("subtitleTrack")))
-            out.append("s999 (not of the copy) not refused")
-            if subs:
-                t = subs[-1]
-                j = run({"subtitleTrack": t["id"]})
-                if j.get("subtitleTrack") != t["id"]:
-                    raise Fail("subtitleTrack %s, a track of the copy, gave %r (video 5.4: a track named wins)"
-                               % (t["id"], j.get("subtitleTrack")))
-                out.append("%s named, shown" % t["id"])
-                if j.get("method") == "transcode" and pb.get("method") != "transcode":
-                    raise Fail("choosing subtitles made the playback transcode (video 5.4: burned in only when asked)")
-                lt = next((x for x in subs if x.get("language") and not x.get("forced")), None)
-                if lt:
-                    j = run({"subtitleLanguage": lt["language"]})
-                    got = next((x for x in subs if x.get("id") == j.get("subtitleTrack")), {})
-                    if (got.get("language") or "").lower().split("-")[0] != lt["language"].lower().split("-")[0]:
-                        default("subtitleLanguage %s gave %r (recommended: a track in it)"
-                                % (lt["language"], j.get("subtitleTrack")))
-                    out.append("subtitleLanguage %s answered" % lt["language"])
-            return "; ".join(out)
-        self.check("PB8", "video 5.4", "the subtitles: off shows none; a track named wins, without a transcode; one not "
-                   "of the copy isn't refused (defaults noted)", subtitle_rules)
+        self.check("PB7", "playback 2.6", "the audio: a track named wins; without one, the file's default audio",
+                   audio_rules)
 
         def version_rules():
             out = []
+            first = self.copies_of(k)[0].get("id") if self.copies_of(k) else None
+            if pb.get("versionId") != first:
+                raise Fail("without versionId, %r played; the catalog's first copy is %r (playback 2.6: without one, "
+                           "the first copy plays)" % (pb.get("versionId"), first))
+            out.append("without versionId, the first copy %s" % first)
             j = run({"versionId": "conformance-no-such-version"})
-            if j.get("versionId") != pb.get("versionId"):
-                default("an unknown versionId gave %r; absent gave %r (recommended: as if absent)"
-                        % (j.get("versionId"), pb.get("versionId")))
-            out.append("an unknown versionId not refused")
-            vs = [x["id"] for x in self.copies_of(k) if x.get("id") != pb.get("versionId")]
+            if j.get("versionId") != first:
+                raise Fail("a versionId naming none of the copies gave %r; the first is %r (playback 2.6)"
+                           % (j.get("versionId"), first))
+            out.append("an unknown versionId, the first copy too")
+            vs = [x["id"] for x in self.copies_of(k) if x.get("id") != first]
             if vs:
-                j = run({"versionId": vs[0]})
-                if j.get("versionId") != vs[0]:
+                j = run({"versionId": vs[-1]})
+                if j.get("versionId") != vs[-1]:
                     raise Fail("versionId %s (a copy in the catalog) gave %r (playback 2.6: a copy named wins)"
-                               % (vs[0], j.get("versionId")))
-                out.append("%s named, played" % vs[0])
+                               % (vs[-1], j.get("versionId")))
+                out.append("%s named, played" % vs[-1])
             else:
                 out.append("one copy only")
-            first = self.copies_of(k)[0].get("id") if self.copies_of(k) else None
-            if pb.get("versionId", first) != first:
-                default("without versionId, %r played; the catalog's first copy is %r (recommended: the first, the "
-                        "owner's preference)" % (pb.get("versionId"), first))
             return "; ".join(out)
-        self.check("PB9", "playback 2.6, video 3.7", "the copy: a copy named wins; an unknown versionId isn't refused "
-                   "(defaults noted)", version_rules)
+        self.check("PB9", "playback 2.6, video 3.7", "the copy: a copy named wins; without one, or with an unknown one, "
+                   "the first", version_rules)
 
     def stream_body(self, k):
         """A play that needs no transcode, as a viewer's server asks one
         when its device plays the copy (playback 2.7): delivery file of a
-        copy of one file, else remux to mp4 or mpegts, else none (the
-        baseline). The first the owning server answers 200 is kept."""
+        copy of one file, else remux to mp4 or mp2t segments, else none
+        (the baseline). The first the owning server answers 200 is kept."""
         cache = self.__dict__.setdefault("_stream_bodies", {})
         if k in cache:
             return cache[k]
         tries = []
-        one = next((c for c in self.copies_of(k) if len(c.get("parts") or []) < 2), None)
+        one = next((c for c in self.copies_of(k) if parts_of(c) < 2), None)
         if one:
             tries.append({"title": k, "delivery": "file", "versionId": one["id"]})
         cp = (self.copies_of(k) or [{}])[0]
-        for container in ("mp4", "mpegts"):
-            tries.append(dict({"title": k, "delivery": "remux", "container": container},
+        top = "video" if cp.get("video") else "audio"
+        for sub in ("mp4", "mp2t"):
+            tries.append(dict({"title": k, "delivery": "remux", "mediaType": "%s/%s" % (top, sub)},
                               **({"versionId": cp["id"]} if cp.get("id") else {})))
         for b in tries:
             a = self.play(b)
