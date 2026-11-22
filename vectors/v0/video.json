@@ -444,6 +444,18 @@
       "output": "{\"key\":\"series/tvdb/81189/s1/e2\",\"library\":\"v2\",\"ids\":{\"tmdb\":\"62086\"},\"copies\":[{\"id\":\"v1\",\"durationMs\":8160000,\"mediaType\":\"video/matroska\",\"size\":1000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"language\":\"en\",\"codec\":\"aac\",\"codecs\":\"mp4a.40.2\"}]}]}"
     },
     {
+      "name": "ids: imdb, tvdb and tmdb on a tvdb episode, all kept",
+      "text": "{\"key\":\"series/tvdb/81189/s1/e2\",\"library\":\"v2\",\"copies\":[{\"id\":\"v1\",\"durationMs\":8160000,\"mediaType\":\"video/matroska\",\"size\":1000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\",\"codecs\":\"mp4a.40.2\",\"language\":\"en\"}]}],\"ids\":{\"imdb\":\"tt1054724\",\"tvdb\":\"349233\",\"tmdb\":\"62086\"}}",
+      "valid": true,
+      "output": "{\"key\":\"series/tvdb/81189/s1/e2\",\"library\":\"v2\",\"ids\":{\"imdb\":\"tt1054724\",\"tmdb\":\"62086\",\"tvdb\":\"349233\"},\"copies\":[{\"id\":\"v1\",\"durationMs\":8160000,\"mediaType\":\"video/matroska\",\"size\":1000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"language\":\"en\",\"codec\":\"aac\",\"codecs\":\"mp4a.40.2\"}]}]}"
+    },
+    {
+      "name": "ids: tmdb on a tmdb episode skipped (its key says it)",
+      "text": "{\"key\":\"series/tmdb/1399/s1/e2\",\"library\":\"v2\",\"copies\":[{\"id\":\"v1\",\"durationMs\":8160000,\"mediaType\":\"video/matroska\",\"size\":1000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\",\"codecs\":\"mp4a.40.2\",\"language\":\"en\"}]}],\"ids\":{\"tmdb\":\"63057\",\"imdb\":\"tt1668746\"}}",
+      "valid": true,
+      "output": "{\"key\":\"series/tmdb/1399/s1/e2\",\"library\":\"v2\",\"ids\":{\"imdb\":\"tt1668746\"},\"copies\":[{\"id\":\"v1\",\"durationMs\":8160000,\"mediaType\":\"video/matroska\",\"size\":1000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"language\":\"en\",\"codec\":\"aac\",\"codecs\":\"mp4a.40.2\"}]}]}"
+    },
+    {
       "name": "ids: tmdb out of form on a tvdb series skipped",
       "text": "{\"key\":\"series/tvdb/81189\",\"library\":\"v2\",\"ids\":{\"tmdb\":\"01396\"}}",
       "valid": true,

@@ -471,6 +471,8 @@ func videoTitleCases() []videoCase {
 		{"ids: tvdb on a series of the tvdb scheme skipped (episodes only)", `{"key":"series/tvdb/81189","library":"v2","ids":{"tvdb":"81189","imdb":"tt0903747"}}`},
 		{"ids: tmdb on a tvdb series, once TMDB has it", `{"key":"series/tvdb/81189","library":"v2","ids":{"tmdb":"1396","imdb":"tt0903747"}}`},
 		{"ids: tmdb on a tvdb episode", `{"key":"series/tvdb/81189/s1/e2","library":"v2"` + cs + `,"ids":{"tmdb":"62086"}}`},
+		{"ids: imdb, tvdb and tmdb on a tvdb episode, all kept", `{"key":"series/tvdb/81189/s1/e2","library":"v2"` + cs + `,"ids":{"imdb":"tt1054724","tvdb":"349233","tmdb":"62086"}}`},
+		{"ids: tmdb on a tmdb episode skipped (its key says it)", `{` + numbered + `,"ids":{"tmdb":"63057","imdb":"tt1668746"}}`},
 		{"ids: tmdb out of form on a tvdb series skipped", `{"key":"series/tvdb/81189","library":"v2","ids":{"tmdb":"01396"}}`},
 		{"ids: one good, one not a string", `{` + numbered + `,"ids":{"imdb":7,"tvdb":"81189"}}`},
 		{"ids: not an object: absent", `{` + numbered + `,"ids":["tt0113277"]}`},
