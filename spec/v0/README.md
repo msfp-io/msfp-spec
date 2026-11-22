@@ -26,8 +26,8 @@ media formats more often.
 | [groups.md](groups.md) | `groups` 0 | groups of servers: owner, admins and members, the signed list every member keeps, codes for a group, requests and answers encrypted for each member, pairing through a group, offers and limits per group |
 | [video.md](video.md) | `video` 0 | films, series and extras by TMDB, TheTVDB or the owner's own keys: title keys and their identity rules (TMDB's numbering, several episodes in one copy, other identifiers), copies (streams, tracks, chapters, skip markers), the description of `local` titles, `previews`, subtitles (WebVTT, ASS, PGS), fonts, seek-bar previews |
 | [music.md](music.md) | `music` 0 | artists, albums (by release) and tracks (by release track) by MusicBrainz or the owner's own keys: descriptions, copies, cover art, `lyrics`, audio-only playback, queues |
-| [implementers.md](implementers.md) | not normative | notes for implementers: what the parts would say of particular media servers and implementations, suggested numbers, advice on mapping names, decoding safely |
-| [registry.md](../registry.md) | for every version | the schemes of title keys and of `ids`, with their forms; a new scheme is an entry there |
+| [implementers.md](implementers.md) | not normative | notes for implementers: what the parts would say of particular media servers and implementations, suggested numbers, mapping a media server's names to the registry and the outside vocabularies (H.273, RFC 6381), advice to viewer's servers on choosing copies and tracks, decoding safely |
+| [registry.md](../registry.md) | for every version | the MSFP registry: the values of the open fields that describe media (codecs, subtitle formats, container media types, `hdr`, `edition`, `extraType`, segment kinds, roles, `objects`, `threeD`, music types) and the schemes of title keys and of `ids`; a new codec or scheme is an entry there |
 
 Read the core first. Each part says what it needs from the core, and
 refers to it by section.
@@ -63,6 +63,8 @@ one place, with where each is defined.
 | *Trusted*, *named* | a certificate a public authority vouches for; one the peer named by its pin | [core 3.2](core.md#32-https-certificates) |
 | Part | a separately versioned set of calls and rules: `catalog`, `playback`, `media`, `video`, `music`, `groups` | [core 10](core.md#10-versions-and-parts) |
 | Content part | a part that names one kind of content's titles and says how they play: `video`, `music` | [core 10.1](core.md#101-the-parts) |
+| Open field, token, media type | a field whose values come from a list that grows; its value, `a–z 0–9 . _ -` or an IANA-form media type, kept when unknown | [core 8.5](core.md#85-unknown-values) |
+| Registry | the lists of the open fields that describe media, and the schemes of keys and `ids` | [registry](../registry.md) |
 | Problem document | the JSON body of a refusal (RFC 9457), with `type`, `title`, `status` | [core 8.2](core.md#82-refusals) |
 | Library | a set of titles a server may offer a peer, by an opaque ID | [catalog 2](catalog.md#2-libraries) |
 | Offer, want | what one side shares; what the other takes of it | [catalog 1](catalog.md#1-terms) |
