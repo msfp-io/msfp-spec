@@ -449,8 +449,7 @@ class GroupChecks:
 
         # N's request, sealed to the server's encryptionKey (groups 5).
         rid = os.urandom(16)
-        body = {"address": n_address, "name": "MSFP conformance suite, second", "nextCommitment": n_next.commitment,
-                "inbound": False}
+        body = {"address": n_address, "nextCommitment": n_next.commitment, "inbound": False}
         info = b"msfp-group-mail-1" + unb64u(gid, 32) + rid
         aad = n.pub + unb64u(server, 32)
         payload = {"group": gid, "id": b64u(rid), "kind": "request", "from": n.text, "to": server,
@@ -549,9 +548,13 @@ class GroupChecks:
             if not isinstance(inside.get("address"), str) or unb64u(inside.get("nextCommitment") or "", 32) is None:
                 raise Fail("the sealed answer lacks address or nextCommitment: %r" % inside)
             st["answer"] = (p, inside)
+            if "name" in inside:
+                raise Fail("the sealed answer carries name %r (groups 5, proposal 17: the mail carries no name; a "
+                           "member's is its profile's)" % (inside["name"],))
             return "opened: address %s, %d pin(s)" % (inside["address"], len(inside.get("certificates") or []))
         if not self.check("GM5", "groups 4.2, 5", "accepted, the server answers N with a mail signed by it, sealed to "
-                          "N's encryptionKey, carrying its address", answered, operator=True):
+                          "N's encryptionKey, carrying its address and no name", answered, operator=True) \
+                and "answer" not in st:
             return
 
         def group_pair():
@@ -559,16 +562,19 @@ class GroupChecks:
             c = Client(n, inside["address"], server_keys=self.server_keys[:1], connect=self.a.connect)
             c.pins = read_pins(inside.get("certificates"))
             st["n_client"] = c
-            body = {"group": gid, "answers": p["id"], "address": n_address, "name": "MSFP conformance suite, second",
-                    "nextCommitment": n_next.commitment, "inbound": False}
+            body = {"group": gid, "answers": p["id"], "address": n_address, "nextCommitment": n_next.commitment,
+                    "inbound": False}
             st["gp_body"] = body
             a = c.call("group-pair", body)
             self.signed(a, 200)
-            if not isinstance(a.json.get("name"), str) or unb64u(a.json.get("nextCommitment") or "", 32) is None:
-                raise Fail("the 200 lacks name or nextCommitment (groups 8.3): %r" % a.body[:120])
-            return "paired: %r" % a.json.get("name")
-        if not self.check("GM6", "groups 8.3", "N calls group-pair with the answer: a signed 200 with name and "
-                          "nextCommitment; N and the server paired", group_pair):
+            if unb64u(a.json.get("nextCommitment") or "", 32) is None:
+                raise Fail("the 200 lacks nextCommitment (groups 8.3): %r" % a.body[:120])
+            if "name" in a.json:
+                raise Fail("the 200 carries name %r (groups 8.3, proposal 17: neither side sends a name; a member's "
+                           "is its profile's)" % (a.json["name"],))
+            return "paired, nextCommitment and no name"
+        if not self.check("GM6", "groups 8.3", "N calls group-pair with the answer: a signed 200 with nextCommitment "
+                          "and no name; N and the server paired", group_pair):
             return
 
         def used():
