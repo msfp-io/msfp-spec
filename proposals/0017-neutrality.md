@@ -270,7 +270,10 @@ a product.
 On the video stream and on each audio track, `codecs` is the stream's
 codecs string of RFC 6381 (`avc1.640028`, `hvc1.2.4.L153.B0`,
 `av01.0.08M.10`, `mp4a.40.2`, `ec-3`, `dtsh`), 1 to 64 characters of
-`A–Z a–z 0–9 . -`. No `+`, no `/`.
+`A–Z a–z 0–9 . + -`. No `/`. (`+` allowed again while writing the
+spec, a blocking fix the owner approved on 2026-11-22: VVC's registered
+strings carry it, `vvc1.1.L51.CQA.O1+3`. Registered codes only: `ec+3`
+is never sent; Atmos is `objects`.)
 
 - **Required** when `codec` is `h264`, `hevc`, `av1` or `vp9` (video)
   or `aac` or `dts` (audio): there it carries the profile, level, tier or

@@ -27,7 +27,7 @@ var (
 	musicIDForm     = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`) // version IDs, etags, tickets
 	musicDateForm   = regexp.MustCompile(`^([0-9]{4})(?:-([0-9]{2})(?:-([0-9]{2}))?)?$`)
 	musicTypeForm   = regexp.MustCompile(`^[a-z0-9._/-](?:[a-z0-9 ._/-]{0,30}[a-z0-9._/-])?$`) // music section 3
-	musicCodecsForm = regexp.MustCompile(`^[A-Za-z0-9.-]{1,64}$`)                              // RFC 6381, video section 3.3
+	musicCodecsForm = regexp.MustCompile(`^[A-Za-z0-9.+-]{1,64}$`)                              // RFC 6381, video section 3.3
 
 	musicMethods    = []string{"direct", "remux", "transcode"}
 	musicDeliveries = []string{"file", "remux", "transcode"}

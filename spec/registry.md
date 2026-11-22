@@ -175,7 +175,7 @@ optional ([video](v0/video.md) section 3.3).
 | `ac4` | Dolby AC-4 | `ac4` | `ac-4` | — | — | `codecs` sent when known (`ac-4.<…>` carries the version, profile and level) |
 | `truehd` | Dolby TrueHD | `truehd` | `mlpa` | `A_TRUEHD` | `audio/vnd.dolby.mlp` | `mlpa` |
 | `mlp` | Meridian Lossless Packing (DVD-Audio) | `mlp` | UNVERIFIED (`mlpa` may cover it) | `A_MLP` | `audio/vnd.dolby.mlp` | |
-| `dts` | DTS Coherent Acoustics and every DTS-HD flavour | `dts` (Plex reports `dca`) | `dtsc`, `dtsh`, `dtsl`, `dtse` (layered `dts+`, `dts-`, never sent: `codecs` bans `+`) | `A_DTS`, `A_DTS/LOSSLESS`, `A_DTS/EXPRESS` | `audio/vnd.dts`; `audio/vnd.dts.hd` | `codecs` required; flavours in section 2.1; a layered stream is sent `dtsh` (`dtsc` for its core alone) |
+| `dts` | DTS Coherent Acoustics and every DTS-HD flavour | `dts` (Plex reports `dca`) | `dtsc`, `dtsh`, `dtsl`, `dtse` (layered `dts+`, `dts-`, never sent: a layered stream is sent `dtsh`) | `A_DTS`, `A_DTS/LOSSLESS`, `A_DTS/EXPRESS` | `audio/vnd.dts`; `audio/vnd.dts.hd` | `codecs` required; flavours in section 2.1; a layered stream is sent `dtsh` (`dtsc` for its core alone) |
 | `dtsuhd` | DTS-UHD (DTS:X profiles 2, 3) | — (ffmpeg has none) | `dtsx` (OTI 0xB2), `dtsy` (0xB3) | — | `audio/vnd.dts.uhd` | MSFP-coined; spelling open (`dtsuhd` or `dts_uhd`) |
 | `mp3` | MPEG-1, 2 Layer III | `mp3` | `mp4a` OTI 0x6B (MPEG-1), 0x69 (MPEG-2) | `A_MPEG/L3` | `audio/mpeg` (RFC 3003; file); `audio/MPA` (RTP) | `mp4a.40.34` as Jellyfin sends it, or `mp4a.6B` (UNVERIFIED which players prefer) |
 | `mp2` | MPEG-1, 2 Layer II | `mp2` | `mp4a` OTI 0x6B, 0x69 | `A_MPEG/L2` | `audio/mpeg`, `audio/MPA` | DVD, DVB |

@@ -409,7 +409,9 @@ authority.
 
 **`codecs`** is the stream's codecs string of RFC 6381 (`avc1.640028`,
 `hvc1.2.4.L153.B0`, `av01.0.08M.10`, `mp4a.40.2`, `ec-3`, `dtsh`), 1 to
-64 characters of `A–Z a–z 0–9 . -`: no `+`, no `/`. It is the value
+64 characters of `A–Z a–z 0–9 . + -` (`+` for VVC's
+`vvc1.1.L51.CQA.O1+3`): no `/`, and only the codes registered for the
+codec (no `ec+3`: Atmos is `objects`). It is the value
 players test a stream against before playing it.
 
 - **Required** when `codec` is `h264`, `hevc`, `av1` or `vp9` (video),

@@ -301,7 +301,7 @@ audio stream, so it carries these:
 | `durationMs` | integer | yes | its length in milliseconds, exact, 1 to 86,400,000 |
 | `mediaType` | string | yes | the file's media type ([core section 8.5](core.md#85-unknown-values)), as for video: `audio/flac`, `audio/mpeg`, `audio/mp4`, `audio/ogg`, `audio/wave`, `audio/matroska`… |
 | `codec` | string | yes | its audio codec, a token from the [registry](../registry.md) (`flac`, `mp3`, `aac`, `alac`, `opus`, `vorbis`, `pcm_s16le`…) |
-| `codecs` | string | for `aac` and `dts`; else no | its RFC 6381 codecs string (`mp4a.40.2`, `fLaC`, `Opus`, `ec-3`), 1 to 64 characters of `A–Z a–z 0–9 . -` |
+| `codecs` | string | for `aac` and `dts`; else no | its RFC 6381 codecs string (`mp4a.40.2`, `fLaC`, `Opus`, `ec-3`), 1 to 64 characters of `A–Z a–z 0–9 . + -`, registered codes only (video section 3.3) |
 | `size` | integer | yes | its exact size in bytes, as for video |
 | `etag` | string | yes | its identity, as for video |
 | `sampleRate` | integer | no | in Hz, 8,000 to 768,000 |

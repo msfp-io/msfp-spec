@@ -315,8 +315,8 @@ Where each codec stores the object layer, for `objects`
 
 A viewer's server whose players want Atmos in E-AC-3 named in the
 codecs string (Apple's players read `ec+3`) writes `ec+3` itself from
-`codecs` `ec-3` and `objects` `dolby-atmos`: `codecs` never carries a
-`+`.
+`codecs` `ec-3` and `objects` `dolby-atmos`: `ec+3` isn't a registered
+code, and `codecs` never carries it.
 
 ### Track titles to roles and flags
 

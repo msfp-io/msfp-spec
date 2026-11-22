@@ -341,7 +341,7 @@ func musicTitleCases() []titleCase {
 		{"codecs optional for other codecs: absent on flac, mp3 and opus", mCopies(mCopyWith("c1"), mCopyWith("c2", `"mediaType":"audio/mpeg"`, `"codec":"mp3"`), mCopyWith("c3", `"mediaType":"audio/ogg"`, `"codec":"opus"`))},
 		{"codecs, RFC 6381 strings, kept as sent, case and all", mCopies(mCopyWith("c1", `"codecs":"fLaC"`), mCopyWith("c2", `"codecs":"flac"`), mCopyWith("c3", `"mediaType":"audio/mp4"`, `"codec":"eac3"`, `"codecs":"ec-3"`))},
 		{"codecs of 64 characters kept, of 65 absent", mCopies(mCopyWith("c1", `"codecs":"`+strings.Repeat("a", 64)+`"`), mCopyWith("c2", `"codecs":"`+strings.Repeat("a", 65)+`"`))},
-		{"codecs empty, with a comma, a space or a plus, or not a string: absent", mCopies(mCopyWith("c1", `"codecs":""`), mCopyWith("c2", `"codecs":"mp4a.40.2,avc1"`), mCopyWith("c3", `"codecs":"mp4a 40"`), mCopyWith("c4", `"codecs":"a+b"`), mCopyWith("c5", `"codecs":7`))},
+		{"codecs empty, with a comma, a space or a slash, or not a string: absent", mCopies(mCopyWith("c1", `"codecs":""`), mCopyWith("c2", `"codecs":"mp4a.40.2,avc1"`), mCopyWith("c3", `"codecs":"mp4a 40"`), mCopyWith("c4", `"codecs":"a/b"`), mCopyWith("c5", `"codecs":7`))},
 		{"at most 16 copies kept, the first", mCopies(append([]string{`7`}, seventeen...)...)},
 		{"at most 16 copies kept, skipped ones not counted", mCopies(append([]string{mCopyWith("bad", `"etag":-`)}, seventeen[:16]...)...)},
 		{"16 copies, all kept", mCopies(seventeen[:16]...)},

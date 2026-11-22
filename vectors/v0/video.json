@@ -1196,8 +1196,8 @@
       "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080},\"audioTracks\":[]}"
     },
     {
-      "name": "video: codecs with a + (dts+): absent alone",
-      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"codecs\":\"hvc1.1.2.L123.B0\",\"width\":1920,\"height\":1080,\"codecs\":\"hvc1+2\"}}",
+      "name": "video: codecs with a / (a supplemental codec): absent alone",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"codecs\":\"hvc1.1.2.L123.B0\",\"width\":1920,\"height\":1080,\"codecs\":\"hvc1.2.4.L153.B0/dvh1.08.06\"}}",
       "valid": true,
       "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080},\"audioTracks\":[]}"
     },
@@ -1587,7 +1587,7 @@
     },
     {
       "name": "audio: aac and dts without codecs kept without it",
-      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\"},{\"id\":\"a2\",\"codec\":\"dts\",\"codecs\":\"dts+\"}]}",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\"},{\"id\":\"a2\",\"codec\":\"dts\",\"codecs\":\"dts/x\"}]}",
       "valid": true,
       "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"mediaType\":\"video/matroska\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\"},{\"id\":\"a2\",\"codec\":\"dts\"}]}"
     },
@@ -3130,10 +3130,10 @@
       "output": "{\"codec\":\"vvc\",\"codecs\":\"vvc1.1.L51.CQA\"}"
     },
     {
-      "name": "vvc: a string with + is out of form, absent; not required for vvc",
+      "name": "vvc: a string with + (its registered output-layer part) passed as it is",
       "text": "{\"codec\":\"vvc\",\"codecs\":\"vvc1.1.L51.CQA.O1+3\"}",
       "valid": true,
-      "output": "{\"codec\":\"vvc\"}"
+      "output": "{\"codec\":\"vvc\",\"codecs\":\"vvc1.1.L51.CQA.O1+3\"}"
     },
     {
       "name": "mpeg4: mp4v.20.9",

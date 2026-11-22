@@ -20,7 +20,7 @@ ISRC = re.compile(r"[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
 KINDS = ("artist", "album", "track")
 # MusicBrainz release-group types as music 3 sends them (proposal 17): open.
 TYPE = re.compile(r"[a-z0-9._/-](?:[a-z0-9 ._/-]{0,30}[a-z0-9._/-])?")
-CODECS = re.compile(r"[A-Za-z0-9.-]{1,64}")
+CODECS = re.compile(r"[A-Za-z0-9.+-]{1,64}")
 IDS = {"mbreleasegroup": ("album", MBID), "mbrecording": ("track", MBID), "isrc": ("track", ISRC),
        "acoustid": ("track", MBID)}
 MAX_TRACK_MS = 86400000
