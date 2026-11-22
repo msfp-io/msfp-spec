@@ -199,7 +199,6 @@ func musicDate(s string) (int, bool) {
 // vectors write it.
 type musicTitle struct {
 	Key            string            `json:"key"`
-	Kind           string            `json:"kind"`
 	Library        string            `json:"library"`
 	Name           string            `json:"name"`
 	Artists        []string          `json:"artists,omitempty"`
@@ -275,7 +274,7 @@ func keepMusicTitle(raw []byte, libraries []string) ([]byte, error) {
 	if !kindIn(lib, libraries...) {
 		return nil, fmt.Errorf("library %q wasn't asked for", lib)
 	}
-	t := musicTitle{Key: key, Kind: kind, Library: lib}
+	t := musicTitle{Key: key, Library: lib}
 	name, _ := text("name")
 	if t.Name = cleanName(name, 256); t.Name == "" {
 		return nil, errors.New("no name, once cleaned")

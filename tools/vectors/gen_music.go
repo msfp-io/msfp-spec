@@ -127,9 +127,9 @@ func musicKeep(in []musicIn) []titleCase {
 
 // Pieces of the title cases.
 const (
-	mAlbumHead  = `"key":"album/mb/` + mbAlbum + `","kind":"album","library":"m1"`
-	mArtistHead = `"key":"artist/mb/` + mbArtist + `","kind":"artist","library":"m2"`
-	mTrackHead  = `"key":"track/mb/` + mbTrack + `","kind":"track","library":"m1","album":"album/mb/` + mbAlbum + `"`
+	mAlbumHead  = `"key":"album/mb/` + mbAlbum + `","library":"m1"`
+	mArtistHead = `"key":"artist/mb/` + mbArtist + `","library":"m2"`
+	mTrackHead  = `"key":"track/mb/` + mbTrack + `","library":"m1","album":"album/mb/` + mbAlbum + `"`
 	mCopy       = `{"id":"c1","durationMs":308000,"mediaType":"audio/flac","codec":"flac","size":36214455,"etag":"7f3a9c21"}`
 )
 
@@ -190,8 +190,8 @@ func musicTitleCases() []titleCase {
 	}
 	in := []musicIn{
 		// Section 3's example, as it is.
-		{"music section 3's example album", `{"key":"album/mb/0b000000-0000-4000-8000-000000000002","kind":"album","library":"m1","name":"Bridge over Troubled Water","artists":["artist/mb/0a000000-0000-4000-8000-000000000001"],"artistNames":"Simon & Garfunkel","primaryType":"album","date":"2011-03-08","originalDate":"1970-01-26","genres":["Folk rock"],"ids":{"mbreleasegroup":"0d000000-0000-4000-8000-000000000005"}}`},
-		{"music section 3's example track", `{"key":"track/mb/0c000000-0000-4000-8000-000000000003","kind":"track","library":"m1","name":"The Boxer","album":"album/mb/0b000000-0000-4000-8000-000000000002","disc":1,"number":2,"copies":[{"id":"Vq3kM0aZ7pXc","durationMs":308417,"mediaType":"audio/flac","codec":"flac","size":36214455,"etag":"7f3a9c21","sampleRate":44100,"bitDepth":16,"channels":2,"replayGain":{"trackGain":-4.12,"trackPeak":0.988525,"albumGain":-5.3,"albumPeak":1.0},"lyrics":"synced"}],"ids":{"mbrecording":"0e000000-0000-4000-8000-000000000006"}}`},
+		{"music section 3's example album", `{"key":"album/mb/0b000000-0000-4000-8000-000000000002","library":"m1","name":"Bridge over Troubled Water","artists":["artist/mb/0a000000-0000-4000-8000-000000000001"],"artistNames":"Simon & Garfunkel","primaryType":"album","date":"2011-03-08","originalDate":"1970-01-26","genres":["Folk rock"],"ids":{"mbreleasegroup":"0d000000-0000-4000-8000-000000000005"}}`},
+		{"music section 3's example track", `{"key":"track/mb/0c000000-0000-4000-8000-000000000003","library":"m1","name":"The Boxer","album":"album/mb/0b000000-0000-4000-8000-000000000002","disc":1,"number":2,"copies":[{"id":"Vq3kM0aZ7pXc","durationMs":308417,"mediaType":"audio/flac","codec":"flac","size":36214455,"etag":"7f3a9c21","sampleRate":44100,"bitDepth":16,"channels":2,"replayGain":{"trackGain":-4.12,"trackPeak":0.988525,"albumGain":-5.3,"albumPeak":1.0},"lyrics":"synced"}],"ids":{"mbrecording":"0e000000-0000-4000-8000-000000000006"}}`},
 		{"an artist", `{` + mArtistHead + `,"name":"Simon & Garfunkel"}`},
 		{"an album with every member", mAlbum(`"artists":[` + ak(mbArtist) + `,` + ak(mbArtist2) + `],"artistNames":"A & B","primaryType":"album","secondaryTypes":["compilation","live"],"compilation":true,"date":"2011","originalDate":"1970-01","genres":["Folk rock","Pop"],"ids":{"mbreleasegroup":"` + mbGroup + `"}`)},
 
@@ -211,12 +211,12 @@ func musicTitleCases() []titleCase {
 
 		// Catalog section 3.3.
 		{"a kind member, not the key's: no title kind (catalog section 3), ignored", `{"key":"artist/mb/` + mbArtist + `","kind":"album","library":"m1","name":"x"}`},
-		{"a library not asked for: skipped", `{"key":"artist/mb/` + mbArtist + `","kind":"artist","library":"m3","name":"x"}`},
-		{"a key in uppercase: skipped", `{"key":"artist/mb/0A000000-0000-4000-8000-000000000001","kind":"artist","library":"m1","name":"x"}`},
-		{"an unknown scheme: skipped", `{"key":"artist/discogs/123","kind":"artist","library":"m1","name":"x"}`},
-		{"a video key: skipped", `{"key":"movie/tmdb/949","kind":"movie","library":"m1","name":"x"}`},
-		{"a key that isn't a string: skipped", `{"key":7,"kind":"artist","library":"m1","name":"x"}`},
-		{"a library that isn't a string: skipped", `{"key":"artist/mb/` + mbArtist + `","kind":"artist","library":["m1"],"name":"x"}`},
+		{"a library not asked for: skipped", `{"key":"artist/mb/` + mbArtist + `","library":"m3","name":"x"}`},
+		{"a key in uppercase: skipped", `{"key":"artist/mb/0A000000-0000-4000-8000-000000000001","library":"m1","name":"x"}`},
+		{"an unknown scheme: skipped", `{"key":"artist/discogs/123","library":"m1","name":"x"}`},
+		{"a video key: skipped", `{"key":"movie/tmdb/949","library":"m1","name":"x"}`},
+		{"a key that isn't a string: skipped", `{"key":7,"library":"m1","name":"x"}`},
+		{"a library that isn't a string: skipped", `{"key":"artist/mb/` + mbArtist + `","library":["m1"],"name":"x"}`},
 		{"not an object: skipped", `"artist/mb/` + mbArtist + `"`},
 
 		// artists.
@@ -271,10 +271,10 @@ func musicTitleCases() []titleCase {
 		{"genres that isn't an array: absent", mAlbum(`"genres":"Pop"`)},
 
 		// album, disc, number.
-		{"a track/mb track without album: skipped", `{"key":"track/mb/` + mbTrack + `","kind":"track","library":"m1","name":"x","copies":[` + mCopy + `]}`},
-		{"a track/mb track on a local album: skipped", `{"key":"track/mb/` + mbTrack + `","kind":"track","library":"m1","name":"x","album":"album/local/A1","copies":[` + mCopy + `]}`},
-		{"a track/mb track whose album isn't an album key: skipped", `{"key":"track/mb/` + mbTrack + `","kind":"track","library":"m1","name":"x","album":"artist/mb/` + mbArtist + `","copies":[` + mCopy + `]}`},
-		{"a track/mb track whose album isn't a string: skipped", `{"key":"track/mb/` + mbTrack + `","kind":"track","library":"m1","name":"x","album":7,"copies":[` + mCopy + `]}`},
+		{"a track/mb track without album: skipped", `{"key":"track/mb/` + mbTrack + `","library":"m1","name":"x","copies":[` + mCopy + `]}`},
+		{"a track/mb track on a local album: skipped", `{"key":"track/mb/` + mbTrack + `","library":"m1","name":"x","album":"album/local/A1","copies":[` + mCopy + `]}`},
+		{"a track/mb track whose album isn't an album key: skipped", `{"key":"track/mb/` + mbTrack + `","library":"m1","name":"x","album":"artist/mb/` + mbArtist + `","copies":[` + mCopy + `]}`},
+		{"a track/mb track whose album isn't a string: skipped", `{"key":"track/mb/` + mbTrack + `","library":"m1","name":"x","album":7,"copies":[` + mCopy + `]}`},
 		{"disc and number at their bounds", mTrack(`"disc":999,"number":1`)},
 		{"disc and number at their other bounds", mTrack(`"disc":1,"number":999`)},
 		{"disc and number out of range: absent", mTrack(`"disc":0,"number":1000`)},
@@ -372,27 +372,27 @@ func musicTitleCases() []titleCase {
 
 func musicLocalTitleCases() []titleCase {
 	in := []musicIn{
-		{"a local artist with an image", `{"key":"artist/local/Ar7","kind":"artist","library":"m1","name":"The Garage Band","image":true}`},
-		{"a local album without an image (false kept)", `{"key":"album/local/Al_1","kind":"album","library":"m1","name":"Demos","artists":["artist/local/Ar7"],"artistNames":"The Garage Band","primaryType":"album","secondaryTypes":["demo"],"date":"2019","genres":["Rock"],"image":false}`},
-		{"a local album's ids ignored: a local title carries none", `{"key":"album/local/Al_2","kind":"album","library":"m1","name":"Bootleg","ids":{"mbreleasegroup":"` + mbGroup + `"}}`},
-		{"an image that isn't a boolean: absent", `{"key":"artist/local/Ar8","kind":"artist","library":"m1","name":"x","image":"true"}`},
-		{"a local track carries no image", `{"key":"track/local/T-1","kind":"track","library":"m1","name":"Song","image":true,"copies":[` + mCopy + `]}`},
+		{"a local artist with an image", `{"key":"artist/local/Ar7","library":"m1","name":"The Garage Band","image":true}`},
+		{"a local album without an image (false kept)", `{"key":"album/local/Al_1","library":"m1","name":"Demos","artists":["artist/local/Ar7"],"artistNames":"The Garage Band","primaryType":"album","secondaryTypes":["demo"],"date":"2019","genres":["Rock"],"image":false}`},
+		{"a local album's ids ignored: a local title carries none", `{"key":"album/local/Al_2","library":"m1","name":"Bootleg","ids":{"mbreleasegroup":"` + mbGroup + `"}}`},
+		{"an image that isn't a boolean: absent", `{"key":"artist/local/Ar8","library":"m1","name":"x","image":"true"}`},
+		{"a local track carries no image", `{"key":"track/local/T-1","library":"m1","name":"Song","image":true,"copies":[` + mCopy + `]}`},
 		{"an mb artist's image ignored", `{` + mArtistHead + `,"name":"x","image":true}`},
 		{"an mb album's image ignored", mAlbum(`"image":true`)},
-		{"a local track without an album; its ids ignored", `{"key":"track/local/T-2","kind":"track","library":"m1","name":"Home recording","artists":["artist/local/Ar7"],"disc":1,"number":3,"copies":[` + mCopy + `],"ids":{"isrc":"FRZ039900001","acoustid":"` + acoustID + `","mbrecording":"` + mbRec + `"}}`},
-		{"a local track on an mb album", `{"key":"track/local/T-3","kind":"track","library":"m1","name":"Bonus","album":"album/mb/` + mbAlbum + `","copies":[` + mCopy + `]}`},
-		{"a local track on a local album", `{"key":"track/local/T-4","kind":"track","library":"m1","name":"Take 2","album":"album/local/Al_1","copies":[` + mCopy + `]}`},
-		{"a local track whose album isn't an album key: album absent", `{"key":"track/local/T-5","kind":"track","library":"m1","name":"x","album":"track/local/T-4","copies":[` + mCopy + `]}`},
+		{"a local track without an album; its ids ignored", `{"key":"track/local/T-2","library":"m1","name":"Home recording","artists":["artist/local/Ar7"],"disc":1,"number":3,"copies":[` + mCopy + `],"ids":{"isrc":"FRZ039900001","acoustid":"` + acoustID + `","mbrecording":"` + mbRec + `"}}`},
+		{"a local track on an mb album", `{"key":"track/local/T-3","library":"m1","name":"Bonus","album":"album/mb/` + mbAlbum + `","copies":[` + mCopy + `]}`},
+		{"a local track on a local album", `{"key":"track/local/T-4","library":"m1","name":"Take 2","album":"album/local/Al_1","copies":[` + mCopy + `]}`},
+		{"a local track whose album isn't an album key: album absent", `{"key":"track/local/T-5","library":"m1","name":"x","album":"track/local/T-4","copies":[` + mCopy + `]}`},
 		{"an mb album crediting a local artist", mAlbum(`"artists":["artist/local/Ar7",` + ak(mbArtist) + `]`)},
-		{"a local name keeps music's 256 code points, not the description's 128", `{"key":"artist/local/Ar9","kind":"artist","library":"m1","name":"` + strings.Repeat("n", 200) + `"}`},
-		{"a local name cut to 256 code points", `{"key":"artist/local/Ar9","kind":"artist","library":"m1","name":"` + strings.Repeat("n", 257) + `"}`},
-		{"year isn't a music member: ignored", `{"key":"album/local/Al_3","kind":"album","library":"m1","name":"x","year":2019}`},
-		{"an opaque part of 64 characters", `{"key":"artist/local/` + strings.Repeat("Z", 64) + `","kind":"artist","library":"m1","name":"x"}`},
-		{"an opaque part of 65 characters: skipped", `{"key":"artist/local/` + strings.Repeat("Z", 65) + `","kind":"artist","library":"m1","name":"x"}`},
-		{"an opaque part with a dot: skipped", `{"key":"album/local/a.b","kind":"album","library":"m1","name":"x"}`},
-		{"an empty opaque part: skipped", `{"key":"album/local/","kind":"album","library":"m1","name":"x"}`},
-		{"a local title without a name: skipped", `{"key":"artist/local/Ar7","kind":"artist","library":"m1","image":true}`},
-		{"a local track without copies: skipped", `{"key":"track/local/T-6","kind":"track","library":"m1","name":"x"}`},
+		{"a local name keeps music's 256 code points, not the description's 128", `{"key":"artist/local/Ar9","library":"m1","name":"` + strings.Repeat("n", 200) + `"}`},
+		{"a local name cut to 256 code points", `{"key":"artist/local/Ar9","library":"m1","name":"` + strings.Repeat("n", 257) + `"}`},
+		{"year isn't a music member: ignored", `{"key":"album/local/Al_3","library":"m1","name":"x","year":2019}`},
+		{"an opaque part of 64 characters", `{"key":"artist/local/` + strings.Repeat("Z", 64) + `","library":"m1","name":"x"}`},
+		{"an opaque part of 65 characters: skipped", `{"key":"artist/local/` + strings.Repeat("Z", 65) + `","library":"m1","name":"x"}`},
+		{"an opaque part with a dot: skipped", `{"key":"album/local/a.b","library":"m1","name":"x"}`},
+		{"an empty opaque part: skipped", `{"key":"album/local/","library":"m1","name":"x"}`},
+		{"a local title without a name: skipped", `{"key":"artist/local/Ar7","library":"m1","image":true}`},
+		{"a local track without copies: skipped", `{"key":"track/local/T-6","library":"m1","name":"x"}`},
 		{"a local key with a kind member not its own: ignored", `{"key":"album/local/Al_1","kind":"artist","library":"m1","name":"x"}`},
 	}
 	return musicKeep(in)
@@ -565,7 +565,7 @@ func genV0Music() []byte {
 		About: []string{
 			"MSFP music part version 0, as revised by proposals 16 and 17 (spec/v0/music.md). Generated by tools/vectors; no implementation has produced them yet. The MBIDs are made up.",
 			"keys (music section 2): valid says whether the text is a music title key, under the mb or the local scheme; kind is the kind it names.",
-			"titles (music sections 3.2 and 3.3) and localTitles (catalog section 4.3, music section 2.2): text is one entry of a titles answer, as JSON; the caller asked for the libraries listed in libraries. valid false: the caller skips the title. valid true: output is what it keeps, members in this order: key, kind, library, name, artists, artistNames, primaryType, secondaryTypes, compilation, date, originalDate, genres, album, disc, number, copies, image, ids (its members sorted); absent members left out. A track's artists, artistNames, dates and genres are kept as sent: an absent one is its album's, which the caller doesn't fill in. ids are kept on mb albums (mbreleasegroup) and mb tracks (mbrecording) only.",
+			"titles (music sections 3.2 and 3.3) and localTitles (catalog section 4.3, music section 2.2): text is one entry of a titles answer, as JSON; the caller asked for the libraries listed in libraries. A title has no kind: its key names it, and a kind member is ignored. valid false: the caller skips the title. valid true: output is what it keeps, members in this order: key, library, name, artists, artistNames, primaryType, secondaryTypes, compilation, date, originalDate, genres, album, disc, number, copies, image, ids (its members sorted); absent members left out. A track's artists, artistNames, dates and genres are kept as sent: an absent one is its album's, which the caller doesn't fill in. ids are kept on mb albums (mbreleasegroup) and mb tracks (mbrecording) only.",
 			"A kept copy's members, in this order: id, durationMs, mediaType, codec, codecs, size, etag, sampleRate, bitDepth, channels, replayGain (trackGain, trackPeak, albumGain, albumPeak), lyrics; at most 16 copies. ReplayGain values are written as the shortest decimal of the rounded number (1.0 is written 1); no case holds an exact tie of rounding. A copy of codec aac or dts kept without codecs is one the viewer's server doesn't play as it is (core section 8.5).",
 			"queue (music section 5.2): kind request: text is a play request, valid says whether the owning server accepts its title and queue; reason starts with 400, or with 409 delivery-refused for a well-formed delivery or media type it doesn't make. Each queue entry is an object: title, optional versionId and delivery, with mediaType (remux) or transcode as the request's; the request's own delivery members and an entry's transcode targets are judged by playback.json's rules, not here. kind answer: request is the play request, text the play answer; output is the queue the viewer's server keeps (an array, possibly empty), entries' members in this order: title, versionId, method, protocol. An entry takes its own delivery, else the request's; with none, protocol is hls. Entries carry no URL: the viewer's server builds <stream root><ticket>/queue/<n>/file or <stream root><ticket>/queue/<n>/master.m3u8 from the answer's ticket and the entry's place n in the request's queue. Only the queue member of the answer is judged here; playback's own members are playback.json's.",
 			"lyrics (music section 6): kind request: text is a lyrics request, valid says whether the owning server reads it (otherwise 400 invalid-request). kind answer: text is a lyrics answer; valid false: the fetch fails; valid true: output is what the viewer's server keeps, each set's members in this order: lang, kind, line (start, value); kind always written. A set is synced when every line left carries start, plain when none does, skipped when they mix.",

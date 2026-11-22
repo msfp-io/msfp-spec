@@ -381,7 +381,7 @@ func videoTitleCases() []videoCase {
 	series := `"key":"series/tmdb/1399","library":"v2"`
 	season := `"key":"series/tmdb/1399/s1","library":"v2"`
 	numbered := `"key":"series/tmdb/1399/s1/e2","library":"v2"` + cs
-	key := func(k, _ string) string {
+	key := func(k string) string {
 		return `{"key":"` + k + `","library":"v1"` + cs + `}`
 	}
 	copyN := func(i int) string { return strings.Replace(videoC, `"v1"`, fmt.Sprintf(`"c%d"`, i), 1) }
@@ -400,24 +400,24 @@ func videoTitleCases() []videoCase {
 		{"the summary of the first version 0 (audio, subtitles, video): ignored", `{` + film + cs + `,"audio":["en"],"subtitles":["fr"],"video":{"height":2160,"hdr":["hdr10"]}}`},
 
 		// Keys (section 4).
-		{"a TMDB ID of 10 digits", key("movie/tmdb/9999999999", "movie")},
-		{"a TMDB ID of 11 digits: skipped", key("movie/tmdb/10000000000", "movie")},
-		{"a key with a leading zero: skipped", key("movie/tmdb/0949", "movie")},
-		{"a TMDB ID of 0: skipped", key("movie/tmdb/0", "movie")},
+		{"a TMDB ID of 10 digits", key("movie/tmdb/9999999999")},
+		{"a TMDB ID of 11 digits: skipped", key("movie/tmdb/10000000000")},
+		{"a key with a leading zero: skipped", key("movie/tmdb/0949")},
+		{"a TMDB ID of 0: skipped", key("movie/tmdb/0")},
 		{"season 0 and episode 0", `{"key":"series/tmdb/1399/s0/e0","library":"v1"` + cs + `}`},
 		{"season 9,999 and episode 99,999", `{"key":"series/tmdb/1399/s9999/e99999","library":"v1"` + cs + `}`},
 		{"season 10,000: skipped", `{"key":"series/tmdb/1399/s10000","library":"v1"}`},
-		{"episode 100,000: skipped", key("series/tmdb/1399/s1/e100000", "episode")},
+		{"episode 100,000: skipped", key("series/tmdb/1399/s1/e100000")},
 		{"season s01: skipped", `{"key":"series/tmdb/1399/s01","library":"v1"}`},
 		{"a TMDB episode ID of 10 digits", `{"key":"series/tmdb/1399/e9999999999","library":"v1"` + cs + `,"place":{"season":1,"episode":1}}`},
 		{"a TMDB episode ID of 11 digits: skipped", `{"key":"series/tmdb/1399/e10000000000","library":"v1"` + cs + `,"place":{"season":1,"episode":1}}`},
 		{"a TMDB episode ID with a leading zero: skipped", `{"key":"series/tmdb/1399/e063056","library":"v1"` + cs + `,"place":{"season":1,"episode":1}}`},
-		{"an absolute number under tmdb: skipped", key("series/tmdb/1399/a27", "episode")},
-		{"a film with a season: skipped", key("movie/tmdb/949/s1", "movie")},
-		{"a film of the tvdb scheme: skipped", key("movie/tvdb/603", "movie")},
-		{"an unknown scheme: skipped", key("movie/imdb/tt0113277", "movie")},
-		{"a kind in another case: skipped", key("Movie/tmdb/949", "movie")},
-		{"a key ending in /: skipped", key("movie/tmdb/949/", "movie")},
+		{"an absolute number under tmdb: skipped", key("series/tmdb/1399/a27")},
+		{"a film with a season: skipped", key("movie/tmdb/949/s1")},
+		{"a film of the tvdb scheme: skipped", key("movie/tvdb/603")},
+		{"an unknown scheme: skipped", key("movie/imdb/tt0113277")},
+		{"a kind in another case: skipped", key("Movie/tmdb/949")},
+		{"a key ending in /: skipped", key("movie/tmdb/949/")},
 		{"a music key: skipped", `{"key":"track/mb/0c000000-0000-4000-8000-000000000003","library":"v1"}`},
 		{"a key that isn't a string: skipped", `{"key":949,"library":"v1"` + cs + `}`},
 		{"a kind member ignored, even one the key doesn't name", `{"key":"movie/tmdb/949","kind":"series","library":"v1"` + cs + `}`},
