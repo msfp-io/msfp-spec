@@ -2,7 +2,8 @@
 """The suite's self-test. Needs no server.
 
 1. The suite's readers against the vectors: vectors/v0/*.json (keys,
-   code, exchanges, rotation, revocation, strict, media, music) and the
+   code, exchanges, rotation, revocation, strict, media, video, playback,
+   music, groups) and the
    cases of vectors/history/test-draft-strict.json that core 0 section 17 says hold for
    core 0 (keys, signatures, base64url, dates, integers, JSON).
 2. The whole suite against an in-process fake version 0 server
@@ -30,8 +31,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from msfpconf import ed25519  # noqa: E402
-from msfpconf.content import music_vectors_ok  # noqa: E402
+from msfpconf import copies, media as mediarules  # noqa: E402
 from msfpconf.media import Refused, check_pgs, check_playlist, rebuild_vtt  # noqa: E402
+from msfpconf.music import music_vectors_ok  # noqa: E402
+from msfpconf.playback import playback_vectors_ok  # noqa: E402
 from msfpconf.wire import (Answer, Key, NotIJSON, answer_message, b64u, check_address, check_base,  # noqa: E402
                            check_destination, check_media_name, check_uncallable_address, commitment, decimal,
                            fingerprint, is_int, make_rotation, parse_code, parse_ijson, proof, read_revocation,
@@ -174,8 +177,16 @@ def vectors():
         except Refused:
             out, ok = None, False
         expect("webvtt", c["name"], (c["valid"], c.get("output")), (ok, out if ok else None))
+    for c in media["ass"]:
+        raw = bytes.fromhex(c["hex"]) if "hex" in c else c.get("text", "").encode("utf-8", "surrogatepass")
+        try:
+            out, ok = mediarules.rebuild_ass(raw).decode(), True
+        except Refused:
+            out, ok = None, False
+        expect("ass", c["name"], (c["valid"], c.get("output")), (ok, out if ok else None))
+    audio_ids = ["a%d" % i for i in range(1, 41)]
     for c in media["hls"]:
-        expect("hls", c["name"], c["valid"], check_playlist(c.get("text", "").encode())[0] is None)
+        expect("hls", c["name"], c["valid"], check_playlist(c.get("text", "").encode(), audio_ids)[0] is None)
     for c in media["pgs"]:
         try:
             check_pgs(bytes.fromhex(c.get("hex", "")))
@@ -183,6 +194,57 @@ def vectors():
         except Refused:
             ok = False
         expect("pgs", c["name"], c["valid"], ok)
+    for c in media["fonts"]:
+        try:
+            got = mediarules.check_font(bytes.fromhex(c["hex"]))
+        except Refused:
+            got = None
+        expect("fonts", c["name"], c.get("type") if c["valid"] else None, got)
+    for c in media["ranges"]:
+        try:
+            got = mediarules.check_range(c["text"], c["size"])
+        except Refused:
+            got = None
+        expect("ranges", c["name"], (c["start"], c["end"]) if c["valid"] else None, got)
+    for c in media["fileAnswers"]:
+        why = mediarules.check_file_answer(c.get("range"), c["size"], c["etag"], c["status"], c.get("etagHeader"),
+                                           c.get("contentRange"), c.get("contentLength"))
+        expect("fileAnswers", c["name"], c["valid"], why is None)
+    for c in media["scans"]:
+        expect("scans", c["name"], (c["status"], c["contentRange"]), mediarules.scan_answer(c["sent"], c.get("range"), c["size"]))
+
+    video = load("v0", "video.json")
+    for group in ("titles", "extras", "localTitles"):
+        for c in video[group]:
+            try:
+                out, ok = copies.dumps(copies.keep_video_title(copies.loads(c["text"]), video["libraries"])), True
+            except ValueError:
+                out, ok = None, False
+            expect("video " + group, c["name"], (c["valid"], c.get("output")), (ok, out))
+    for c in video["copies"]:
+        try:
+            out, ok = copies.dumps(copies.keep_video_copy(copies.loads(c["text"]))), True
+        except ValueError:
+            out, ok = None, False
+        expect("video copies", c["name"], (c["valid"], c.get("output")), (ok, out))
+    for group in ("localKeys", "tvdbKeys"):
+        for c in video[group]:
+            k = copies.video_key(c["text"])
+            expect("video " + group, c["name"], c.get("kind") if c["valid"] else None, k.kind if k else None)
+    for c in video["previews"]:
+        if c["side"] == "request":
+            try:
+                o = copies.loads(c["text"])
+            except ValueError:
+                o = None
+            expect("video previews", c["name"], c["valid"], copies.check_previews_request(o) is None)
+            continue
+        try:
+            out, ok = copies.dumps(copies.keep_previews_answer(copies.loads(c["text"]), video["streamRoot"])), True
+        except ValueError:
+            out, ok = None, False
+        expect("video previews", c["name"], (c["valid"], c.get("output")), (ok, out))
+    bad += playback_vectors_ok(os.path.join(VEC, "v0", "playback.json"))
     bad += music_vectors_ok(os.path.join(VEC, "v0", "music.json"))
 
     # Groups: envelopes kept or not (section 3.2), the code's group, the
