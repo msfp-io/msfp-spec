@@ -670,8 +670,8 @@ for them):
     any entry is converted; past the queue, a new `play` before the
     last entry ends.
 20. **`image`** on `local` artists and albums only; tracks show their
-    album's. It is fetched with video's `previews` call without
-    `versionId`, which a server answers for music too.
+    album's. It is fetched with the catalog's own `image` call
+    ([catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)).
+21. **`acoustid`** in the lowercase UUID form of MBIDs, on tracks.
 22. **The track playing in a queue**: `progress` and `stop` carry
     `title`, the queue entry playing (section 5.2).
-21. **`acoustid`** in the lowercase UUID form of MBIDs, on tracks.
