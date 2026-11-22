@@ -49,3 +49,37 @@ of a file to list it ([playback section 8](playback.md#8-scan-access)).
 Its "extensive media analysis" must be off for a library of a peer's
 copies: tested, it reads every file whole, and when a read is refused,
 overwrites the file's length with what it read.
+
+## Media
+
+Notes for [media](media.md), not normative.
+
+**Overfin's bounds.** Overfin follows
+[media sections 2.1 to 2.4](media.md#2-requests) on a peer's ticket. As
+the viewer's server, it gives a fetch 60 seconds to its status line and
+headers, and 10 seconds each to connect and to finish TLS. It holds at
+most 4 playlist and subtitle reads in memory at once across the server,
+and 4 sheet reads. It runs 8 fetches at once per playback and 64 per
+peer, on both sides, each with a queue as long, waited in for 10
+seconds at most, then `503`; a playlist, a subtitle part, a PGS part or a
+sheet is read whole within 2 minutes. The same stream route serves its
+own people's browsers, on tickets of their own: there it answers `HEAD`
+as `GET`, and passes on any single range its media server answers.
+These notes describe Overfin before the revision of
+[proposal 16](../../proposals/0016-version-0-revision.md): `405` to a
+peer's `HEAD`, the file's headers and the new sizes are still to build.
+
+**Overfin's HLS.** As the owning server, Overfin sends exactly the subset
+of [media section 3.1](media.md#31-hls-playlists), without `#EXT-X-MEDIA`
+so far. It rewrites its media server's HLS: master playlists name
+`v<n>.m3u8`, media playlists `init.<ext>` (in `#EXT-X-MAP`) and
+`seg<n>.<ext>`, where *n* may be negative and *ext* is `mp4`, `m4s`,
+`ts`, `aac` or `mp3`; it keeps a segment's duration in `#EXTINF` but not
+its title, drops every other tag and any tag holding `URI=` in any case,
+and refuses a playlist of its media server with any other URI. As the
+viewer's server, it checks steps 1 to 8, and drops tags outside the
+subset, and comments, before serving. It fetches any bare name the
+viewer asks for. Steps 9 and 10, and playlists complete from the first
+fetch, are new with
+[proposal 16](../../proposals/0016-version-0-revision.md) and still to
+build.

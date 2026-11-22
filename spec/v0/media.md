@@ -77,13 +77,14 @@ Every media URL is absolute, under the owning server's stream root:
   `<name>` `master.m3u8` and `stream.mimeType`
   `application/vnd.apple.mpegurl`; or `file`, with `<name>` `file` (the
   copy as it is, all its tracks, read by byte ranges: section 3.2).
-  `file` serves playback's `file` delivery; a `remux` or a `transcode`
-  ([playback section 2.7](playback.md#27-delivery)) is served as `hls`.
+  `file` serves only playback's `file` delivery; a `remux`, a
+  `transcode` and the baseline served without `delivery`
+  ([playback section 2.7](playback.md#27-delivery)) are served as `hls`.
   The `file` protocol is only for a copy of one file: a `delivery` `file`
   of a copy made of several parts
   ([playback section 1](playback.md#1-terms)) is refused with `409`
-  `delivery-refused`, and without `delivery` such a copy is served as
-  `hls`. With `file`, the viewer's player selects `audioTrack` itself.
+  `delivery-refused`. With `file`, the viewer's player selects
+  `audioTrack` itself.
 - A content part adds URLs of its own under `<stream root><ticket>/`,
   with a `<track>` name (the track's ID) where it needs one:
   [video](video.md#6-media) adds subtitle, picture subtitle, font and
@@ -99,7 +100,7 @@ Every media URL is absolute, under the owning server's stream root:
 | `<stream root><ticket>/ass/<track>/<part>` | a stretch of an ASS or SSA track, as ASS, `<part>` from 0 to 9,999 |
 | `<stream root><ticket>/ass/<track>/whole` | a whole ASS or SSA track, as ASS |
 | `<stream root><ticket>/pictures/<track>/<part>` | a stretch of a picture track, as PGS, `<part>` from 0 to 9,999 |
-| `<stream root><ticket>/fonts/<n>` | font *n* of the copy, `<n>` from 0 to 7 |
+| `<stream root><ticket>/fonts/<n>` | font *n* of the copy, `<n>` from 0 to 63 |
 | `<stream root><ticket>/trickplay/<n>` | preview sheet *n*, `<n>` from 0 to 999 |
 | `<stream root><ticket>/image` | the image of a `local` title, under an `image` ticket |
 | `<stream root><ticket>/queue/<n>/file` | queue entry *n*'s stream as `file`, under the playback's ticket, `<n>` from 0 to 4 |
@@ -181,7 +182,8 @@ answers the range asked for:
 
 - `Content-Range` is `bytes <start>-<end>/<total>`, three decimal numbers
   (or `*` for *total*, for a segment only, when the owning server doesn't
-  know it), with *start* ≤ *end* < *total*;
+  know it, and never for a `bytes=-<count>` range, whose *start* can't
+  be checked without *total*), with *start* ≤ *end* < *total*;
 - for the file, *total* is the copy's exact `size` (section 3.2), never
   `*`;
 - *start* is *first* for the first two forms, and *total* − *count* (or
@@ -203,10 +205,9 @@ answers for the file, as the viewer's server checks them, sections 2.1,
 
 ### 2.2 Methods
 
-The viewer's server sends `GET` only, never `HEAD`. The owning server
-answers `HEAD` on any media URL with `405` and `Allow: GET`, never with
-`404`: some players read a `404` to `HEAD` as a missing file. Any other
-method is refused with `405` too.
+Media URLs answer `GET` only. The viewer's server sends `GET` only,
+never `HEAD`. The owning server answers any other method on a media URL,
+`HEAD` included, with `405` and `Allow: GET`.
 
 A viewer's server that presents a copy to its own clients as a plain
 file answers their `HEAD` itself, from the catalog (section 3.3),
@@ -230,8 +231,8 @@ sizes below are the protocol's; the other numbers are each
 implementation's; the bounds are required.
 
 - **Time to the answer.** The viewer's server gives a fetch a bounded
-  time to its status line and headers (Overfin: 60 seconds), and to
-  connect and finish TLS (Overfin: 10 seconds each). The owning server
+  time to its status line and headers, and to connect and finish TLS.
+  The owning server
   should send a segment's status line and headers within 30 seconds,
   even while the segment is still being made.
 - **Length of a fetch.** A fetch of the file or a segment never outlives
@@ -258,19 +259,7 @@ implementation's; the bounds are required.
   bound, a new fetch waits in a bounded queue, or is refused with `503`.
   Reads that are held whole in memory (playlists, subtitles, picture
   parts, fonts, sheets, images) have a bound of their own across the
-  server; Overfin's is 4 for playlists and subtitles together, and 4 for
-  sheets.
-
-**Overfin.** Overfin follows sections 2.1 to 2.4 on a peer's ticket. Its
-numbers: 8 fetches at once per playback and 64 per peer, on both sides,
-each with a queue as long, waited in for 10 seconds at most, then `503`;
-a playlist, a subtitle part, a PGS part or a sheet is read whole within
-2 minutes. The same stream route serves its own people's browsers, on
-tickets of their own: there it answers `HEAD` as `GET`, and passes on any
-single range its media server answers. These notes describe Overfin
-before the revision of
-[proposal 16](../../proposals/0016-version-0-revision.md): `405` to a
-peer's `HEAD`, the file's headers and the new sizes are still to build.
+  server.
 
 ## 3. What is fetched
 
@@ -324,12 +313,16 @@ that grows (one without `#EXT-X-ENDLIST`, or of type `EVENT`) is refused
 by the viewer's server: a player reads it as live, with no total time
 and no seeking.
 
-**Several audio tracks.** When the `play` request asks for several audio
-tracks (`audioRenditions`, [playback section 2.1](playback.md#21-the-request)), the master playlist names
-them as `#EXT-X-MEDIA` audio renditions, one per track, and every
+**Several audio tracks.** When the `play` request asks for every audio
+track (`audioRenditions`, [playback section 2.1](playback.md#21-the-request)),
+the owning server may make them renditions. When it does, the answer
+says so (`audioRenditions` `true`,
+[playback section 2.3](playback.md#23-the-answer)), the master playlist
+names them as `#EXT-X-MEDIA` audio renditions, one per track, and every
 `#EXT-X-STREAM-INF` names their group with `AUDIO="audio"`. Switching
-tracks then needs no new playback. Without that ask, the audio comes in
-the stream, and another track is another `play`.
+tracks then needs no new playback. Otherwise (`false` or absent) the
+master playlist has no `#EXT-X-MEDIA`, the audio comes in the stream, and
+another track is another `play`.
 
 **What the owning server sends.** Lines end in a line feed. The first line
 is exactly `#EXTM3U`. A playlist holds only these tags, and the URI lines
@@ -403,20 +396,6 @@ Then:
   playback, which fetches the same name from the owning server.
 - It may refuse to fetch a name that none of the playback's playlists
   named.
-
-**Overfin.** As the owning server, Overfin sends exactly this subset,
-without `#EXT-X-MEDIA` so far. It rewrites its media server's HLS:
-master playlists name `v<n>.m3u8`, media playlists `init.<ext>` (in
-`#EXT-X-MAP`) and `seg<n>.<ext>`, where *n* may be negative and *ext* is
-`mp4`, `m4s`, `ts`, `aac` or `mp3`; it keeps a segment's duration in
-`#EXTINF` but not its title, drops every other tag and any tag holding
-`URI=` in any case, and refuses a playlist of its media server with any
-other URI. As the viewer's server, it checks steps 1 to 8, and drops
-tags outside the subset, and comments, before serving. It fetches any
-bare name the viewer asks for. Steps 9 and 10, and playlists complete
-from the first fetch, are new with
-[proposal 16](../../proposals/0016-version-0-revision.md) and still to
-build.
 
 ### 3.2 The file
 
@@ -506,7 +485,8 @@ server's URLs to the viewer.
   track may be fetched as WebVTT, its styling flattened, or as ASS, in
   stretches or whole. Picture tracks come in stretches only.
 - **Fonts.** The fonts a copy's ASS tracks use, as the content part
-  lists them ([video section 6.6](video.md#66-fonts)), at most 8 per copy. The
+  lists them ([video section 6.6](video.md#66-fonts)), at most 64 per
+  copy, 64 MiB in all. The
   viewer's server tells a font by its first four bytes: `00 01 00 00` or
   `true` is TrueType (`font/ttf`), `OTTO` is OpenType (`font/otf`); any
   other is refused, a font collection (`ttcf`) included. A viewer's
@@ -534,7 +514,7 @@ its kind opens:
 |------|----------|-------|-------------|
 | playback | `play`, to watch ([playback](playback.md#2-play)) | the stream (`hls` or `file`) and what the content parts add for it | its playback ends (below) |
 | download | `play` with `purpose: download` ([playback section 7](playback.md#7-downloads)) | the stream, its subtitles and fonts | its playback ends, without the 2-minute rule; at most 24 hours after the answer (section 4.1) |
-| scan | `play` with `purpose: scan` and `delivery: file` ([playback section 8](playback.md#8-scan-access)) | `file` only, by ranges, within 32 MiB (section 4.2) | its playback ends (below); at most 10 minutes after the answer |
+| scan | `play` with `purpose: scan` and `delivery: file` ([playback section 8](playback.md#8-scan-access)) | `file` only, by ranges, within the pairing's `scanBytes` (section 4.2) | its playback ends (below); at most 10 minutes after the answer |
 | previews | a `previews` call ([video section 5.6](video.md#56-previews)) | the sheets its answer lists | 10 minutes after the answer |
 | image | an `image` call ([catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)) | the image its answer gives | 10 minutes after the answer |
 
@@ -584,7 +564,9 @@ part of a copy, outside a watched playback
   A fetch without one is answered `416`.
 - **The cap.** The owning server counts the body bytes it sends under
   the ticket, a byte sent twice counted twice. Together, they never pass
-  32 MiB (33,554,432 bytes) per scan ticket (a scan is of one copy); the
+  the `scanBytes` it sends in `limits`
+  ([playback section 5](playback.md#5-limits)), or 4 MiB (4,194,304
+  bytes) when it sends none, per scan ticket (a scan is of one copy); the
   pairing's `scansPerDay` bounds the total. A range that would pass the cap is served as a `206` cut short
   at the cap (its *end* earlier than asked, as section 2.1 allows); a
   range that starts once the cap is spent is answered `416`.
@@ -658,12 +640,14 @@ proposal gives no number or form; they may change as implementations
 show):
 
 7. **URL forms**: `subtitles/<track>/whole`, `ass/<track>/<part>` and
-   `ass/<track>/whole`, `fonts/<n>` (0 to 7) and `image` (section 1).
+   `ass/<track>/whole`, `fonts/<n>` (0 to 7, 0 to 63 since proposal 17)
+   and `image` (section 1).
    The forms of every URL a content part adds are here; video says only
    what their bytes are.
 8. **Sizes**: a whole text track 16 MiB; a font 10 MiB, an image 1 MiB
    and the scan cap 32 MiB, reading the proposal's MB as MiB
-   (sections 2.4 and 4.2).
+   (sections 2.4 and 4.2). Since proposal 17, the scan cap is the owning
+   server's `scanBytes`, 4 MiB to 1 GiB.
 9. **Tickets**: a `local` title's image comes under an `image` ticket,
    of 10 minutes; a scan ticket follows a playback's 2-minute rule, and
    lasts 10 minutes at most (section 4).
@@ -681,3 +665,12 @@ show):
     refused (sections 4.1 and 4.2).
 14. **`405`** for `HEAD` comes with `Allow: GET`, and answers every
     other method but `GET` too (section 2.2).
+
+**Proposal 17** (adopted 2026-11-22): `scanBytes`, 64 fonts a copy, the
+`HEAD` rule kept without a product's reason, and the answer's
+`audioRenditions` deciding the renditions. Settled while msfp-go was
+written (2026-11-22):
+
+15. **A segment's `206` with `*` as its total** is a failed fetch when it
+    answers a `bytes=-<count>` range: its *start* can't be checked
+    (section 2.1).
