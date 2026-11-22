@@ -5,7 +5,7 @@
     "copies: text is one entry of a title's copies. valid false: the caller skips that copy alone. valid true: output is what it keeps, members in the order of the table of section 3.2 (id, name, edition, durationMs, startMs, container, size, etag, parts, bitrateKbps, video, audioTracks, subtitleTracks, chapters, segments, previews, added, threeD), streams and tracks in the order of the tables of sections 3.3 and 3.4; absent members left out, audioTracks always written. Numbers that aren't integers (level, fps) are written in their shortest decimal form. The cap of 8 copies, repeated copy IDs and a title left without copies are in titles.",
     "localKeys, tvdbKeys: text is a title key. valid true: kind is the kind it names (movie, series, season, episode or extra); valid false: the receiver skips a title with that key.",
     "previews: side request is a previews request as the owning server reads it: valid false means it answers 400 (the 404s depend on what it offers, not on the request). side answer is a previews answer as the viewer's server reads it, the owning server's stream root being streamRoot: valid false means it refuses the whole answer; valid true: output is what it keeps, {} when it drops the previews and plays on without them.",
-    "Tracks' languages are checked as section 3.8 says (at most 12 characters of A-Z a-z 0-9 -), not converted; the conversions of catalog section 3 are in strict.json (languageCodes). The WebVTT, ASS, PGS and font cases of video section 6 are in media.json."
+    "Tracks' languages are kept only as valid tags, in the form catalog section 3 sends them (a tag sentTag of strict.json's languageCodes leaves unchanged), never converted; colour.range only as tv or pc, the other colour members by form (1 to 32 characters of a-z 0-9 _ -); the conversions of catalog section 3 are in strict.json (languageCodes). The WebVTT, ASS, PGS and font cases of video section 6 are in media.json."
   ],
   "libraries": [
     "v1",
@@ -1180,6 +1180,30 @@
       "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"colour\":{\"matrix\":\"bt2020nc\"}},\"audioTracks\":[]}"
     },
     {
+      "name": "video: colour range tv kept",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"colour\":{\"primaries\":\"bt709\",\"range\":\"tv\"}}}",
+      "valid": true,
+      "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"colour\":{\"primaries\":\"bt709\",\"range\":\"tv\"}},\"audioTracks\":[]}"
+    },
+    {
+      "name": "video: colour range full: absent alone, the rest kept",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"colour\":{\"primaries\":\"bt709\",\"transfer\":\"bt709\",\"range\":\"full\"}}}",
+      "valid": true,
+      "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"colour\":{\"primaries\":\"bt709\",\"transfer\":\"bt709\"}},\"audioTracks\":[]}"
+    },
+    {
+      "name": "video: colour range PC or limited: absent alone",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"colour\":{\"matrix\":\"bt709\",\"range\":\"PC\"}}}",
+      "valid": true,
+      "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"colour\":{\"matrix\":\"bt709\"}},\"audioTracks\":[]}"
+    },
+    {
+      "name": "video: colour with only a range out of the list: absent alone",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"colour\":{\"range\":\"limited\"}}}",
+      "valid": true,
+      "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080},\"audioTracks\":[]}"
+    },
+    {
       "name": "video: colour member of 32 characters",
       "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[],\"video\":{\"codec\":\"hevc\",\"width\":1920,\"height\":1080,\"colour\":{\"transfer\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}",
       "valid": true,
@@ -1240,10 +1264,16 @@
       "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a0\",\"codec\":\"aac\"},{\"id\":\"a1\",\"codec\":\"aac\"},{\"id\":\"a2\",\"codec\":\"aac\"},{\"id\":\"a3\",\"codec\":\"aac\"},{\"id\":\"a4\",\"codec\":\"aac\"},{\"id\":\"a5\",\"codec\":\"aac\"},{\"id\":\"a6\",\"codec\":\"aac\"},{\"id\":\"a7\",\"codec\":\"aac\"},{\"id\":\"a8\",\"codec\":\"aac\"},{\"id\":\"a9\",\"codec\":\"aac\"},{\"id\":\"a10\",\"codec\":\"aac\"},{\"id\":\"a11\",\"codec\":\"aac\"},{\"id\":\"a12\",\"codec\":\"aac\"},{\"id\":\"a13\",\"codec\":\"aac\"},{\"id\":\"a14\",\"codec\":\"aac\"},{\"id\":\"a15\",\"codec\":\"aac\"},{\"id\":\"a16\",\"codec\":\"aac\"},{\"id\":\"a17\",\"codec\":\"aac\"},{\"id\":\"a18\",\"codec\":\"aac\"},{\"id\":\"a19\",\"codec\":\"aac\"},{\"id\":\"a20\",\"codec\":\"aac\"},{\"id\":\"a21\",\"codec\":\"aac\"},{\"id\":\"a22\",\"codec\":\"aac\"},{\"id\":\"a23\",\"codec\":\"aac\"},{\"id\":\"a24\",\"codec\":\"aac\"},{\"id\":\"a25\",\"codec\":\"aac\"},{\"id\":\"a26\",\"codec\":\"aac\"},{\"id\":\"a27\",\"codec\":\"aac\"},{\"id\":\"a28\",\"codec\":\"aac\"},{\"id\":\"a29\",\"codec\":\"aac\"},{\"id\":\"a30\",\"codec\":\"aac\"},{\"id\":\"a31\",\"codec\":\"aac\"}]}"
     },
     {
-      "name": "audio: language of 12 characters",
-      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\",\"language\":\"zh-Hant-TW1\"},{\"id\":\"a2\",\"codec\":\"aac\",\"language\":\"abcdefghijkl\"}]}",
+      "name": "audio: valid tags kept",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\",\"language\":\"zh-Hant-TW\"},{\"id\":\"a2\",\"codec\":\"aac\",\"language\":\"fr-CA\"},{\"id\":\"a3\",\"codec\":\"aac\",\"language\":\"yue\"},{\"id\":\"a4\",\"codec\":\"aac\",\"language\":\"es-419\"}]}",
       "valid": true,
-      "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"language\":\"zh-Hant-TW1\",\"codec\":\"aac\"},{\"id\":\"a2\",\"language\":\"abcdefghijkl\",\"codec\":\"aac\"}]}"
+      "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"language\":\"zh-Hant-TW\",\"codec\":\"aac\"},{\"id\":\"a2\",\"language\":\"fr-CA\",\"codec\":\"aac\"},{\"id\":\"a3\",\"language\":\"yue\",\"codec\":\"aac\"},{\"id\":\"a4\",\"language\":\"es-419\",\"codec\":\"aac\"}]}"
+    },
+    {
+      "name": "audio: tags not in the form a server sends: absent alone",
+      "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\",\"language\":\"fre\"},{\"id\":\"a2\",\"codec\":\"aac\",\"language\":\"fr-ca\"},{\"id\":\"a3\",\"codec\":\"aac\",\"language\":\"FR\"},{\"id\":\"a4\",\"codec\":\"aac\",\"language\":\"und\"},{\"id\":\"a5\",\"codec\":\"aac\",\"language\":\"zh-Hant-TW1\"}]}",
+      "valid": true,
+      "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\"},{\"id\":\"a2\",\"codec\":\"aac\"},{\"id\":\"a3\",\"codec\":\"aac\"},{\"id\":\"a4\",\"codec\":\"aac\"},{\"id\":\"a5\",\"codec\":\"aac\"}]}"
     },
     {
       "name": "audio: language of 13 characters or out of form: absent alone",
@@ -1252,10 +1282,10 @@
       "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\"},{\"id\":\"a2\",\"codec\":\"aac\"},{\"id\":\"a3\",\"codec\":\"aac\"},{\"id\":\"a4\",\"codec\":\"aac\"}]}"
     },
     {
-      "name": "audio: language of one character",
+      "name": "audio: language of one character: absent alone",
       "text": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\",\"language\":\"e\"}]}",
       "valid": true,
-      "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"language\":\"e\",\"codec\":\"aac\"}]}"
+      "output": "{\"id\":\"v1\",\"durationMs\":3600000,\"container\":\"mkv\",\"size\":1000000,\"etag\":\"t1\",\"audioTracks\":[{\"id\":\"a1\",\"codec\":\"aac\"}]}"
     },
     {
       "name": "audio: channels 1 and 64",

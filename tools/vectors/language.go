@@ -80,6 +80,14 @@ func sentTag(code string) (string, error) {
 	return strings.Join(subtags, "-"), nil
 }
 
+// validTag: a valid tag (catalog section 3, language tags) is one in the
+// form a server sends: one that sentTag leaves as it is. Every part checks
+// a tag it receives this way.
+func validTag(s string) bool {
+	t, err := sentTag(s)
+	return err == nil && t == s
+}
+
 // languageCase is a media server's code (text) and the tag sent
 // (output), or none (valid false).
 type languageCase struct {

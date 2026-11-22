@@ -1739,12 +1739,12 @@ func checkFont(b []byte) (string, error) {
 	}
 	var typ string
 	switch string(b[:4]) {
-	case "\x00\x01\x00\x00":
+	case "\x00\x01\x00\x00", "true": // true: Apple's older TrueType signature
 		typ = "font/ttf"
 	case "OTTO":
 		typ = "font/otf"
 	default:
-		return "", errors.New("step 2: first four bytes neither 00 01 00 00 nor OTTO")
+		return "", errors.New("step 2: first four bytes neither 00 01 00 00, true nor OTTO")
 	}
 	if len(b) < 6 {
 		return "", errors.New("step 3: no table count")

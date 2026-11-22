@@ -32,7 +32,6 @@ var (
 	videoEpIDForm    = regexp.MustCompile(`^e[1-9][0-9]{0,9}$`)       // e<episode id>
 	videoAudioID     = regexp.MustCompile(`^a(0|[1-9][0-9]{0,2})$`)   // a<n>, n 0 to 999
 	videoSubtitleID  = regexp.MustCompile(`^s(0|[1-9][0-9]{0,2})$`)   // s<n>, n 0 to 999
-	videoTagForm     = regexp.MustCompile(`^[A-Za-z0-9-]{1,12}$`)     // a track's language
 	videoIMDbForm    = regexp.MustCompile(`^tt[0-9]{7,10}$`)          // ids.imdb
 	videoCodecTag    = regexp.MustCompile(`^[A-Za-z0-9]{1,8}$`)       // video codecTag
 	videoLayoutForm  = regexp.MustCompile(`^[A-Za-z0-9()._-]{1,32}$`) // audio layout
@@ -203,6 +202,23 @@ func videoPlain(v any, max int) string {
 		t = string(r[:max])
 	}
 	return strings.Trim(t, " ")
+}
+
+// videoTag is v when it is a valid tag (catalog section 3), else "".
+func videoTag(v any) string {
+	if s, ok := v.(string); ok && validTag(s) {
+		return s
+	}
+	return ""
+}
+
+// videoRange is v when it is one of the values section 3.3 lists for
+// colour.range, tv or pc, else "".
+func videoRange(v any) string {
+	if s, ok := v.(string); ok && (s == "tv" || s == "pc") {
+		return s
+	}
+	return ""
 }
 
 // videoForm is v when it is a string matching re, else "".
@@ -444,7 +460,7 @@ func keepVideoStream(v any) *videoStream {
 			Primaries: videoForm(c["primaries"], videoColourForm),
 			Transfer:  videoForm(c["transfer"], videoColourForm),
 			Matrix:    videoForm(c["matrix"], videoColourForm),
-			Range:     videoForm(c["range"], videoColourForm),
+			Range:     videoRange(c["range"]),
 		}
 		if col != (videoColour{}) {
 			s.Colour = &col
@@ -495,7 +511,7 @@ func keepVideoAudio(list []any) []videoAudio {
 		seen[id] = true
 		out = append(out, videoAudio{
 			ID:         id,
-			Language:   videoForm(o["language"], videoTagForm),
+			Language:   videoTag(o["language"]),
 			Channels:   videoInt(o["channels"], 1, 64),
 			Role:       videoOneOf(o["role"], videoRoles),
 			Default:    videoBool(o["default"]),
@@ -529,7 +545,7 @@ func keepVideoSubtitles(list []any) []videoSubtitle {
 		format, _ := o["format"].(string)
 		out = append(out, videoSubtitle{
 			ID:              id,
-			Language:        videoForm(o["language"], videoTagForm),
+			Language:        videoTag(o["language"]),
 			Default:         videoBool(o["default"]),
 			Forced:          videoBool(o["forced"]),
 			HearingImpaired: videoBool(o["hearingImpaired"]),

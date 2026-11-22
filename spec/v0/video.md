@@ -242,7 +242,7 @@ Video stream:
 | `dv` | object, optional | with `dv` in `hdr` only: `{"profile": <n>, "level": <n>, "compatibility": <n>}`, the Dolby Vision profile (0 to 10), level (0 to 13) and base-layer compatibility ID (0 to 15) |
 | `fps` | number, optional | frames per second, above 0 and at most 1,000, two decimals at most |
 | `interlaced` | boolean, optional | `true` for an interlaced picture |
-| `colour` | object, optional | `{"primaries", "transfer", "matrix", "range"}`, each a string as ffmpeg names it (`bt2020`, `smpte2084`, `bt2020nc`; `range` is `tv` or `pc`), each optional |
+| `colour` | object, optional | `{"primaries", "transfer", "matrix", "range"}`, each optional: `range` is `tv` or `pc`; the other three are strings as ffmpeg names them (`bt2020`, `smpte2084`, `bt2020nc`), 1 to 32 characters of `a–z 0–9 _ -`, from no fixed list |
 
 **`hdr`** lists each format the copy offers, each once, in this order:
 `hdr10`, `hdr10plus`, `hlg`, `dv` (Dolby Vision). A format sits beside its
@@ -259,7 +259,7 @@ Audio track: a track of `play`'s answer
 | Field | Type | Content |
 |-------|------|---------|
 | `id` | string | `a<n>`, as in `play`'s answer |
-| `language` | string, optional | a language tag ([catalog section 3](catalog.md#3-titles)); sent whenever the owning server knows it |
+| `language` | string, optional | a valid language tag ([catalog section 3](catalog.md#3-titles)); sent whenever the owning server knows it |
 | `channels` | integer, optional | 1 to 64 |
 | `role` | string, optional | `commentary` or `description`, as in `play`'s answer |
 | `default`, `forced` | boolean, optional | flags, as in `play`'s answer |
@@ -278,7 +278,7 @@ Subtitle track: a track with the same `s<n>` ID as in `play`'s answer
 | Field | Type | Content |
 |-------|------|---------|
 | `id` | string | `s<n>` |
-| `language` | string, optional | a language tag |
+| `language` | string, optional | a valid language tag, as for audio |
 | `default`, `forced`, `hearingImpaired` | boolean, optional | flags |
 | `format` | string | its source format: `subrip`, `ass`, `ssa`, `webvtt`, `mov_text`, `ttml`, `pgs`, `vobsub`, `dvb` or `other` |
 | `external` | boolean, optional | `true`: a file beside the video, not inside it |
@@ -315,7 +315,7 @@ Segment (a skip marker):
 | Field | Type | Content |
 |-------|------|---------|
 | `kind` | string | `intro`, `outro`, `recap`, `preview` or `commercial` |
-| `startMs`, `endMs` | integer | where it starts and ends, in the copy, from 0 to its `durationMs`; `startMs` below `endMs` |
+| `startMs`, `endMs` | integer | where it starts and ends, in the copy, from 0 to its `durationMs`; `startMs` below `endMs` (a segment whose `startMs` isn't below its `endMs` is out of order) |
 | `final` | boolean, optional | `true` on the last credits marker (some media servers mark a title watched there) |
 
 **Skip markers from other media servers.** Credits are `outro`. A
@@ -380,8 +380,11 @@ play it gets it converted, or asks for something else
 
 Of `copies`, for films, episodes and extras:
 
-- at most 8 copies, the first 8. An entry that isn't an object is
-  skipped alone;
+- at most 8 copies, the first 8 kept. An entry that isn't an object is
+  skipped alone. The caps of this list (8 copies, 32 audio tracks, 64
+  subtitle tracks, 256 chapters, 32 segments) count kept entries only: an
+  entry skipped or dropped doesn't count, and the next good one takes its
+  place;
 - a copy is skipped alone when its `id` doesn't match
   `^[A-Za-z0-9_-]{1,64}$`, or repeats an earlier copy's; when its
   `durationMs` isn't an integer from 0 to 8,640,000,000 (100 days); when
@@ -389,7 +392,8 @@ Of `copies`, for films, episodes and extras:
   999,999,999,999,999; when `etag` doesn't match `^[A-Za-z0-9_-]{1,64}$`;
   or when `audioTracks` isn't an array;
 - an unknown `container` or `codec` is kept as `other`; an unknown
-  `edition` as `other`;
+  `edition` string as `other`, and an `edition` that isn't a string
+  counts as absent;
 - `name` made plain text and cut to 32 characters; empty, it counts as
   absent;
 - `startMs` from 0 to `durationMs`; `bitrateKbps` from 500 to 10,000,000,
@@ -404,8 +408,12 @@ Of `copies`, for films, episodes and extras:
   100,000. Its other members, out of range or of the wrong type, count
   as absent alone: `codecTag` and `profile` out of their form, `level`
   outside 0 to 1,000, `bitDepth` not 8, 10 or 12, `fps` not above 0 and
-  at most 1,000 (rounded to two decimals), `interlaced` not a boolean,
-  each `colour` member not 1 to 32 characters of `a–z 0–9 _ -`;
+  at most 1,000 once rounded to two decimals (the rounding comes first:
+  1,000.004 is kept as 1,000, 0.004 counts as absent), `interlaced` not
+  a boolean, `colour.range` not `tv` or `pc`, each other `colour` member
+  not 1 to 32 characters of `a–z 0–9 _ -` (checked for form only, since
+  section 3.3 gives them no list). A `colour` left with no member counts
+  as absent;
 - in `hdr`, an entry that isn't a string or isn't one of the four is
   skipped alone, as is a repeat; the caller keeps the rest in the order
   of section 3.3, and an `hdr` left empty means standard range. `dv` is
@@ -415,8 +423,9 @@ Of `copies`, for films, episodes and extras:
   `id` isn't `a` and a number from 0 to 999 without leading zeros, or
   repeats an earlier track's, or when `codec` isn't a string. Its other
   members, out of range, of the wrong type, or not in their lists, count
-  as absent alone; `language` follows the rules of tags (at most 12
-  characters of `A–Z a–z 0–9 -`);
+  as absent alone; a `language` that isn't a valid tag
+  ([catalog section 3](catalog.md#3-titles): `fre`, `fr-ca`, `e`, `und`)
+  counts as absent, and is never converted;
 - in `subtitleTracks`, at most 64 tracks; a track is skipped alone when
   its `id` isn't `s` and a number from 0 to 999 without leading zeros, or
   repeats an earlier track's. An unknown or missing `format` is kept as
@@ -427,7 +436,8 @@ Of `copies`, for films, episodes and extras:
   out of range or not after the one before (a repeated start) dropped,
   the first 256 kept, names made plain text and cut to 64 characters;
 - `segments`: a segment of an unknown `kind`, or whose times are out of
-  range or not in order, dropped; the first 32 kept;
+  range or not in order (`startMs` not below `endMs`), dropped; the
+  first 32 kept;
 - other members of a copy, a stream or a track are ignored.
 
 A title left with no copy is skipped (section 3.1).
@@ -477,7 +487,7 @@ sends a small description of it, for films and series only:
 - The caller makes `name` plain text and cuts it to 128 characters; a
   local film or series without a `name` left is skipped. A `year` out of
   range or not an integer, and an `image` that isn't a boolean, count as
-  absent.
+  absent. `image: false` is kept as it is.
 - A viewer's server shows the description as the owner's, not a public
   database's: it may say whose server named it, and must not look it up
   elsewhere.
@@ -675,7 +685,7 @@ Members added to the request of
 
 | Field | Type | Required | Content |
 |-------|------|----------|---------|
-| `subtitleLanguage` | string | no | the viewer's subtitle language, a tag; at most 12 characters of `A–Z a–z 0–9 -` |
+| `subtitleLanguage` | string | no | the viewer's subtitle language, a valid tag ([catalog section 3](catalog.md#3-titles)); another string is refused (`400`) |
 | `subtitleTrack` | string | no | a subtitle track ID, `s` and a number from 0 to 999 without leading zeros (`s01` is invalid), or `off` |
 
 Capabilities added to the capabilities object (all optional; unknown
@@ -852,7 +862,9 @@ Besides those bounds, a full sheet is at most 4,096 pixels each way:
   sends `stop` and gives up, as
   [playback section 2.3](playback.md#23-the-answer) says) when a sheet
   URL isn't the one section 6.1 gives for its index, or when a field has
-  another JSON type than this table says.
+  another JSON type than this table says (a number that isn't an
+  integer among them). A refusal wins over a drop: an answer with both a
+  bad sheet URL and a number out of bounds is refused.
 - Both sides may leave previews out: an owning server need not send
   `trickplay`, and a viewer's server that offers no previews ignores it.
 - The viewer's server never hands the owning server's URLs to the viewer:
@@ -889,7 +901,10 @@ Answer `200`:
   `streams`, starts no conversion, and gets no `progress` or `stop`.
 - The owning server answers `404` for a title or a copy it doesn't offer
   the caller, a copy without previews (`previews` not `true` in the
-  catalog); `400` for a malformed request; `404` `not-supported` when
+  catalog); `400` for a malformed request: a body that isn't an I-JSON
+  object, a `title` that isn't the canonical key of a film, an episode
+  or an extra (section 4), or a `versionId` that isn't a copy ID's form
+  (`^[A-Za-z0-9_-]{1,64}$`); `404` `not-supported` when
   `video` isn't on; and may refuse with `429`
   `rate-limited` when asked too often
   ([core section 8.3](core.md#83-limits-and-overload)).
@@ -1019,7 +1034,9 @@ The same rules hold for a whole track, with its own bounds (section 6.2).
 
 **Cue settings.** The settings are split at spaces, tabs and form feeds.
 A setting is kept when it is one of these, exactly, and the first of its
-name; every other is dropped:
+name; every other is dropped. The first of its name is its first
+occurrence, valid or not: after an invalid `line:`, a later valid
+`line:` is dropped too.
 
 | Setting | Value |
 |---------|-------|
@@ -1052,15 +1069,18 @@ A percentage is 1 to 3 digits, optionally `.` and 1 to 3 digits, then
    (step 2) into one space, so that `&lt;b&gt;` can't come back as a tag.
 5. Turn each control character and each white space character
    (Unicode's `White_Space`) into a space. Collapse runs of spaces into
-   one, across tags too, and remove spaces at both ends of the line.
+   one, across tags too: a run broken only by tags becomes one space,
+   where the run starts, before the tags. Remove spaces at both ends of
+   the line.
 6. Cut the line's text to at most 500 bytes, not counting tags, without
    splitting a character, and keep at most 32 tags; tags past the cut are
    removed. Then remove spaces at its end.
 7. Escape `&` as `&amp;`, `<` as `&lt;` and `>` as `&gt;` in the text.
 
 **Balancing the tags.** Then, over the cue's lines in order: a start tag
-opens; an end tag is kept only when it closes the innermost open tag of
-the same name (`c` for any `<c.…>`), and removed otherwise. A start tag
+opens; an end tag is kept only when the innermost open tag has its name
+(`c` for any `<c.…>`), and closes it; otherwise it is removed, even when
+a tag of that name is open further out. A start tag
 while 8 are open is removed, with the end tag that would close it. At
 the end of the cue, each tag still open is closed, innermost first.
 
@@ -1117,21 +1137,29 @@ every event.
    The script is split into lines; white space at both ends of a line is
    removed. Empty lines, and lines starting with `;` or `!:`, are
    dropped.
-3. The first line must be `[Script Info]`; otherwise the part is refused.
+3. The first line must be `[Script Info]`, exactly, in this case;
+   otherwise the part is refused.
 4. A line starting with `[` and ending with `]` opens a section. Known,
    compared without ASCII case: `[Script Info]`, `[V4+ Styles]`,
-   `[V4 Styles]` and `[Events]`. Every line of any other section
+   `[V4 Styles]` and `[Events]`. A script is SSA when it has a
+   `[V4 Styles]` section and no `[V4+ Styles]` one: its events then take
+   SSA's default format. Every line of any other section
    (`[Fonts]`, `[Graphics]`, `[Aegisub Project Garbage]`…) is dropped:
    embedded fonts and pictures never come in a script.
 5. In a known section, a line is a name, `:`, and a value; white space
    around the value is removed. A line of another shape, or of an
-   unknown name, is dropped.
+   unknown name, is dropped. The line names `Format`, `Style` and
+   `Dialogue`, and the field names a `Format:` line gives, are compared exactly,
+   case included; only section names and script information names are
+   compared without ASCII case.
 6. More than 1,024 styles keeps the first 1,024. More than 50,000 events
    left refuses the part; more than 200,000, a whole track.
 
 **Script information.** Kept, each the first of its name, compared
 without ASCII case, when its value is valid; every other line is dropped
-(`Title`, `Original Script` and the like included):
+(`Title`, `Original Script` and the like included). The first of its
+name is its first occurrence: when it is invalid, the name is dropped,
+and a later valid line of that name with it:
 
 | Name | Value |
 |------|-------|
@@ -1166,8 +1194,10 @@ checked; a missing or bad value takes its default:
 | `MarginL`, `MarginR`, `MarginV` | an integer from 0 to 16,384 | `10` |
 | `Encoding` | an integer from 0 to 255 | `1` |
 
-- *Text* is made plain: control characters removed, `,` removed. Two
-  styles of the same name: the first is kept.
+- *Text* is made plain: invalid UTF-8 and control characters removed,
+  `,` removed. Two styles of the same name (compared exactly): the first
+  is kept. More than 1,024 styles: the first 1,024 kept, counting kept
+  styles only.
 - A *number* is an optional `-`, 1 to 7 digits, then optionally `.` and 1
   to 3 digits. A *colour* is `&H` and 1 to 8 hexadecimal digits,
   optionally followed by `&`, or a decimal integer from 0 to 4,294,967,295
@@ -1202,12 +1232,14 @@ one fewer than the format names, `Text` taking the rest.
 3. A `{` opens an override block, which ends at the next `}`; a `{` with
    no `}` after it removes the rest of the text. In a block, what comes
    before the first `\` (a comment) is dropped, and the rest is cut at
-   each `\` into tags. A tag is kept when its name is in the table below
+   each `\` into tags, except inside a `\t(…)`'s parentheses, which stay
+   with their `\t`. A tag is kept when its name is in the table below
    (the longest name that matches) and its arguments are valid; every
    other is dropped. A block left with no tag is dropped. A block is
    written `{`, its kept tags, `}`.
 4. At most 256 blocks and 1,024 tags an event; past them, blocks are
-   dropped.
+   dropped. Each kept tag of a block counts once toward the 1,024, a
+   `\t` with all its inner tags counting one.
 
 | Tags | Arguments |
 |------|-----------|
@@ -1232,9 +1264,9 @@ one fewer than the format names, `Text` taking the rest.
 | `\move(x1,y1,x2,y2[,t1,t2])` | four such numbers, then optionally two integers from 0 to 3,600,000 (milliseconds) |
 | `\fad(t1,t2)` | two integers from 0 to 3,600,000 |
 | `\fade(a1,a2,a3,t1,t2,t3,t4)` | three integers from 0 to 255, then four from 0 to 3,600,000 |
-| `\t([t1,t2,][accel,]tags)` | optionally two integers from 0 to 3,600,000, optionally a number from 0 to 100, then tags of this table other than `\t`, `\pos`, `\org`, `\move`, `\fad`, `\fade`, `\an`, `\a`, `\k`, `\K`, `\kf`, `\ko`, `\q`, `\r`, `\fn`, `\p` and `\pbo`, each checked; at most 16 `\t` an event |
+| `\t([t1,t2,][accel,]tags)` | optionally two integers from 0 to 3,600,000, optionally a number from 0 to 100, then tags of this table other than `\t`, `\pos`, `\org`, `\move`, `\fad`, `\fade`, `\an`, `\a`, `\k`, `\K`, `\kf`, `\ko`, `\q`, `\r`, `\fn`, `\p` and `\pbo`, each checked; a `\t` left with no tag is dropped; at most 16 `\t` an event |
 | `\clip(x1,y1,x2,y2)`, `\iclip(x1,y1,x2,y2)` | four numbers from −100,000 to 100,000 |
-| `\clip([scale,]drawing)`, `\iclip([scale,]drawing)` | optionally an integer from 1 to 16, then a drawing (below) |
+| `\clip([scale,]drawing)`, `\iclip([scale,]drawing)` | optionally an integer from 1 to 16, then a drawing (below); one with an empty drawing, once rebuilt, is dropped |
 | `\p` | an integer from 0 to 16; above 0, the text up to the next `\p0` is a drawing (below) |
 | `\pbo` | a number from −100,000 to 100,000 |
 
@@ -1264,7 +1296,7 @@ Dialogue: <each kept event, in the order read>
 ```
 
 A style named `Default` is always written, with every default above,
-when no kept style has that name. A part with no event left is valid.
+when no kept style has that name (exactly), first of the styles. A part with no event left is valid.
 
 Not checked: that an event ends after it starts, that events are in
 order, what a drawing draws, and how tags combine. A renderer must be
@@ -1363,9 +1395,10 @@ its own.
 **What is checked**, by both sides, before a font is served or relayed:
 
 1. It is at most 10 MiB (10,485,760 bytes).
-2. Its first four bytes are `00 01 00 00` (TrueType) or `OTTO` (OpenType
-   with CFF). Any other (`ttcf`, `wOFF`, `wOF2`, `true`, `typ1`…) refuses
-   it.
+2. Its first four bytes are `00 01 00 00` or `true` (`74 72 75 65`,
+   Apple's older TrueType signature, which font engines read), both
+   TrueType, or `OTTO` (OpenType with CFF). Any other (`ttcf`, `wOFF`,
+   `wOF2`, `typ1`…) refuses it.
 3. Its table count (bytes 4–5, big-endian) is 1 to 64, and its table
    directory (12 bytes, then 16 a table) is within the file.
 4. Each table's tag is four bytes from `0x20` to `0x7E`, each tag once,
@@ -1377,7 +1410,8 @@ A font that fails is refused. A server that has a font sanitizer (one
 that rebuilds a font's tables, as browsers do for web fonts) should pass
 every font through it after these checks, and serve what it rebuilds.
 The viewer's server serves a font at its own route, to its own people
-only, `font/ttf` for `00 01 00 00` and `font/otf` for `OTTO`.
+only, `font/ttf` for `00 01 00 00` and `true`, and `font/otf` for
+`OTTO`.
 
 ### 6.7 The image of a local title
 

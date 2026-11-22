@@ -184,6 +184,18 @@ as the ISO 639-1 code (`fr`, `de`, `zh`), a region kept (`fre-CA` is
 sent `fr-CA`). Test cases: `languageCodes` in
 [vectors/v0/strict.json](../../vectors/v0/strict.json).
 
+**A valid tag** is one already in the form a server sends: the tag these
+rules give for it is itself, unchanged (`fr`, `fr-CA`, `yue`,
+`zh-Hant-TW`, `es-419`). Anything else is not a valid tag: `fre`
+(not yet converted), `fr-ca` or `FR` (another case), `e` (a tag is 2
+to 12 characters, its language 2 to 8 letters), `und`, `fr_CA`. Wherever a
+title or a track carries a language tag (video's tracks, music's lyrics,
+playback's tracks and `play`'s `audioLanguage` and `subtitleLanguage`),
+the receiver checks it is a valid tag, as its part says, and never
+converts it: an invalid one counts as absent in what it keeps, and
+refuses a request. Valid tags are compared byte for byte, or without
+case where a part says so; both give the same answer on valid tags.
+
 ### 3.1 Paging and ordering
 
 - Titles come in ascending byte order of `key`. A page holds the titles
@@ -201,8 +213,16 @@ sent `fr-CA`). Test cases: `languageCodes` in
 - In a changes answer, `next` is set when there may be more changes after
   the page. A changes page may hold fewer than 5,000 titles and still
   have a `next`.
+- A page need not be full. Ending early is allowed, not required: a
+  whole-list page may hold fewer titles than either bound allows and
+  still have a `next`.
+- In a changes answer, `next` may be any string. The caller checks
+  nothing of it but the stop rule below.
 - The caller stops when `next` is absent, empty, or not greater than its
   `after`. A short page with a `next` is no end: the caller asks on.
+- The owning server never sends a `next` over 512 bytes, the bound of
+  `after`. A caller that gets one passes it back as it is; the request is
+  refused (section 3.3), and the reading fails (section 3.2).
 - A caller accepts any answer within the core's bound for an answer
   ([core section 3](core.md#3-transport)); the 3 MiB bound is the owning
   server's, and leaves room for the rest of the answer.
@@ -456,14 +476,19 @@ Answer `200`:
   ([media section 1](media.md#1-the-urls)). It works for 10 minutes from
   the answer, for that URL only, and is no playback: it doesn't count
   against `streams` and gets no `progress` or `stop`.
-- The owning server answers `404` for a title it doesn't offer the
-  caller, a title that isn't `local`, or one without an image; `400` for
-  a malformed request; `404` `not-supported` when no content part with
-  `local` titles is on between the two; and may refuse with `429`
+- The owning server answers `404` `not-supported` when no content part
+  with `local` titles is on between the two, checked before the body;
+  `400` when the body isn't I-JSON, isn't an object, or its `title` is
+  missing or isn't a string; `404` for any other `title`: one it doesn't
+  offer the caller, one that isn't `local`, one of a part that is off,
+  one of a kind without an image (only films, series, artists and albums
+  have one), or one without an image; and may refuse with `429`
   `rate-limited` when asked too often
   ([core section 8.3](core.md#83-limits-and-overload)).
-- The image is a JPEG or a PNG of at most 1 MiB (1,048,576 bytes), no
-  wider and no taller than 4,096 pixels. The viewer's server reads it
+- The image is a JPEG or a PNG of at most 1 MiB (1,048,576 bytes; an
+  image of exactly that size is accepted), 1 to 4,096 pixels wide and
+  tall, as its header says. A JPEG whose frame header gives a height of 0
+  (one that leaves it to a later DNL marker) is refused. The viewer's server reads it
   whole, refuses it past 1 MiB, checks from its header, before decoding,
   that it is a JPEG or a PNG (by its content, whatever its
   `Content-Type`) within those sizes, and re-encodes it in the same
