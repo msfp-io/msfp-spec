@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // verifyRevPlayback checks the playback vectors of the revision of version 0
-// (proposal 16), read back from the files: each value on its own.
+// (proposals 16 and 17), read back from the files: each value on its own.
 func verifyRevPlayback(read func(string) []byte) []error {
 	const file = "v0/playback.json"
 	var errs []error
@@ -68,25 +69,15 @@ func verifyRevPlayback(read func(string) []byte) []error {
 			if valid != c.Valid || string(got) != c.Output {
 				bad("%s: the file says valid=%v, output %q; the rules give %v, %q", where, c.Valid, c.Output, err, got)
 			}
-			if c.By == "viewer" {
-				if c.Call != "play" || c.Status != 0 || c.Type != "" || !c.Valid {
-					bad("%s: a viewer's case has a status or isn't a valid play", where)
-				}
-				// What the viewer's server sends, the owning server takes.
-				if _, err := playbackPlay(ctx, ctx.Limits, ctx.InUse, []byte(c.Output)); err != nil {
-					bad("%s: the coarsened request is refused: %v", where, err)
-				}
-			} else {
-				status, typ := playbackStatus(err)
-				if status != c.Status || typ != c.Type || (c.Status == 200) != c.Valid {
-					bad("%s: the file says %d %q; the rules give %d %q", where, c.Status, c.Type, status, typ)
-				}
-				if !slices.Contains([]string{"play", "progress", "stop"}, c.Call) || (c.Call != "play") != (c.Playback != nil) {
-					bad("%s: call %q and playback don't go together", where, c.Call)
-				}
+			status, typ := playbackStatus(err)
+			if status != c.Status || typ != c.Type || (c.Status == 200) != c.Valid {
+				bad("%s: the file says %d %q; the rules give %d %q", where, c.Status, c.Type, status, typ)
+			}
+			if !slices.Contains([]string{"play", "progress", "stop"}, c.Call) || (c.Call != "play") != (c.Playback != nil) {
+				bad("%s: call %q and playback don't go together", where, c.Call)
 			}
 			output(where, c.Output, c.Valid)
-			if c.Call == "play" && c.Valid && c.By == "" {
+			if c.Call == "play" && c.Valid {
 				var s playbackStarted
 				_ = json.Unmarshal([]byte(c.Output), &s)
 				found := false
@@ -96,6 +87,24 @@ func verifyRevPlayback(read func(string) []byte) []error {
 				if !found {
 					bad("%s: versionId %q isn't a copy of %s", where, s.VersionID, s.Title)
 				}
+				// The required minimum (section 2.6): a named copy and a
+				// named track of it win; defaults only otherwise.
+				var req map[string]any
+				_ = json.Unmarshal([]byte(c.Text), &req)
+				if v, _ := req["versionId"].(string); v != "" && v != s.VersionID && slices.ContainsFunc(ctx.Copies[s.Title], func(cp playbackCopy) bool { return cp.ID == v }) {
+					bad("%s: the named copy %q doesn't win", where, v)
+				}
+				// Without delivery, the baseline; never the file.
+				if (s.Delivery == "") != (s.Baseline != "") {
+					bad("%s: the baseline goes with no delivery", where)
+				}
+				// No capabilities: the owning server never keeps them.
+				if strings.Contains(c.Output, "capabilities") {
+					bad("%s: capabilities kept", where)
+				}
+			}
+			if c.Call == "play" && c.Type == "delivery-refused" && c.Status != 409 {
+				bad("%s: delivery-refused without 409", where)
 			}
 		}
 		names(list, n)

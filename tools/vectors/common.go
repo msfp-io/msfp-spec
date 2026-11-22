@@ -8,6 +8,7 @@ import (
 	"encoding/base32"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -125,4 +126,43 @@ func encode(v any) []byte {
 		panic(err)
 	}
 	return buf.Bytes()
+}
+
+// openToken tells a token (spec/v0/core.md section 8.5): 1 to 32
+// characters of a-z 0-9 . _ -. The value of an open field is kept when
+// it is a token, known or not; when it isn't, an optional member is
+// dropped alone and a required one takes its holder with it. Every
+// part's open fields check their values with it.
+func openToken(s string) bool {
+	if len(s) < 1 || len(s) > 32 {
+		return false
+	}
+	for _, c := range []byte(s) {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// openTokenValue is v when it is a string and a token (openToken),
+// else "": an open field keeps any token, known or not.
+func openTokenValue(v any) string {
+	if s, ok := v.(string); ok && openToken(s) {
+		return s
+	}
+	return ""
+}
+
+// openTokenReason is openToken with the reason a value isn't a token.
+func openTokenReason(s string) error {
+	if len(s) < 1 || len(s) > 32 {
+		return fmt.Errorf("%d bytes, not 1 to 32", len(s))
+	}
+	for _, c := range []byte(s) {
+		if !openToken(string(c)) {
+			return fmt.Errorf("byte %q outside a-z 0-9 . _ -", c)
+		}
+	}
+	return nil
 }

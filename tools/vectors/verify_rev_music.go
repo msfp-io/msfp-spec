@@ -6,7 +6,7 @@ import (
 )
 
 // verifyRevMusic checks the music vectors of the revision of version 0
-// (proposal 16), read back from the files: each case's output re-derived
+// (proposals 16 and 17), read back from the files: each case's output re-derived
 // from its text by music.go's rules, and the file's shape.
 func verifyRevMusic(read func(string) []byte) []error {
 	const file = "v0/music.json"
@@ -117,16 +117,23 @@ func verifyRevMusic(read func(string) []byte) []error {
 			}
 			kind, scheme, _ := musicParseKey(t.Key)
 			switch {
-			case len(t.Artists) > 16, len(t.Genres) > 8, len(t.Copies) > 8:
-				bad("%s %q: more artists, genres or copies than allowed", arr, str(x, "name"))
+			case len(t.Artists) > 16, len(t.Genres) > 8, len(t.SecondaryTypes) > 8, len(t.Copies) > 8:
+				bad("%s %q: more artists, genres, secondary types or copies than allowed", arr, str(x, "name"))
+			case t.PrimaryType != "" && !musicType(t.PrimaryType):
+				bad("%s %q: a primaryType kept out of its form", arr, str(x, "name"))
 			case kind == "track" && len(t.Copies) == 0:
 				bad("%s %q: a track kept without a copy", arr, str(x, "name"))
 			case t.Image != nil && (scheme != "local" || kind == "track"):
 				bad("%s %q: image kept on a title that isn't a local artist or album", arr, str(x, "name"))
 			}
+			for _, st := range t.SecondaryTypes {
+				if !musicType(st) {
+					bad("%s %q: a secondary type %q kept out of its form", arr, str(x, "name"), st)
+				}
+			}
 			for _, c := range t.Copies {
-				if c.BitrateKbps != nil && *c.BitrateKbps%8 != 0 {
-					bad("%s %q: bitrateKbps %d isn't a whole 8", arr, str(x, "name"), *c.BitrateKbps)
+				if !openToken(c.Container) || !openToken(c.Codec) {
+					bad("%s %q: a copy's container or codec kept that isn't a token", arr, str(x, "name"))
 				}
 			}
 		}

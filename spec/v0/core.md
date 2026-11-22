@@ -399,11 +399,10 @@ doesn't hold its certificate. It may connect to its own address, as a
 peer would, with SNI set to the address's host name (none for an IP
 address, as RFC 6066 says), read the leaf certificate served there, and
 name its pin. It reads it again for each `hello` it answers, unless its
-last reading is at most a few seconds old (Overfin: 2 seconds), and when
+last reading is at most a few seconds old, and when
 it sends a `hello` a minute or more after the last reading. A failed
 reading keeps the last good one (none if there was never one), and the
-next attempt waits a minute (Overfin: 5 seconds while no reading has
-ever worked). A server whose operator sets its pins in its configuration
+next attempt waits a minute. A server whose operator sets its pins in its configuration
 names those and reads nothing. A server may learn its pins any other
 way, as long as they are of the certificates its address really serves.
 
@@ -502,19 +501,6 @@ change, the old address stays (section 13.2, step 3); on a media fetch,
 the fetch fails ([media section 2](media.md#2-requests)). A server may
 also refuse an address when it reads it (a code, a `pair` request), but
 must check again at connection time, since a name's answer can change.
-
-**Overfin.** Overfin refuses the table above, by default, judged as this
-section says for IPv4-mapped, NAT64 (`64:ff9b::/96`, and
-`64:ff9b:1::/48` refused outright) and 6to4 addresses, and three
-cloud metadata addresses outside it (`100.100.100.200`, `168.63.129.16`,
-`fd00:ec2::254`), on every connection to a peer: calls, the media relay,
-preview sheets, the `hello` that confirms an address change, and the
-connection to its own address when it reads its own certificate. It
-checks at connection time only. Its one setting,
-`federation.allow_loopback`, allows loopback and nothing else. It offers
-no setting to refuse private ranges. A backend behind Overfin's gateway
-connects through the gateway, which makes the same check. It uses no
-proxy from the environment.
 
 ## 4. Identity and keys
 
@@ -1222,13 +1208,13 @@ statuses are in section 8.4.
 |--------|--------|---------|-------|---------|----------------------|
 | 200 | (none) | | every call | done; the body is the answer | uses it |
 | 202 | (none) | | `rotate` | accepted, waiting for the receiver's operator (section 9.3) | waits |
-| 400 | `invalid-request` | `Invalid request` | `rotate`, `revoke`, `play`, `progress`, `stop`, `previews`, `lyrics`, `image` | the body is malformed, or a value is out of range | gives up; a correct caller never gets it |
+| 400 | `invalid-request` | `Invalid request` | `rotate`, `revoke`, `play`, `progress`, `stop`, `previews`, `lyrics`, `image` | the body is malformed, or a value is out of range, or isn't a token where one is due (section 8.5) | gives up; a correct caller never gets it |
 | 404 | `not-found` | `Not found` | every call | not heard, not known, not paired yet, no such code, or no such title for this peer; signed or not tells them apart (section 6.6) | as section 6.6 says |
 | 404 | `not-supported` | `Not supported` | a call of a part that is off; every call but `hello` when no core is common | the receiver doesn't speak that part, or no core, with the caller (sections 10.3, 10.4) | makes no more calls of that part (or none but `hello`) until a newer `hello` |
 | 409 | (no body) | | `pair` | the caller's key is already a peer of the maker (section 9.1) | tells its operator |
 | 409 | `rotation-refused` | `Rotation refused` | `rotate` | the new key isn't accepted (section 9.3) | as section 12.4 says |
 | 409 | `stream-limit-reached` | `Too many streams on this account` | `play` | the limits of the `play`'s purpose are all in use or reached, or the limit is 0: streams for watching, downloads at once or in a day for a download, scans in a day for a scan ([playback section 2.2](playback.md#22-what-the-owning-server-does)) | tells the viewer "busy now" |
-| 409 | `delivery-refused` | `This delivery is refused` | `play` | the owning server won't serve the `delivery` asked, for reasons of its own (bandwidth, policy), or can't make it of that copy (`file` of a copy of several parts, a subtitle it can't burn) | asks again with another delivery, or without `delivery`; when no delivery it can use is left, tells the viewer "not playable" (for a download, "download not available") ([playback section 2.5](playback.md#25-refusals)) |
+| 409 | `delivery-refused` | `This delivery is refused` | `play` | the owning server won't serve the `delivery` asked, for reasons of its own (bandwidth, policy), or can't make it of that copy (`file` of a copy of several parts, a subtitle it can't burn), or the request names what to serve with a value it doesn't know (section 8.5) | asks again with another delivery, or without `delivery`; when no delivery it can use is left, tells the viewer "not playable" (for a download, "download not available") ([playback section 2.5](playback.md#25-refusals)) |
 | 409 | `not-playable` | `This item can't be played` | `play` | the owning server has no way to play its copy | tells the viewer "not playable" |
 | 410 | `playback-stopped` | `Playback was stopped` | `progress` | the playback isn't live, or isn't this pairing's | stops the viewer's player |
 | 429 | `rate-limited` | `Too many requests` | every call | this peer is over its own limit (section 8.3) | waits, as section 8.3 says |
@@ -1267,22 +1253,9 @@ of these:
    below. Never a hang, a dropped connection, or an answer that gets
    slower without bound.
 
-The numbers are each implementation's. Suggested defaults, Overfin's
-(the Jellyfin plugin uses the same call rates and requests at once); a
-server sets its own to fit its machine:
-
-| Limit | Suggested default |
-|-------|-------------------|
-| Request body | 64 KiB (section 3) |
-| Nonces remembered | 20,000 per known peer, 1,000 of strangers (section 6.5) |
-| Requests per network address, before any signature check | 50 a second, in bursts of up to 400 |
-| Calls per peer (item 1) | 20 a second, in bursts of up to 200 |
-| Calls of all peers together (item 2) | 200 a second, in bursts of up to 2,000 |
-| Requests at once (item 3) | 8 per peer and 64 in all, each with a queue twice as long, waited in for 5 seconds at most |
-| `play` per peer (item 4) | 30 a minute, in bursts of up to 20 |
-| Playbacks per pairing | 2 streams, 1 of them transcoded ([playback section 6](playback.md#6-what-the-owning-server-enforces)) |
-| Subtitle and playlist reads at once, on the viewer's server | 4 ([media section 2](media.md#2-requests)) |
-| Preview sheet reads at once, on the viewer's server | 4 ([media section 3](media.md#3-what-is-fetched)) |
+The numbers are each implementation's: a server sets its own to fit its
+machine. Suggested numbers are in the
+[implementers' notes](implementers.md#core).
 
 **The answers.**
 
@@ -1335,38 +1308,6 @@ since anyone can write those headers. An IPv6 address is best counted by
 its `/64`. The limits after a signature checks out are per key and need
 none of this.
 
-**Overfin.** Overfin's numbers, fixed, with no settings:
-
-| Limit | Overfin |
-|-------|---------|
-| Per network address, before any signature check | 50 a second, bursts of 400, an IPv6 `/64` counting as one address; past it, the unsigned `404` |
-| Per peer | 20 calls a second, bursts of 200 |
-| All peers together | 200 calls a second, bursts of 2,000 |
-| `play` per peer | 30 a minute, bursts of 20 |
-| Requests at once | 8 per peer (a queue of 16), 64 in all (a queue of 128); a queue is waited in for 5 seconds at most |
-
-Past a peer's own limit it answers a signed `429` `rate-limited`, past
-all peers' a signed `503` `server-busy`, each with `retryAfter` (the
-seconds until a call would pass, at least 1) in the body and the same
-`Retry-After` header. Behind its gateway, the gateway also limits
-requests by network address, with the same numbers, and answers a
-plain-text, unsigned `429` with `Retry-After: 5`. A single Overfin
-counts by the address its `identity.trusted_proxies` setting gives
-(`X-Forwarded-For` from those proxies only, read from the right). Behind
-its gateway, the backend counts by the visitor's address the gateway
-passes on, which the gateway takes from the PROXY protocol or
-`X-Forwarded-For` of the proxies it is told to trust. Its `play` refusal
-for transcodes, a signed `503` `server-busy`, carries no `retryAfter`.
-
-As a caller, Overfin holds every call to a peer (but `pair`) until a
-signed `retryAfter` has passed. After no answer, an unsigned refusal, or
-a `429` or `503` without `retryAfter`, the calls it makes by itself
-(`progress`, catalog reads, a waiting pairing's `hello`) hold off from 2
-seconds, doubling, up to an hour, give or take a quarter; calls an
-operator or a viewer asks for go when asked. A catalog read told to wait
-up to a minute waits and reads on. A `play` held or refused this way
-tells the viewer "busy now".
-
 ### 8.4 Media answers
 
 Media fetches ([media](media.md)) are plain `GET`s, not signed, and their
@@ -1378,17 +1319,47 @@ answers aren't signed either. Their statuses:
 | 206 | the range asked for | checks `Content-Range` (media section 2), relays it |
 | 404 | no such file, a query string, browser headers, a ticket that isn't live, or a URL its ticket's kind doesn't open | for a playlist, the file or a segment: treats the playback as ended; for a subtitle part, a font, a sheet or an image: goes without it |
 | 405 | a `HEAD`, or any other method but `GET`, with `Allow: GET`; never `404` (media section 2.2) | not expected: the viewer's server sends `GET` only; it answers its own clients' `HEAD` itself |
-| 416 | the `Range` header is malformed or out of the file; under a scan ticket, a fetch without `Range`, or one that starts once the scan's 32 MiB are spent (media section 4.2) | answers `416` to the viewer; for a scan, a failed read of its media server |
+| 416 | the `Range` header is malformed or out of the file; under a scan ticket, a fetch without `Range`, or one that starts once the bytes the scan may read are spent (its `scanBytes`, [playback section 5](playback.md#5-limits); media section 4.2) | answers `416` to the viewer; for a scan, a failed read of its media server |
 | 503 | the owning server is busy | answers `503` to the viewer, who may try again |
 | anything else | not expected | as a failed fetch: the viewer's server answers `404` to the viewer |
 
 A body that comes with a refusal is not read beyond a few kilobytes, and
 never shown.
 
-**Overfin.** As the viewer's server, it answers a peer's `404` with a `404` to the viewer, for
-every kind of fetch, and doesn't end the playback itself: the player
-stops on its own, and the playback ends by `stop` or, on both sides, by
-expiry (playback section 6.3).
+### 8.5 Unknown values
+
+Many fields take a value from a list that grows: a codec, a container,
+the kind of a library. The fields a part calls **open** follow one rule,
+in every part, so that a new value needs no new version and no change of
+the specification.
+
+- A **token** is 1 to 32 characters of `a–z 0–9 . _ -`. An open field
+  takes a token, unless its part says otherwise (a few take plain text,
+  with a bound of their own).
+- **In a fact** (what `titles` says of a title, what `play`'s answer says
+  of what plays): a token the receiver doesn't know is **kept** as it is.
+  It is never turned into another value, and never dropped. A value that
+  isn't a token (of another JSON type, empty, too long, with other
+  characters) is malformed, and handled as any malformed member is: an
+  optional member is dropped alone, and the entry that holds it stays; a
+  required member is dropped with the entry that holds it (a copy, a
+  track, an extra), as when it is missing.
+- **In a request**: a token the receiver doesn't know is ignored where
+  the field is a hint, and refused with a signed `409`
+  `delivery-refused` where it names what to serve (a remux's container,
+  a transcode's codec). Only a value that isn't a token gets `400`.
+- A viewer's server that doesn't know a value of a copy treats the copy
+  as one it can't play as it is: it asks for a `remux` or a `transcode`
+  ([playback section 2.7](playback.md#27-delivery)), or doesn't offer
+  the copy.
+- No open field has a value meaning "other". A sender with no value for
+  an optional open field leaves it out.
+- The values a part lists beside an open field are examples, not the
+  list. Where values come from an outside vocabulary (ffmpeg's names, a
+  public database's types), the part names it.
+
+Test cases: `openTokens` in
+[vectors/v0/strict.json](../../vectors/v0/strict.json).
 
 ## 9. The core's calls
 
@@ -1759,7 +1730,7 @@ an `application/json` document:
   `<address><prefix>/api/v1/stream/` ([media](media.md#1-the-urls)).
   A document whose `base` breaks this counts as no document.
 - **A server under a base path** (a media server reached at
-  `/jellyfin`, say) has a prefix, and its peers learn it only from this
+  `/media`, say) has a prefix, and its peers learn it only from this
   document, at the address's root: an address has no path (section 5.2).
   Such a server switches the document on, and has it served at the root
   by whatever serves the root (its reverse proxy, when the media server
@@ -2255,10 +2226,6 @@ A server may log public keys, fingerprints, addresses, playback IDs,
 nonces, statuses and problem types. A playback ID isn't a credential: the
 ticket is.
 
-**Overfin.** Overfin logs none of the secrets above. A failed media fetch
-has the URL removed from its error before it is logged, and a crash in a
-request logs the route's pattern, not the path.
-
 ## 15. Versioning
 
 This document is core version 0. The policy for new versions of the core
@@ -2296,6 +2263,8 @@ generator also checks them.
 | `strict.json`, `destinations` | IP addresses a server connects to for a peer by default, or refuses (section 3.3) |
 | `strict.json`, `uncallableAddresses` | addresses of a server that can't be called, `https://msfp-<26>.invalid`, with their verdicts (section 5.2) |
 | `strict.json`, `languageCodes` | media servers' language codes and the tag sent for each, or none ([catalog section 3](catalog.md#3-titles)) |
+| `strict.json`, `openTokens` | values of open fields, kept as tokens or dropped as malformed (section 8.5) |
+| `strict.json`, `libraryKinds` | libraries' `kind`, and what the caller keeps of it ([catalog section 2.2](catalog.md#22-what-the-caller-keeps)) |
 | `strict.json`, `helloVersions` | `hello` bodies and the versions a receiver keeps of them, or a bad body: `"core":[0,2.5]` lists core 0, and an unknown member or part of `null` is ignored (sections 2.3 and 10.2) |
 | `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([media section 3](media.md#3-what-is-fetched), [video section 6](video.md#6-media)) |
 | `music.json` | music title keys and music titles, with their verdicts and what the caller keeps of each title ([music sections 2 and 3](music.md#2-title-keys)) |
@@ -2729,3 +2698,16 @@ check of how Plex and Emby map onto MSFP
     its address's root (section 11); a viewer's server sends `progress`
     no more often than every 45 seconds but never lets 2 minutes pass
     without one, paused too ([playback section 3](playback.md#3-progress)).
+
+**Neutrality, decided by the owner on 2026-11-22**
+([proposal 17](../../proposals/0017-neutrality.md)):
+
+46. One rule for unknown values, in every part (section 8.5): open
+    fields take tokens, an unknown token is kept in a fact and refused
+    with `409` `delivery-refused` where it names what to serve, and no
+    list has `other`. The normative text names no product: what it said
+    of Overfin, Jellyfin, Plex and Kodi, and its suggested numbers, moved
+    to the non-normative [implementers' notes](implementers.md). The
+    schemes of title keys and of `ids` are listed in a
+    [registry](../registry.md); a new scheme is an entry there, not a
+    new version.

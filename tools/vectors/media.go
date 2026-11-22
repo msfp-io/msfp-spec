@@ -1,7 +1,7 @@
 package main
 
 // The media rules of version 0, as revised by proposal 16: HLS playlists,
-// ranges and the file's answers, the scan cap (spec/v0/media.md sections
+// ranges and the file's answers, the scan cap of scanBytes (spec/v0/media.md sections
 // 2.1, 3.1, 3.2 and 4.2), WebVTT, ASS, PGS and fonts (spec/v0/video.md
 // sections 6.3 to 6.6), and the destinations of spec/v0/core.md section
 // 3.3. Written from the specification's text, to check
@@ -462,12 +462,26 @@ func checkFileAnswer(a mediaAnswer) error {
 	return nil
 }
 
-const scanCap = 32 << 20
+// The scan cap is the owning server's scanBytes (playback section 5): 4
+// MiB to 1 GiB, 4 MiB when it sends none.
+const (
+	scanFloor = 4 << 20
+	scanTop   = 1 << 30
+)
+
+// scanCapOf is the cap an owning server enforces for the scanBytes it
+// sends (0: none sent).
+func scanCapOf(scanBytes int64) int64 {
+	if scanBytes < scanFloor || scanBytes > scanTop {
+		return scanFloor
+	}
+	return scanBytes
+}
 
 // scanAnswer is the owning server's answer to a fetch under a scan
-// ticket that has already sent sent bytes: 206 and its Content-Range, or
-// 416 with Content-Range: bytes */<size>.
-func scanAnswer(sent int64, rng string, size int64) (int, string) {
+// ticket of cap scanCap that has already sent sent bytes: 206 and its
+// Content-Range, or 416 with Content-Range: bytes */<size>.
+func scanAnswer(scanCap, sent int64, rng string, size int64) (int, string) {
 	unsatisfied := fmt.Sprintf("bytes */%d", size)
 	if rng == "" || sent >= scanCap {
 		return 416, unsatisfied

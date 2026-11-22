@@ -92,7 +92,7 @@ A video title in `titles` carries the members of
 | Field | Type | Content |
 |-------|------|---------|
 | `kind` | string | `movie`, `series`, `season`, `episode` or `extra`: the kind its key names |
-| `copies` | array of copy | films, episodes and extras only, and required for them: its copies, best first, at most 8 (section 3.2) |
+| `copies` | array of copy | films, episodes and extras only, and required for them: its copies, in the owning server's order of preference, at most 16 (section 3.2) |
 | `place` | object | episodes keyed by their TMDB episode ID only, and required for them: the episode's place in TMDB's numbering, `{"season": <n>, "episode": <n>}` (section 4.1) |
 | `with` | array of string, optional | episodes only: the keys of the other episodes the same copy holds (section 4.2) |
 | `ids` | object, optional | films, series and episodes of the `tmdb` and `tvdb` schemes: other identifiers of the same title, by scheme (section 4.3) |
@@ -147,9 +147,9 @@ caller keeps.
 
 ### 3.2 Copies
 
-A film, an episode or an extra must carry `copies`: its copies, best
-first, in the order `play` would choose them (section 3.7), at most 8.
-Each copy says what a media server needs to list it as one of its own
+A film, an episode or an extra must carry `copies`: its copies, in the
+owning server's order of preference, best first (section 3.7), at most
+16. Each copy says what a media server needs to list it as one of its own
 files before anyone plays it: its length, its size, its container, its
 picture and its tracks.
 
@@ -158,15 +158,15 @@ Copy:
 | Field | Type | Required | Content |
 |-------|------|----------|---------|
 | `id` | string | yes | the copy's version ID: the `versionId` `play` takes and gives ([playback section 2.3](playback.md#23-the-answer)) |
-| `name` | string | no | an edition or quality label ("4K HDR", "Director's cut"), never a file name (section 3.6); at most 32 characters |
-| `edition` | string | no | `theatrical`, `directors`, `extended`, `unrated`, `remastered`, `special`, `imax` or `other` |
-| `durationMs` | integer | yes | its length, all its parts, rounded down to a whole second; for an episode in a copy holding several (`with`), the episode's own length when the owning server knows it, the copy's otherwise |
+| `name` | string | no | an edition or quality label ("4K HDR", "Director's cut"), plain text, at most 64 characters (section 3.6) |
+| `edition` | string | no | open (section 3.5): `theatrical`, `directors`, `extended`, `unrated`, `remastered`, `special`, `imax`… |
+| `durationMs` | integer | yes | its length in milliseconds, all its parts, as known; for an episode in a copy holding several (`with`), the episode's own length when the owning server knows it, the copy's otherwise |
 | `startMs` | integer | no | for an episode in a copy holding several: where the episode starts in the copy, when the owning server knows it (as `play` starts there, section 5.2); absent otherwise |
-| `container` | string | yes | its container, from the names list (section 3.5) |
+| `container` | string | yes | its container: open, ffmpeg's muxer name (section 3.5) |
 | `size` | integer | yes | its exact size in bytes, all its parts |
 | `etag` | string | yes | its identity: it changes whenever its bytes change; 1 to 64 characters of `A–Z a–z 0–9 - _` |
 | `parts` | array of part | no | for a copy made of several files: each part's `size` and `durationMs`, in order |
-| `bitrateKbps` | integer | no | its overall bitrate, rounded down to a whole 500; below 500, absent |
+| `bitrateKbps` | integer | no | its overall bitrate in kbit/s, as known |
 | `video` | video stream | no | its picture (section 3.3) |
 | `audioTracks` | array of audio track | yes | its audio tracks (section 3.3), at most 32; may be empty |
 | `subtitleTracks` | array of subtitle track | no | its subtitle tracks (section 3.3), at most 64 |
@@ -179,17 +179,21 @@ Copy:
 The required core (`id`, `durationMs`, `container`, `size`, `etag`,
 `audioTracks` with each track's language when known) is what every
 owning server knows of its files, so no copy says nothing. Everything
-else is sent when the owning server's media server knows it.
+else is sent when the owning server's media server knows it. Values are
+exact, as the owning server knows them: none is rounded.
 
 Example:
 
 ```json
-{"id":"v_2HqXo3","name":"4K HDR","durationMs":8160000,"container":"mkv",
- "size":48213884928,"etag":"k9Tq2w","bitrateKbps":47000,
- "video":{"codec":"hevc","width":3840,"height":1600,"bitDepth":10,"hdr":["hdr10","dv"],
-  "dv":{"profile":7,"level":6,"compatibility":6},"fps":23.98},
- "audioTracks":[{"id":"a1","language":"en","channels":8,"codec":"truehd","profile":"atmos","default":true,"original":true}],
- "subtitleTracks":[{"id":"s2","language":"fr","format":"pgs"}],
+{"id":"v_2HqXo3","name":"4K HDR","durationMs":8160043,"container":"matroska",
+ "size":48213884928,"etag":"k9Tq2w","bitrateKbps":47268,
+ "video":{"codec":"hevc","codecs":"dvhe.07.06","profile":"Main 10","width":3840,"height":1600,
+  "bitDepth":10,"colour":{"primaries":"bt2020","transfer":"smpte2084","matrix":"bt2020nc","range":"tv"},
+  "hdr":["dv"],"dv":{"profile":7,"level":6,"compatibility":6,"el":true,"bl":true,"rpu":true},
+  "fps":"24000/1001"},
+ "audioTracks":[{"id":"a1","language":"en","channels":8,"codec":"truehd",
+  "profile":"Dolby TrueHD + Dolby Atmos","default":true,"original":true}],
+ "subtitleTracks":[{"id":"s2","language":"fr","format":"hdmv_pgs_subtitle"}],
  "chapters":[{"startMs":0},{"startMs":312000,"name":"The Desert"}],
  "previews":true}
 ```
@@ -216,15 +220,14 @@ Example:
 - **What the summary was.** `video` 0 has no title summary of languages
   or picture: a viewer's server that shows a title's audio and subtitle
   languages, or its best picture, works them out from `copies`.
+- **Unknown values.** A viewer's server that doesn't know a value of a
+  copy (its container, a codec, a format) treats the copy as one it can't
+  play as it is, as [core section 8.5](core.md#85-unknown-values) says.
 
 **Pages.** A title with copies is some 2 to 3 KB of JSON: pages are
 bounded by size as well as by count, as
 [catalog section 3.1](catalog.md#31-paging-and-ordering) says (at most
 5,000 titles and 3 MiB of JSON a page).
-
-**Overfin.** As an owning server, Overfin fills `copies` from its index,
-which keeps each version's streams, length and size as its media server
-reports them; it lists a title's versions best first (section 3.7).
 
 ### 3.3 Streams and tracks
 
@@ -232,25 +235,36 @@ Video stream:
 
 | Field | Type | Content |
 |-------|------|---------|
-| `codec` | string | from the names list (section 3.5) |
+| `codec` | string | open: ffmpeg's `codec_name` (`h264`, `hevc`, `av1`, `vvc`, `prores`…), section 3.5 |
 | `codecTag` | string, optional | the sample entry or FourCC as the file says it (`avc1`, `hvc1`, `hev1`, `dvh1`, `dvhe`, `av01`), 1 to 8 characters of `A–Z a–z 0–9` |
-| `profile` | string, optional | the codec's profile, as ffmpeg names it (`main`, `main 10`, `high`), at most 32 characters |
+| `codecs` | string, optional | the stream's codecs string of RFC 6381 (`avc1.640028`, `hvc1.2.4.L153.B0`, `dvh1.08.06`), 1 to 64 characters of `A–Z a–z 0–9 . -` |
+| `profile` | string, optional | the codec's profile as ffmpeg prints it (`Main 10`, `High`), plain text, at most 64 characters |
 | `level` | number, optional | the codec's level, as ffmpeg gives it, 0 to 1,000 |
 | `width`, `height` | integer | the picture's size in pixels, exact, each 1 to 100,000 |
-| `bitDepth` | integer, optional | 8, 10 or 12 |
-| `hdr` | array of string, optional | its high dynamic range formats (below); absent for standard range |
-| `dv` | object, optional | with `dv` in `hdr` only: `{"profile": <n>, "level": <n>, "compatibility": <n>}`, the Dolby Vision profile (0 to 10), level (0 to 13) and base-layer compatibility ID (0 to 15) |
-| `fps` | number, optional | frames per second, above 0 and at most 1,000, two decimals at most |
+| `sampleAspect` | string, optional | the sample (pixel) aspect ratio as ffmpeg prints it, `"<w>:<h>"` (`"32:27"`), each side 1 to 65,535; absent means square pixels |
+| `rotation` | integer, optional | the degrees clockwise the picture must be turned to show upright: `0`, `90`, `180` or `270`; absent means 0 |
+| `bitDepth` | integer, optional | 1 to 16 |
+| `colour` | object, optional | `{"primaries", "transfer", "matrix", "range"}`, each optional and open: the ITU-T H.273 names as ffmpeg prints them (`bt2020`, `smpte2084`, `bt2020nc`; `range` `tv` or `pc`) |
+| `hdr` | array of string, optional | open: its enhancement layers and dynamic metadata (`hdr10plus`, `dv`…), below; at most 8 |
+| `dv` | object, optional | with `dv` in `hdr` only: the Dolby Vision configuration record (below) |
+| `fps` | string, optional | frames per second as ffmpeg prints `avg_frame_rate`: `"<num>/<den>"` (`"24000/1001"`, `"25/1"`), each 1 to 1,000,000, the fraction reduced |
 | `interlaced` | boolean, optional | `true` for an interlaced picture |
-| `colour` | object, optional | `{"primaries", "transfer", "matrix", "range"}`, each optional: `range` is `tv` or `pc`; the other three are strings as ffmpeg names them (`bt2020`, `smpte2084`, `bt2020nc`), 1 to 32 characters of `a–z 0–9 _ -`, from no fixed list |
 
-**`hdr`** lists each format the copy offers, each once, in this order:
-`hdr10`, `hdr10plus`, `hlg`, `dv` (Dolby Vision). A format sits beside its
-base: HDR10+ is `["hdr10", "hdr10plus"]`; Dolby Vision on an HDR10 base
-is `["hdr10", "dv"]`, on an HLG base `["hlg", "dv"]`, on a
-standard-range base or none (profile 5) `["dv"]`. A format outside the
-list isn't sent; a copy whose only formats are outside it is sent as
-standard range.
+**The dynamic range comes from `colour`.** `colour` is the base fact:
+a `transfer` of `smpte2084` (PQ) is HDR10's range, one of `arib-std-b67`
+is HLG's. A copy with no `colour` says nothing about its range.
+
+**`hdr`** lists only what sits on top of that base: enhancement layers
+and dynamic metadata, as tokens, sorted in byte order, each once
+(`hdr10plus` for HDR10+, `dv` for Dolby Vision). `hdr10` and `hlg` aren't
+sent there: `colour` says them. A Dolby Vision copy with no compatible
+base (profile 5) carries `["dv"]` and the `colour` of its signal.
+
+**`dv`**: `{"profile": <n>, "level": <n>, "compatibility": <n>, "el":
+<b>, "bl": <b>, "rpu": <b>}`, from the file's Dolby Vision configuration
+record: the profile (0 to 127), the level (0 to 63), the base-layer
+compatibility ID (0 to 15), and whether an enhancement layer, a base
+layer and an RPU are present. `el`, `bl` and `rpu` are optional.
 
 Audio track: a track of `play`'s answer
 ([playback section 2.3](playback.md#23-the-answer)), with the same
@@ -261,16 +275,20 @@ Audio track: a track of `play`'s answer
 | `id` | string | `a<n>`, as in `play`'s answer |
 | `language` | string, optional | a valid language tag ([catalog section 3](catalog.md#3-titles)); sent whenever the owning server knows it |
 | `channels` | integer, optional | 1 to 64 |
-| `role` | string, optional | `commentary` or `description`, as in `play`'s answer |
+| `role` | string, optional | open: a value of the DASH role scheme (`urn:mpeg:dash:role:2011`): `main`, `alternate`, `supplementary`, `commentary`, `dub`, `description`… |
 | `default`, `forced` | boolean, optional | flags, as in `play`'s answer |
 | `fileIndex` | integer, optional | its stream's place in the file, from 0, at most 999, when the copy is one file |
-| `codec` | string | from the names list (section 3.5) |
-| `profile` | string, optional | `atmos`, `dtsx`, `dts-hd-ma`, `dts-hd-hra`, `dts-es`, `he-aac` or `lc` |
+| `codec` | string | open: ffmpeg's `codec_name` (`aac`, `eac3`, `truehd`, `dts`, `opus`, `pcm_s24le`…), section 3.5 |
+| `codecs` | string, optional | its codecs string of RFC 6381 (`mp4a.40.2`, `ec-3`), as for video |
+| `profile` | string, optional | the codec's profile as ffmpeg prints it (`LC`, `HE-AAC`, `DTS-HD MA`, `Dolby TrueHD + Dolby Atmos`), plain text, at most 64 characters |
 | `layout` | string, optional | the channel layout as ffmpeg names it (`stereo`, `5.1(side)`, `7.1`), 1 to 32 characters of `A–Z a–z 0–9 ( ) . _ -` |
 | `sampleRate` | integer, optional | in hertz, 8,000 to 768,000 |
 | `bitDepth` | integer, optional | 8 to 32 |
-| `title` | string, optional | the track's title, limited (section 3.6) |
+| `title` | string, optional | the track's title, plain text, at most 64 characters (section 3.6) |
 | `original` | boolean, optional | `true`: the title's original language |
+
+A role a viewer's server doesn't know is never taken for the title's own
+sound (`main`).
 
 Subtitle track: a track with the same `s<n>` ID as in `play`'s answer
 (section 5.3), and these members:
@@ -280,14 +298,14 @@ Subtitle track: a track with the same `s<n>` ID as in `play`'s answer
 | `id` | string | `s<n>` |
 | `language` | string, optional | a valid language tag, as for audio |
 | `default`, `forced`, `hearingImpaired` | boolean, optional | flags |
-| `format` | string | its source format: `subrip`, `ass`, `ssa`, `webvtt`, `mov_text`, `ttml`, `pgs`, `vobsub`, `dvb` or `other` |
+| `format` | string | open: its source format, ffmpeg's `codec_name` (`subrip`, `ass`, `ssa`, `webvtt`, `mov_text`, `ttml`, `hdmv_pgs_subtitle`, `dvd_subtitle`, `dvb_subtitle`, `dvb_teletext`, `eia_608`…); absent when the owning server doesn't know it |
 | `external` | boolean, optional | `true`: a file beside the video, not inside it |
 | `fileIndex` | integer, optional | its stream's place in the file, from 0, at most 999, when it is inside it |
-| `title` | string, optional | the track's title, limited (section 3.6) |
+| `title` | string, optional | the track's title, plain text, at most 64 characters (section 3.6) |
 
 A copy lists all its subtitle tracks, those the owning server can't
-serve apart too (`other`): a copy played as it is carries them
-(section 5.4 says which are served apart, and how).
+serve apart too: a copy played as it is carries them (section 5.4 says
+which are served apart, and how).
 
 Tracks carry no `label`: a viewer's server names each language in its
 own people's words, from the tag.
@@ -314,130 +332,135 @@ Segment (a skip marker):
 
 | Field | Type | Content |
 |-------|------|---------|
-| `kind` | string | `intro`, `outro`, `recap`, `preview` or `commercial` |
+| `kind` | string | open: `intro`, `outro`, `recap`, `preview`, `commercial`… |
 | `startMs`, `endMs` | integer | where it starts and ends, in the copy, from 0 to its `durationMs`; `startMs` below `endMs` (a segment whose `startMs` isn't below its `endMs` is out of order) |
-| `final` | boolean, optional | `true` on the last credits marker (some media servers mark a title watched there) |
+| `final` | boolean, optional | `true` on the last credits marker, where a viewer's server may count the title as watched |
 
-**Skip markers from other media servers.** Credits are `outro`. A
-marker whose end the owning server doesn't know (credits that run to the
-end) ends at the copy's `durationMs`. An owning server that knows only
-some kinds sends those.
+An owning server that knows only some kinds sends those. A viewer's
+server shows a kind it doesn't know as a plain "Skip".
 
 ### 3.5 Names
 
-`container`, the video `codec` and the audio `codec` take these values,
-lowercase. The first column is what `play`'s capabilities list
-([playback section 2.1](playback.md#21-the-request), and section 5.1); the second, what
-a viewer's device may not play but a viewer's server must know of to
-convert it.
+`container`, the video and audio `codec` and the subtitle `format` are
+open ([core section 8.5](core.md#85-unknown-values)), and take ffmpeg's
+names, as `ffprobe` gives them:
 
-| Member | In the capabilities | Known for conversion |
-|--------|---------------------|----------------------|
-| `container` | `mp4`, `m4v`, `mov`, `webm`, `mkv`, `ts` (MPEG-TS), `mp3`, `aac`, `m4a`, `flac`, `ogg`, `opus`, `wav` | `avi`, `m2ts`, `wmv`, `flv`, `3gp` |
-| video `codec` | `h264`, `hevc`, `av1`, `vp8`, `vp9` | `mpeg2video`, `mpeg4`, `vc1`, `wmv3`, `h263`, `theora` |
-| audio `codec` | `aac`, `mp3`, `opus`, `vorbis`, `flac`, `ac3`, `eac3`, `alac`, `pcm_s16le` | `dts`, `truehd`, `mp2`, `wmav2`, `pcm_s24le`, `pcm_bluray` |
+- `container`: the muxer name of the file's format, the name
+  `ffmpeg -f` takes (`matroska`, `webm`, `mp4`, `mov`, `mpegts`, `avi`,
+  `flac`, `ogg`), not ffprobe's list of demuxer names (`matroska,webm`);
+- the video and audio `codec`, and the subtitle `format`: the stream's
+  `codec_name`.
 
-The capabilities lists take the second column too (section 5.1 and
-[playback section 2.1](playback.md#21-the-request)), so a device that plays one of these
-can say so. Anything else is sent as `other`. A viewer's server reads
-`other` as "convert it".
+An owning server whose media server names these otherwise maps its names
+to ffmpeg's. A viewer's server keeps a name it doesn't know as it is
+(section 3.8), and treats the copy as one it can't play as it is
+(section 3.2).
+
+Beside the names, a video stream and an audio track may carry `codecs`,
+their RFC 6381 codecs string: the value players test a stream against
+before playing it.
 
 ### 3.6 What names and titles may say
 
-A copy's `name` and a track's `title` are where file names and release
-groups would leak: media servers fall back to the file name for a version
-with no label, and track titles often carry a release group's name. So:
-
-- `name` is an edition or quality label ("4K HDR", "Director's cut",
-  "Extended"), at most 32 characters. An owning server sends none rather
-  than a file name, or a name made from one.
-- A track `title` is at most 32 characters. An owning server drops a
-  title that is only the language's name, and one that carries anything
-  but a description of the track ("Commentary", "SDH", "Signs & Songs",
-  "Forced").
-- Both are made plain text, as names are everywhere
-  ([core section 9.1](core.md#91-pair)).
+- A copy's `name` and a track's `title` are plain text, as names are
+  everywhere ([core section 9.1](core.md#91-pair)), at most 64
+  characters. That is all a caller checks.
+- What they say is the owner's choice, and a matter of its own privacy.
+  Media servers often fall back to the file name for a version with no
+  label, and track titles often carry a release group's name; an owning
+  server that doesn't want to tell which file it holds sends no file
+  name, or name made from one, as `name`, and drops a track title that is
+  only the language's name or that carries anything but a description of
+  the track ("Commentary", "SDH", "Signs & Songs", "Forced").
 
 ### 3.7 The order of copies
 
-The owning server lists a title's copies best first: the copy `play`
-without `versionId` would choose for the most capable device, one that
-plays every size and format. The best copy is the one of the greatest
-height (for a picture wider than 16:9, the height of a 16:9 picture as
-wide: a 3840 × 1600 film counts as 2160), then the one with HDR before
-one without, then the one with more `hdr` formats; between copies equal
-on all three, the owning server's own order. A copy without `video` comes
-after those with one. So `play` without `versionId` and without an
-`audioLanguage` that another copy matches plays the first
+The owning server lists a title's copies in its own order of preference,
+best first. Its first copy is the one `play` plays when nothing in the
+request chooses another
 ([playback section 2.6](playback.md#26-choosing-the-copy-and-the-tracks)).
-A viewer whose language only a lesser copy has gets that copy.
 
-A copy says what it is, not how it reaches a viewer: a device that can't
-play it gets it converted, or asks for something else
+**Recommended default** for that order: the copy of the greatest height
+first (for a picture wider than 16:9, the height of a 16:9 picture as
+wide: a 3840 × 1600 film counts as 2160), then the one with high dynamic
+range before one without (a `colour.transfer` of `smpte2084` or
+`arib-std-b67`, or a non-empty `hdr`), then the one with more `hdr`
+entries; between copies equal on all three, the owning server's own
+order. A copy without `video` comes after those with one.
+
+A copy says what it is, not how it reaches a viewer: the viewer's server,
+which has every copy's facts and knows its device, chooses the copy and
+asks for a conversion when it needs one
 ([playback section 2.7](playback.md#27-delivery)).
 
 ### 3.8 What the caller keeps of copies
 
 Of `copies`, for films, episodes and extras:
 
-- at most 8 copies, the first 8 kept. An entry that isn't an object is
-  skipped alone. The caps of this list (8 copies, 32 audio tracks, 64
-  subtitle tracks, 256 chapters, 32 segments) count kept entries only: an
-  entry skipped or dropped doesn't count, and the next good one takes its
-  place;
+- at most 16 copies, the first 16 kept. An entry that isn't an object is
+  skipped alone. The caps of this list (16 copies, 32 audio tracks, 64
+  subtitle tracks, 256 chapters, 32 segments, 8 `hdr` entries) count kept
+  entries only: an entry skipped or dropped doesn't count, and the next
+  good one takes its place;
 - a copy is skipped alone when its `id` doesn't match
   `^[A-Za-z0-9_-]{1,64}$`, or repeats an earlier copy's; when its
   `durationMs` isn't an integer from 0 to 8,640,000,000 (100 days); when
-  `container` isn't a string; when `size` isn't an integer from 1 to
-  999,999,999,999,999; when `etag` doesn't match `^[A-Za-z0-9_-]{1,64}$`;
-  or when `audioTracks` isn't an array;
-- an unknown `container` or `codec` is kept as `other`; an unknown
-  `edition` string as `other`, and an `edition` that isn't a string
-  counts as absent;
-- `name` made plain text and cut to 32 characters; empty, it counts as
+  `container` isn't a token
+  ([core section 8.5](core.md#85-unknown-values)); when `size` isn't an
+  integer from 1 to 999,999,999,999,999; when `etag` doesn't match
+  `^[A-Za-z0-9_-]{1,64}$`; or when `audioTracks` isn't an array;
+- **open values** (`container`, the codecs, `edition`, `role`, `format`,
+  segment `kind`, the `colour` members, `hdr` entries) are kept as they
+  are when they are tokens, known or not, never turned into another
+  value; a value that isn't a token counts as absent, and where the
+  member is required (`container`, a `codec`) its copy, its `video` or
+  its track goes with it, as said here;
+- `name` made plain text and cut to 64 characters; empty, it counts as
   absent;
-- `startMs` from 0 to `durationMs`; `bitrateKbps` from 500 to 10,000,000,
-  rounded down to a whole 500; `added` a valid date in the form
-  `YYYY-MM-DD`; `threeD` one of its three values; `previews` a boolean:
-  otherwise the member counts as absent;
+- `startMs` from 0 to `durationMs`; `bitrateKbps` from 1 to 10,000,000;
+  `added` a valid date in the form `YYYY-MM-DD`; `threeD` one of its
+  three values; `previews` a boolean: otherwise the member counts as
+  absent;
 - `parts`: at most 16 parts, each with a `size` from 1 and a `durationMs`
   from 0 to 8,640,000,000, all sizes adding up to `size`; otherwise
   `parts` counts as absent;
 - `video` counts as absent when it isn't an object, or when `codec`
-  isn't a string, or `width` or `height` isn't an integer from 1 to
+  isn't a token, or `width` or `height` isn't an integer from 1 to
   100,000. Its other members, out of range or of the wrong type, count
-  as absent alone: `codecTag` and `profile` out of their form, `level`
-  outside 0 to 1,000, `bitDepth` not 8, 10 or 12, `fps` not above 0 and
-  at most 1,000 once rounded to two decimals (the rounding comes first:
-  1,000.004 is kept as 1,000, 0.004 counts as absent), `interlaced` not
-  a boolean, `colour.range` not `tv` or `pc`, each other `colour` member
-  not 1 to 32 characters of `a–z 0–9 _ -` (checked for form only, since
-  section 3.3 gives them no list). A `colour` left with no member counts
-  as absent;
-- in `hdr`, an entry that isn't a string or isn't one of the four is
-  skipped alone, as is a repeat; the caller keeps the rest in the order
-  of section 3.3, and an `hdr` left empty means standard range. `dv` is
-  kept only with `dv` in `hdr`, and only with its three members integers
-  in range;
+  as absent alone: `codecTag` and `codecs` out of their form; `profile`
+  made plain text, and absent when empty or over 64 characters (never
+  cut); `level` outside 0 to 1,000; `sampleAspect` not `<w>:<h>` with
+  each side 1 to 65,535 without leading zeros; `rotation` not 0, 90, 180
+  or 270; `bitDepth` not an integer from 1 to 16; `fps` not
+  `<num>/<den>`, each 1 to 1,000,000 without leading zeros, the fraction
+  reduced (`"48000/2002"` and `"0/0"` count as absent, as does a number);
+  `interlaced` not a boolean. A `colour` left with no member counts as
+  absent;
+- in `hdr`, an entry that isn't a token is skipped alone, as is a
+  repeat; the caller keeps the rest sorted in byte order, the first 8.
+  `dv` is kept only with `dv` in `hdr`, and only with `profile`, `level`
+  and `compatibility` integers in range; its `el`, `bl` and `rpu` that
+  aren't booleans count as absent alone;
 - in `audioTracks`, at most 32 tracks; a track is skipped alone when its
   `id` isn't `a` and a number from 0 to 999 without leading zeros, or
-  repeats an earlier track's, or when `codec` isn't a string. Its other
-  members, out of range, of the wrong type, or not in their lists, count
-  as absent alone; a `language` that isn't a valid tag
-  ([catalog section 3](catalog.md#3-titles): `fre`, `fr-ca`, `e`, `und`)
-  counts as absent, and is never converted;
+  repeats an earlier track's, or when `codec` isn't a token. Its other
+  members, out of range, of the wrong type, or out of their form, count
+  as absent alone (`profile` as for video); a `language` that isn't a
+  valid tag ([catalog section 3](catalog.md#3-titles): `fre`, `fr-ca`,
+  `e`, `und`) counts as absent, and is never converted;
 - in `subtitleTracks`, at most 64 tracks; a track is skipped alone when
   its `id` isn't `s` and a number from 0 to 999 without leading zeros, or
-  repeats an earlier track's. An unknown or missing `format` is kept as
-  `other`. Its other members count as absent alone, as for audio;
-- a track `title` made plain text and cut to 32 characters; empty, it
+  repeats an earlier track's. A missing `format`, or one that isn't a
+  token, counts as absent; the track stays. Its other members count as
+  absent alone, as for audio;
+- a track `title` made plain text and cut to 64 characters; empty, it
   counts as absent;
 - `chapters` as section 3.4 says: in order, a chapter whose `startMs` is
   out of range or not after the one before (a repeated start) dropped,
   the first 256 kept, names made plain text and cut to 64 characters;
-- `segments`: a segment of an unknown `kind`, or whose times are out of
-  range or not in order (`startMs` not below `endMs`), dropped; the
-  first 32 kept;
+- `segments`: a segment whose `kind` isn't a token, or whose times are
+  out of range or not in order (`startMs` not below `endMs`), dropped;
+  the first 32 kept;
 - other members of a copy, a stream or a track are ignored.
 
 A title left with no copy is skipped (section 3.1).
@@ -454,20 +477,22 @@ kind `extra`, with these members besides `copies`:
 
 | Field | Type | Content |
 |-------|------|---------|
-| `extraType` | string | `trailer`, `featurette`, `behindthescenes`, `deletedscene`, `interview`, `scene`, `short` or `clip` |
+| `extraType` | string | open: what the extra is: `trailer`, `featurette`, `behindthescenes`, `deletedscene`, `interview`, `scene`, `short`, `clip`, `themesong`, `themevideo`… |
 | `name` | string, optional | its name, as the owner gives it ("Teaser", "Making of"), at most 64 characters |
 
 - An extra is played with `play` like any title, and counts against the
   pairing's `streams` as any playback does.
-- **Theme songs and theme videos are left out.** A media server plays
-  them in the background each time a title's page opens, which would
-  start a playback on the owning server each time. An owning server never
-  sends them.
-- The caller keeps `extraType`; an unknown or missing one becomes
-  `clip`. It makes `name` plain text and cuts it to 64 characters; empty,
-  it counts as absent.
-- A viewer's server shows an extra under its title only: while it holds
-  no title of that peer under the key the extra's key starts with
+- **Theme songs and theme videos** (`themesong`, `themevideo`) are
+  extras like the others: an owning server may offer them. The viewer's
+  server decides whether and how to present them; each one it plays is a
+  playback like any other.
+- The caller keeps `extraType` when it is a token, known or not; an
+  extra whose `extraType` is missing or isn't a token is skipped. A
+  viewer's server shows a type it doesn't know as a plain extra. It makes
+  `name` plain text and cuts it to 64 characters; empty, it counts as
+  absent.
+- A viewer's server should show an extra under its title only: while it
+  holds no title of that peer under the key the extra's key starts with
   (section 4.6), it shows the extra nowhere.
 
 Test cases: `extras` in
@@ -488,8 +513,9 @@ sends a small description of it, for films and series only:
   local film or series without a `name` left is skipped. A `year` out of
   range or not an integer, and an `image` that isn't a boolean, count as
   absent. `image: false` is kept as it is.
-- A viewer's server shows the description as the owner's, not a public
-  database's: it may say whose server named it, and must not look it up
+- A viewer's server should show the description as the owner's, not a
+  public database's: it may say whose server named it. It must never send
+  a local description on to another server, and must never look it up
   elsewhere.
 - Seasons and episodes of a local series carry no description: their
   numbers name them.
@@ -537,11 +563,13 @@ and extras by their place under the title:
   database's season ID.
 - `play` takes only films, episodes and extras (section 5).
 
-**Which scheme.** A server keys a series, and with it its seasons,
+**Which scheme.** A server should key a series, and with it its seasons,
 episodes and extras, under TMDB whenever TMDB has it; under TheTVDB when
 TMDB has no match and TheTVDB has; under `local` when neither has it.
 Films are keyed under TMDB, or `local`. A receiver skips keys of a
-scheme it doesn't know.
+scheme it doesn't know. The schemes are listed in the
+[registry](../registry.md), with the forms of their keys and of their
+`ids` values: a new scheme is a registry entry, not a new version.
 
 A title of the `tmdb` or `tvdb` scheme the owning server can't place in
 its scheme's numbering is left out (section 4.1).
@@ -570,11 +598,8 @@ the episode in the series' own season list, not in an episode group.
   title gone, another new.
 - **An owning server whose files are numbered another way** (DVD,
   absolute, a broadcaster's order, TheTVDB's) maps them to TMDB's numbers
-  before it sends `place`. It may find an episode's TMDB numbers from its
-  IMDb or TheTVDB ID (TMDB's lookup by external ID gives the series, the
-  season number and the episode number), once per episode, kept, within
-  TMDB's limits (section 7). When it can't place an episode in TMDB's
-  numbering, it leaves the episode out.
+  before it sends `place`, within TMDB's limits (section 7). When it
+  can't place an episode in TMDB's numbering, it leaves the episode out.
 
 For a series keyed under TheTVDB, section 4.4 gives the numbering; for a
 local one, the owner's numbers are its keys (section 4.5).
@@ -596,28 +621,34 @@ mark all of them watched together.
 
 Titles of kind `movie`, `series` and `episode`, keyed under `tmdb` or
 `tvdb`, may carry `ids`: other identifiers of the same title, by scheme.
+The schemes and their forms are the
+[registry's](../registry.md#ids-schemes); those of video are:
 
-| Scheme | Form | Example |
-|--------|------|---------|
-| `imdb` | `tt` and 7 to 10 digits | `tt0133093` |
-| `tvdb` | 1 to 10 digits, no leading zero | `81189` |
+| Scheme | Kinds | Form | Example |
+|--------|-------|------|---------|
+| `imdb` | `movie`, `series`, `episode` | `tt` and 7 to 10 digits | `tt0133093` |
+| `tvdb` | `movie`, `series`, `episode` | 1 to 10 digits, no leading zero | `81189` |
+| `tmdb` | `series`, `episode`, keyed under another scheme than `tmdb` (`tvdb`) | 1 to 10 digits, no leading zero | `1396` |
 
 Example: `"ids":{"imdb":"tt0133093"}`.
 
 - Each value is a string. Unknown schemes are ignored. A value that
-  breaks its form is ignored.
+  breaks its form is ignored, as is a scheme on a kind the table doesn't
+  give it, and `tmdb` on a title of the `tmdb` scheme.
 - `ids` never replaces the key: two titles are the same when their keys
   are equal ([catalog section 4.1](catalog.md#41-same-title-same-key)).
   `ids` only helps a receiver find a title it holds under another
   identifier.
 - A film's or series' `imdb` names it; an episode's names the episode.
-  A series' `tvdb` is TheTVDB's series ID; an episode's, TheTVDB's
-  episode ID.
+  A film's `tvdb` is TheTVDB's movie ID; a series', TheTVDB's series ID;
+  an episode's, TheTVDB's episode ID. A series' `tmdb` is TMDB's series ID, sent once TMDB has
+  the series; an episode's, TMDB's episode ID.
 - **Across schemes.** A series one server keys under TMDB with
   `ids.tvdb` *n*, and one another server keys `series/tvdb/<n>`, are the
-  same show: a viewer's server may show them as one, matching episodes by
-  their own `ids` (`tvdb` or `imdb`). They are still two titles, each
-  played from its own key.
+  same show, as is one keyed `series/tvdb/<n>` with `ids.tmdb` *m* and
+  one keyed `series/tmdb/<m>`: a viewer's server may show them as one,
+  matching episodes by their own `ids` (`tvdb`, `tmdb` or `imdb`). They
+  are still two titles, each played from its own key.
 
 ### 4.4 The tvdb scheme
 
@@ -636,8 +667,9 @@ For series TMDB has no match for (anime numbered by TheTVDB, often),
 - Episodes of this scheme carry no `place`: their key is their place.
   Their `ids` may carry TheTVDB's episode ID, by which a viewer's server
   may match two forms of the same episode.
-- An owning server that can place a series in TMDB moves it there: its
-  titles under `tvdb` gone, new ones under `tmdb`.
+- An owning server that can place a series in TMDB should move it there:
+  its titles under `tvdb` gone, new ones under `tmdb`. Until it does, it
+  may say the series' TMDB ID in `ids` (section 4.3).
 
 ### 4.5 The local scheme
 
@@ -688,32 +720,10 @@ Members added to the request of
 | `subtitleLanguage` | string | no | the viewer's subtitle language, a valid tag ([catalog section 3](catalog.md#3-titles)); another string is refused (`400`) |
 | `subtitleTrack` | string | no | a subtitle track ID, `s` and a number from 0 to 999 without leading zeros (`s01` is invalid), or `off` |
 
-Capabilities added to the capabilities object (all optional; unknown
-values are ignored):
-
-| Field | Type | Values |
-|-------|------|--------|
-| `videoCodecs` | array of string | `h264`, `hevc`, `av1`, `vp8`, `vp9`, `mpeg2video`, `mpeg4`, `vc1`, `wmv3`, `h263`, `theora` |
-| `hdr` | array of string | `hdr10`, `hdr10plus`, `hlg`, `dv` |
-| `dvProfiles` | array of integer | the Dolby Vision profiles the device plays: `4`, `5`, `7`, `8`, `9`, `10` |
-| `maxHeight` | integer | pixels, 0 to 100,000; 0 means not said; a negative or larger value is refused (`400`) |
-| `subtitles` | array of string | no values are defined yet; send `[]` or leave it out |
-
-`dv` in `hdr` counts only with `dvProfiles`: without it, the device is
-taken to play no Dolby Vision. An entry of `dvProfiles` that isn't an
-integer refuses the request (`400`), as a non-string entry of the other
-arrays does; one not in the list is ignored. The audio capabilities (its
-codecs, profiles, sample rates and bit depths) are
-[playback section 2.1](playback.md#21-the-request)'s, shared with music.
-
-**Coarsening**, besides [playback section 2.1](playback.md#21-the-request)'s: only the values listed,
-each once, sorted (`dvProfiles` in increasing order); `maxHeight` stepped
-down to 480, 720, 1080, 1440, 2160 or 4320 (below 480 becomes 480).
-
 **Transcode targets.** The `transcode` object and its targets
 (`videoCodec`, `maxHeight`, `maxBitrateKbps`, `audioCodec`,
-`audioChannels`) are [playback section 2.7](playback.md#27-delivery)'s.
-Video adds one:
+`audioChannels`) are [playback section 2.7](playback.md#27-delivery)'s,
+codecs by ffmpeg's names (section 3.5). Video adds one:
 
 | Field | Type | Content |
 |-------|------|---------|
@@ -725,12 +735,13 @@ The owning server burns that track in, or refuses with `409`
 malformed `burnSubtitle` (not `s` and a number from 0 to 999 without
 leading zeros) is refused (`400`).
 
-**Nothing said.** Without `delivery`, the owning server decides from the
-capabilities, and when they say nothing: nothing said about `containers`
-or `videoCodecs`, no file is played as it is (`direct`); the owning
-server remuxes or transcodes to H.264 and AAC in HLS, which every
-viewer's server must be able to play. Nothing said about `audioCodecs`:
-AAC only. Nothing said about `hdr`: standard range only.
+**Without `delivery`**, the owning server serves the baseline every
+viewer's server must play, as
+[playback section 2.7](playback.md#27-delivery) says: H.264 video and
+AAC audio in complete HLS. It may play the copy as it is when the copy
+already meets it. A viewer's server that wants anything else (the copy
+as it is, a remux, other codecs) asks for it with `delivery`: it has
+every copy's facts, and knows its device.
 
 The owning server refuses (`400`) a malformed `subtitleTrack`, at the
 step where it refuses a malformed `audioTrack`
@@ -766,12 +777,15 @@ checks and cleans every field, as listed.
 | `burnedTrack` | string, optional | the track burned into the picture, `s<n>`, when `burnSubtitle` asked for one | |
 | `forcedTracks` | array of track, optional | forced subtitles | `url`, `assUrl` checked |
 | `forcedTrack` | string, optional | the forced one matching the audio | |
-| `subtitleStretchSeconds` | integer, optional | 120 when there are subtitles | replaced by its own value, 120 |
-| `fonts` | array of string, optional | the URLs of the fonts the copy's ASS tracks use (section 6.6) | exactly the URLs section 6.1 gives, index by index; at most 8; otherwise dropped |
+| `fonts` | array of string, optional | the URLs of the fonts the copy's ASS tracks use (section 6.6) | exactly the URLs section 6.1 gives, index by index, under one ticket; at most 64; otherwise dropped |
 | `trickplay` | trickplay object, optional | the seek-bar previews of the copy playing (section 5.5) | sheet URLs checked (section 6.1); out of bounds: dropped |
 
 Skip markers come with the copy, in the catalog (section 3.4), not in
 the answer.
+
+Test cases: `fontURLs` in
+[vectors/v0/video.json](../../vectors/v0/video.json), the `fonts`
+member as the viewer's server reads it.
 
 A subtitle track is a track of playback section 2.3, without `label`,
 with the ID `s<n>` and the members of section 3.3, and these besides:
@@ -787,15 +801,19 @@ The owning server chooses the subtitles after the copy and the audio
 ([playback section 2.6](playback.md#26-choosing-the-copy-and-the-tracks)),
 before how to serve it.
 
-**The subtitles.** Subtitles are burned into the picture only when the
-request asks for it (`burnSubtitle`, section 5.1): they never make a
+**What is normative.** Subtitles are burned into the picture only when
+the request asks for it (`burnSubtitle`, section 5.1): they never make a
 playback transcode otherwise, and the choice only says which track to
-show.
+show. A `subtitleTrack` that is a track of the copy wins, and `off`
+shows none; otherwise the owning server chooses, and the answer says
+what it chose (`subtitleTrack`, `forcedTrack`). With `burnSubtitle`,
+`subtitleTrack` and `burnedTrack` are the track burned.
+
+**Recommended default** for the rest, which the viewer's server can't
+rely on and may override by naming a track:
 
 | `subtitleTrack` | `subtitleLanguage` | `subtitleTrack` in the answer |
 |-----------------|--------------------|-------------------------------|
-| `off` | any (ignored) | absent: none shown |
-| a track of the copy | any (ignored) | that track |
 | not a track of the copy | any | as if `subtitleTrack` were absent |
 | absent | a track matches | that track |
 | absent | absent, or no track matches | absent: none shown |
@@ -803,8 +821,7 @@ show.
 When `subtitleLanguage` matches both a regular track and a forced one,
 the regular track is the one chosen; the forced one is still
 `forcedTrack`, as below. Whatever is chosen, `forcedTrack` is the forced
-track in the language of the audio played, when the copy has one. With
-`burnSubtitle`, `subtitleTrack` and `burnedTrack` are the track burned.
+track in the language of the audio played, when the copy has one.
 
 **What is listed.** The answer lists the copy's subtitle tracks as the
 catalog does (section 3.3), with the same IDs, and gives each the URLs it
@@ -814,8 +831,8 @@ can be fetched at apart:
 |----------|-------|----------|
 | `subrip`, `webvtt`, `mov_text`, `ttml` | WebVTT (section 6.3) | absent |
 | `ass`, `ssa` | WebVTT, its styling flattened (section 6.3) | ASS (section 6.4) |
-| `pgs`, `vobsub`, `dvb` | PGS, VobSub and DVB converted by the owning server (section 6.5) | absent |
-| `other` | absent | absent |
+| `hdmv_pgs_subtitle`, `dvd_subtitle`, `dvb_subtitle` | PGS, DVD and DVB subtitles converted by the owning server (section 6.5) | absent |
+| any other, or none | WebVTT for a text track, PGS for a picture track, when the owning server can convert it; absent otherwise | absent |
 
 A track the owning server can't serve apart has neither URL: it reaches a
 viewer only in the copy played as it is, or burned in. A track beside
@@ -850,12 +867,11 @@ Besides those bounds, a full sheet is at most 4,096 pixels each way:
 `columns` × `tileWidth` ≤ 4,096 and `rows` × `tileHeight` ≤ 4,096.
 
 - An owning server whose media server keeps one image per interval
-  (BIF files) tiles them into sheets; it may send every *n*-th image,
-  with `intervalMs` multiplied by *n*, to stay within the bounds.
+  tiles them into sheets; it may send every *n*-th image, with
+  `intervalMs` multiplied by *n*, to stay within the bounds.
 - The owning server sends `trickplay` only when it has previews for the
-  copy, within these bounds. It sends one set, not one per width; a set
-  near 320 pixels wide is a good choice. Without previews, it leaves the
-  field out.
+  copy, within these bounds. It sends one set, not one per width.
+  Without previews, it leaves the field out.
 - The viewer's server drops `trickplay`, and plays on without previews,
   when a number is missing or out of bounds, or when `sheets` has another
   number of entries. It refuses the whole answer (in `play`'s answer, it
@@ -1111,9 +1127,6 @@ text without override blocks, `\N` and `\n` a new line, `\h` a space,
 drawings left out; italics and bold may become `<i>` and `<b>`. Then it
 is rebuilt as above.
 
-**Overfin.** These are Overfin's rules, as both owning and viewer's
-server.
-
 ### 6.4 ASS
 
 An `ass` or `ssa` track served at its `assUrl` (`ass/<track>/<part>` or `ass/<track>/whole`, [media section 1](media.md#1-the-urls)) is ASS (Advanced
@@ -1302,13 +1315,11 @@ Not checked: that an event ends after it starts, that events are in
 order, what a drawing draws, and how tags combine. A renderer must be
 robust to those itself.
 
-**Overfin.** These are Overfin's rules, as both owning and viewer's
-server.
-
 ### 6.5 Picture subtitles
 
-Picture subtitles are served as PGS: a `pgs` track as it is, a `vobsub`
-(DVD) or `dvb` track converted to PGS by the owning server, its pictures
+Picture subtitles are served as PGS: a `hdmv_pgs_subtitle` track as it
+is, a `dvd_subtitle` or `dvb_subtitle` track (or another picture format
+it can read) converted to PGS by the owning server, its pictures
 and their times kept. A PGS part is checked whole, then served
 unchanged: a player decodes and draws it. Checking means reading every
 segment, and decoding every object's run-length data to count it, not to
@@ -1375,26 +1386,26 @@ palette entries and colors, lines shorter than *width* or fewer than
 objects' data, which the part's 64 MiB bounds. A player that draws a
 picture needs at most 4,096 × 4,096 pixels for it, and the screen as big.
 
-**Overfin.** These are Overfin's rules, as both owning and viewer's
-server, an empty part included, and it converts VobSub and DVB tracks to
-PGS as above.
-
 ### 6.6 Fonts
 
 The fonts a copy's ASS tracks use (its file's attached fonts) are served
 apart, for ASS fetched at an `assUrl`; a copy played as it is carries
 its own.
 
-- An owning server lists at most 8 fonts a copy, in `fonts`, those the
-  copy's first ASS track uses first. It serves standard TrueType and
-  OpenType files only: a font it holds in another form (a collection,
-  WOFF) it converts or leaves out.
+- An owning server lists at most 64 fonts a copy, in `fonts`, those the
+  copy's first ASS track uses first: each at most 10 MiB, and 64 MiB
+  (67,108,864 bytes) in all. The font URLs run from `fonts/0` to
+  `fonts/63`. It serves standard TrueType and OpenType files only: a font
+  it holds in another form (a collection, WOFF) it converts or leaves
+  out. Font collections (TTC) are left for later (section 8).
 - **A viewer's server may refuse fonts entirely**: it then fetches none,
   and its players draw ASS with their own fonts.
 
 **What is checked**, by both sides, before a font is served or relayed:
 
-1. It is at most 10 MiB (10,485,760 bytes).
+1. It is at most 10 MiB (10,485,760 bytes), and the copy's fonts the
+   viewer's server has relayed in the playback, this one included, are
+   at most 64 MiB in all; a font past that is refused.
 2. Its first four bytes are `00 01 00 00` or `true` (`74 72 75 65`,
    Apple's older TrueType signature, which font engines read), both
    TrueType, or `OTTO` (OpenType with CFF). Any other (`ttcf`, `wOFF`,
@@ -1412,6 +1423,11 @@ every font through it after these checks, and serve what it rebuilds.
 The viewer's server serves a font at its own route, to its own people
 only, `font/ttf` for `00 01 00 00` and `true`, and `font/otf` for
 `OTTO`.
+
+Test cases: `fontSets` in
+[vectors/v0/video.json](../../vectors/v0/video.json), the bounds on one
+copy's fonts; the checks of each font are `fonts` in
+[vectors/v0/media.json](../../vectors/v0/media.json).
 
 ### 6.7 The image of a local title
 
@@ -1438,8 +1454,8 @@ says.
   titles can tell which known release a file is. A peer offered the title
   can learn as much by playing it; an owning server that doesn't want a
   peer to know doesn't offer it the title. Names and track titles are
-  bounded and limited to labels (section 3.6), so that file names and
-  release groups' names stay out.
+  bounded; keeping file names and release groups' names out of them is
+  the owner's choice (section 3.6).
 - **No reading to describe.** A viewer's server never reads a peer's
   file to learn what it is (section 3.2): every read is a playback the
   owning server sees and counts.
@@ -1469,7 +1485,8 @@ says.
 ## 8. Open questions
 
 Points 1 to 3 were settled by the owner on 2026-11-17, point 5 on
-2026-11-19, point 4 by the revision of version 0 on 2026-11-22.
+2026-11-19, point 4 by the revision of version 0 on 2026-11-22. Point 17
+is open.
 Where a proposal of 2026-11-16 left a point open, the text above follows
 the proposal's own default.
 
@@ -1514,8 +1531,7 @@ Choices confirmed by the owner on 2026-11-17, moved here from
    Proposal 5 says where a playback of a later episode starts, but not how
    `startPositionMs` combines with it. This draft reads a non-zero
    `startPositionMs` as a position in the copy.
-7. **Timestamp tags in WebVTT** stay as escaped text (section 6.3), as
-   Overfin does. Removing them would suit karaoke-style subtitles better;
+7. **Timestamp tags in WebVTT** stay as escaped text (section 6.3). Removing them would suit karaoke-style subtitles better;
    karaoke now comes as ASS (section 6.4).
 8. **Checks left to the player**: WebVTT timings out of range or order,
    ASS events' times and drawings, and PGS fields beyond sizes (sections
@@ -1554,11 +1570,33 @@ absorbing [proposal 15](../../proposals/0015-copies-in-the-catalog.md)):
 12. **Copies in the catalog** (sections 3.2 to 3.8): required for films,
     episodes and extras, at most 8, with a required core; the exact size;
     the length to the second and the bitrate to 500 kbit/s; names and
-    track titles limited to labels.
+    track titles limited to labels. **Changed** by proposal 17 (point
+    16): at most 16, exact values, names and titles plain text of 64.
 13. **Identity beyond TMDB** (sections 4.4 and 4.5): the `tvdb` scheme,
     absolute numbers included, and the `local` scheme, off by default.
 14. **Extras** (sections 3.9 and 4.6), without theme songs and videos.
+    **Changed** by proposal 17 (point 16): themes are extras like the
+    others.
 15. **Styled subtitles, fonts and previews** (sections 5.6 and 6): ASS
     rebuilt, at most 8 fonts of 10 MiB, VobSub and DVB converted to PGS,
     WebVTT keeping italics, bold, colours and positions, burning in on
     request, whole text tracks, and `previews` before a first play.
+    **Changed** by proposal 17 (point 16): 64 fonts of 10 MiB, 64 MiB in
+    all.
+
+**Decided by the owner on 2026-11-22**, in
+[proposal 17](../../proposals/0017-neutrality.md) (neutrality):
+
+16. **Facts in outside vocabularies, open lists, choice to the viewer**
+    (sections 3.2 to 3.10, 4.3, 5.1, 5.3, 5.4 and 6.6): exact
+    `durationMs` and `bitrateKbps`, `fps` as a rational; ffmpeg's names
+    and RFC 6381 `codecs`, the names table dropped; the dynamic range from
+    `colour`, `hdr` for enhancement layers only, `dv` widened; open
+    editions, roles, profiles, formats, segment kinds and extra types,
+    by the unknown-value rule of
+    [core section 8.5](core.md#85-unknown-values); 16 copies; the order
+    of copies and the choice of subtitles as recommended defaults; no
+    capabilities; `subtitleStretchSeconds` gone; `tmdb` in `ids`.
+17. **Font collections (TTC)** (section 6.6). A copy's fonts may come
+    as a collection; `video` 0 serves single TrueType and OpenType files
+    only. Collections wait until their checks are written.

@@ -6,12 +6,10 @@ import (
 )
 
 // playbackCase is one call and its outcome: a play, progress or stop the
-// owning server judges, or (by "viewer") the capabilities a viewer's
-// server coarsens.
+// owning server judges.
 type playbackCase struct {
 	Name     string          `json:"name"`
 	Call     string          `json:"call"`
-	By       string          `json:"by,omitempty"`
 	Limits   *playbackLimits `json:"limits,omitempty"`
 	InUse    *playbackUse    `json:"inUse,omitempty"`
 	Playback *playbackState  `json:"playback,omitempty"`
@@ -80,19 +78,21 @@ func playbackContextOf() playbackContext {
 	return playbackContext{
 		Copies: map[string][]playbackCopy{
 			pbFilmKey: {
-				{ID: "Hd8kQ2mZ", Parts: 1, Etag: "9c1e4f70", BitrateKbps: 8000, Audio: []playbackTrackInfo{{ID: "a1", Language: "en", Default: true}, {ID: "a2", Language: "fr-CA"}, {ID: "a3", Language: "en", Role: "commentary"}}, Subtitles: []string{"s4", "s5"}},
-				{ID: "Uk4nR7vT", Parts: 2, Etag: "2b7d00aa", BitrateKbps: 40000, Audio: []playbackTrackInfo{{ID: "a1", Language: "de", Default: true}, {ID: "a2", Language: "fr"}}, Subtitles: []string{"s3"}},
-				{ID: "Lw3pX9cJ", Parts: 1, Etag: "51f0c3d2", BitrateKbps: 3000, Audio: []playbackTrackInfo{{ID: "a1", Language: "ja"}, {ID: "a2", Language: "en", Role: "description"}}},
+				{ID: "Hd8kQ2mZ", Parts: 1, Etag: "9c1e4f70", BitrateKbps: 8000, Audio: []playbackTrackInfo{{ID: "a1", Language: "en", Default: true}, {ID: "a2", Language: "fr-CA", Role: "dub"}, {ID: "a3", Language: "en", Role: "commentary"}}, Subtitles: []string{"s4", "s5"}},
+				{ID: "Uk4nR7vT", Parts: 2, Etag: "2b7d00aa", BitrateKbps: 40000, Audio: []playbackTrackInfo{{ID: "a1", Language: "de", Role: "main", Default: true}, {ID: "a2", Language: "fr"}}, Subtitles: []string{"s3"}},
+				{ID: "Lw3pX9cJ", Parts: 1, Etag: "51f0c3d2", BitrateKbps: 3000, Audio: []playbackTrackInfo{{ID: "a1", Language: "ja"}, {ID: "a2", Language: "en", Role: "description"}, {ID: "a3", Language: "es", Role: "karaoke"}}},
 			},
 			"series/tmdb/1399/s1/e1":  {{ID: "Ep1aB2cD", Parts: 1, Etag: "e1e1e1e1", BitrateKbps: 5000, Audio: []playbackTrackInfo{{ID: "a1", Language: "en", Default: true}}}},
 			"movie/tmdb/348/x/Tr7aQ1": {{ID: "Xt0aZ9", Parts: 1, Etag: "77aa", BitrateKbps: 2000, Audio: []playbackTrackInfo{{ID: "a1", Language: "en"}}}},
 			pbTrackKeyA:               {{ID: "Vq3kM0aZ7pXc", Parts: 1, Etag: "7f3a9c21", BitrateKbps: 936, Audio: []playbackTrackInfo{{ID: "a0", Language: "en"}}}},
 			pbTrackKeyC:               {{ID: "Lt1", Parts: 1, Etag: "aa11", BitrateKbps: 320, Audio: []playbackTrackInfo{{ID: "a0"}}}},
 		},
-		Limits:     playbackLimits{Streams: 2, Transcodes: 1, Downloads: 1, DownloadsPerDay: 10, DownloadKbps: 20000, ScansPerDay: 1000},
-		InUse:      playbackUse{ServerTranscodesFree: 4},
-		StreamRoot: pbRoot,
-		Now:        pbNow,
+		VideoEncoders: []string{"h264", "hevc", "av1"},
+		AudioEncoders: []string{"aac", "ac3", "eac3", "opus"},
+		Limits:        playbackLimits{Streams: 2, Transcodes: 1, Downloads: 1, DownloadsPerDay: 10, DownloadKbps: 20000, ScansPerDay: 1000, ScanBytes: 33554432},
+		InUse:         playbackUse{ServerTranscodesFree: 4},
+		StreamRoot:    pbRoot,
+		Now:           pbNow,
 	}
 }
 
@@ -102,23 +102,21 @@ type pbIn struct {
 	limits     *playbackLimits
 	inUse      *playbackUse
 	playback   *playbackState
-	call, by   string
+	call       string
 }
 
 // pbJudge works out each case's outcome with the rules of playback.go.
 func pbJudge(ctx playbackContext, in []pbIn) []playbackCase {
 	var out []playbackCase
 	for _, c := range in {
-		pc := playbackCase{Name: c.name, Call: c.call, By: c.by, Limits: c.limits, InUse: c.inUse, Playback: c.playback, Text: c.text}
+		pc := playbackCase{Name: c.name, Call: c.call, Limits: c.limits, InUse: c.inUse, Playback: c.playback, Text: c.text}
 		if pc.Call == "" {
 			pc.Call = "play"
 		}
 		got, err := pbRun(ctx, pc)
 		pc.Valid, pc.Reason = reason(err)
 		pc.Output = string(got)
-		if c.by != "viewer" {
-			pc.Status, pc.Type = playbackStatus(err)
-		}
+		pc.Status, pc.Type = playbackStatus(err)
 		out = append(out, pc)
 	}
 	return out
@@ -126,9 +124,6 @@ func pbJudge(ctx playbackContext, in []pbIn) []playbackCase {
 
 // pbRun applies the rule a case names; verify_rev_playback.go calls it too.
 func pbRun(ctx playbackContext, c playbackCase) ([]byte, error) {
-	if c.By == "viewer" {
-		return playbackCoarsen([]byte(c.Text))
-	}
 	if c.Call == "play" {
 		lim, use := ctx.Limits, ctx.InUse
 		if c.Limits != nil {
@@ -160,22 +155,18 @@ func pbUse(f func(*playbackUse)) *playbackUse {
 	return &u
 }
 
-func pbCaps(members ...string) string { return `"capabilities":` + pbObj(members...) }
-
 func playbackRequestCases() []pbIn {
 	film := `"title":"` + pbFilmKey + `"`
 	play := func(name string, members ...string) pbIn { return pbIn{name: name, text: pbObj(members...)} }
-	viewer := func(name string, members ...string) pbIn {
-		return pbIn{name: name, text: pbObj(append([]string{film}, members...)...), by: "viewer"}
-	}
 	return []pbIn{
-		play("the title alone: the first copy, its default audio, the cap of 120,000", film),
-		play("every member of playback and video", film, `"purpose":"play"`, `"delivery":"transcode"`, `"transcode":{"videoCodec":"h264","maxHeight":1080,"maxBitrateKbps":8000,"audioCodec":"aac","audioChannels":2,"burnSubtitle":"s4"}`, `"audioRenditions":true`, pbCaps(`"containers":["mp4","ts"]`, `"videoCodecs":["h264"]`, `"audioCodecs":["aac"]`, `"maxHeight":1080`, `"maxAudioChannels":6`), `"startPositionMs":60000`, `"maxBitrateKbps":20000`, `"audioLanguage":"fr-CA"`, `"audioTrack":"a2"`, `"versionId":"Hd8kQ2mZ"`, `"subtitleLanguage":"fr"`, `"subtitleTrack":"s4"`),
+		play("the title alone: the baseline, the first copy and its default audio by default, no bitrate cap", film),
+		play("every member of playback and video", film, `"purpose":"play"`, `"delivery":"transcode"`, `"transcode":{"videoCodec":"h264","maxHeight":1080,"maxBitrateKbps":8000,"audioCodec":"aac","audioChannels":2,"burnSubtitle":"s4"}`, `"audioRenditions":true`, `"startPositionMs":60000`, `"maxBitrateKbps":20000`, `"audioLanguage":"fr-CA"`, `"audioTrack":"a2"`, `"versionId":"Hd8kQ2mZ"`, `"subtitleLanguage":"fr"`, `"subtitleTrack":"s4"`),
 		play("an episode by its numbers", `"title":"series/tmdb/1399/s1/e1"`),
 		play("an extra", `"title":"movie/tmdb/348/x/Tr7aQ1"`),
-		play("a track of the mb scheme", `"title":"`+pbTrackKeyA+`"`),
+		play("a track of the mb scheme: the baseline is audio only", `"title":"`+pbTrackKeyA+`"`),
 		play("a track of the local scheme", `"title":"`+pbTrackKeyC+`"`),
 		play("unknown members ignored", film, `"Title":"x"`, `"quality":"best"`, `"device":null`),
+		play("capabilities are an unknown member now: ignored, whatever they hold", film, `"capabilities":{"containers":["mp4"],"videoCodecs":"h264","maxHeight":-1}`),
 		play("a key of a kind play takes, not offered: 404", `"title":"movie/tmdb/603"`),
 		play("an episode by TMDB's episode ID, not offered: 404", `"title":"series/tmdb/1399/e63056"`),
 		play("a local film, not offered: 404", `"title":"movie/local/q3Zp0Lw8"`),
@@ -193,22 +184,28 @@ func playbackRequestCases() []pbIn {
 		{name: "a member twice: not I-JSON, 400", text: `{"title":"movie/tmdb/949","title":"movie/tmdb/603"}`},
 		play("purpose play", film, `"purpose":"play"`),
 		play("purpose in capitals: 400", film, `"purpose":"Play"`),
-		play("an unknown purpose: 400", film, `"purpose":"stream"`),
+		play("an unknown purpose, a token: 400 (purpose is closed)", film, `"purpose":"stream"`),
 		play("a purpose that isn't a string: 400", film, `"purpose":1`),
-		play("an unknown delivery: 400", film, `"delivery":"direct"`),
-		play("a delivery in capitals: 400", film, `"delivery":"FILE"`),
+		play("an unknown delivery, a token: 409 delivery-refused", film, `"delivery":"direct"`),
+		play("an unknown delivery with purpose download: 409 delivery-refused", film, `"purpose":"download"`, `"delivery":"dash"`),
+		{name: "an unknown delivery with streams all in use: 409 stream-limit-reached (step 5 before step 7)", text: pbObj(film, `"delivery":"direct"`), inUse: pbUse(func(u *playbackUse) { u.Streams = 2 })},
+		play("a delivery in capitals, not a token: 400", film, `"delivery":"FILE"`),
+		play("a delivery of 33 characters, not a token: 400", film, `"delivery":"`+strings.Repeat("d", 33)+`"`),
+		play("an empty delivery, not a token: 400", film, `"delivery":""`),
+		play("a delivery that isn't a string: 400", film, `"delivery":["file"]`),
 		play("play with delivery file", film, `"purpose":"play"`, `"delivery":"file"`),
 		play("play with delivery remux", film, `"delivery":"remux"`, `"container":"mp4"`),
-		play("play with delivery transcode", film, `"delivery":"transcode"`),
+		play("play with delivery transcode: every target left out takes the baseline's", film, `"delivery":"transcode"`),
 		play("download without delivery: 400", film, `"purpose":"download"`),
 		play("download with delivery file", film, `"purpose":"download"`, `"delivery":"file"`),
-		play("download with delivery remux: 400", film, `"purpose":"download"`, `"delivery":"remux"`, `"container":"mkv"`),
+		play("download with delivery remux: 400", film, `"purpose":"download"`, `"delivery":"remux"`, `"container":"mpegts"`),
 		play("download with a transcode naming no size: 400", film, `"purpose":"download"`, `"delivery":"transcode"`, `"transcode":{"videoCodec":"h264"}`),
 		play("download with a transcode naming maxHeight", film, `"purpose":"download"`, `"delivery":"transcode"`, `"transcode":{"maxHeight":720}`),
 		play("scan without delivery: 400", film, `"purpose":"scan"`),
 		play("scan with delivery file", film, `"purpose":"scan"`, `"delivery":"file"`),
-		play("scan with delivery remux: 400", film, `"purpose":"scan"`, `"delivery":"remux"`, `"container":"mkv"`),
+		play("scan with delivery remux: 400", film, `"purpose":"scan"`, `"delivery":"remux"`, `"container":"mpegts"`),
 		play("scan with delivery transcode: 400", film, `"purpose":"scan"`, `"delivery":"transcode"`, `"transcode":{"maxHeight":480}`),
+		play("audioRenditions true: a request, never refused", film, `"audioRenditions":true`),
 		play("audioRenditions false", film, `"audioRenditions":false`),
 		play("audioRenditions that isn't a boolean: 400", film, `"audioRenditions":"true"`),
 		play("startPositionMs 0", film, `"startPositionMs":0`),
@@ -217,11 +214,12 @@ func playbackRequestCases() []pbIn {
 		play("a negative startPositionMs: 400", film, `"startPositionMs":-1`),
 		play("startPositionMs with a fraction: 400", film, `"startPositionMs":1.0`),
 		play("startPositionMs as a string: 400", film, `"startPositionMs":"0"`),
-		play("maxBitrateKbps 0: none, the cap of 120,000", film, `"maxBitrateKbps":0`),
+		play("maxBitrateKbps 0: none, no cap", film, `"maxBitrateKbps":0`),
 		play("maxBitrateKbps at 10,000,000", film, `"maxBitrateKbps":10000000`),
 		play("maxBitrateKbps above 10,000,000: 400", film, `"maxBitrateKbps":10000001`),
 		play("maxBitrateKbps below 1,000, kept as it is", film, `"maxBitrateKbps":500`),
-		play("the lowest non-zero cap wins: capabilities", film, `"maxBitrateKbps":20000`, pbCaps(`"maxBitrateKbps":15000`)),
+		play("maxBitrateKbps not a whole 1,000, kept as it is", film, `"maxBitrateKbps":25999`),
+		{name: "the lowest non-zero cap wins: the pairing's", text: pbObj(film, `"maxBitrateKbps":20000`), limits: pbLim(func(l *playbackLimits) { l.BitrateKbps = 15000 })},
 		play("audioLanguage of 12 characters, a valid tag", film, `"audioLanguage":"abcdefgh-ijk"`),
 		play("audioLanguage fre, not the form a server sends: 400", film, `"audioLanguage":"fre"`),
 		play("audioLanguage fr-ca, not the form a server sends: 400", film, `"audioLanguage":"fr-ca"`),
@@ -231,75 +229,50 @@ func playbackRequestCases() []pbIn {
 		play("audioLanguage with an underscore: 400", film, `"audioLanguage":"fr_CA"`),
 		play("an empty audioLanguage: 400", film, `"audioLanguage":""`),
 		play("subtitleLanguage of 13 characters: 400", film, `"subtitleLanguage":"abcdefghijklm"`),
-		play("audioTrack a0, not a track of the copy: the default audio", film, `"audioTrack":"a0"`),
+		play("audioTrack a0, not a track of the copy: as if absent", film, `"audioTrack":"a0"`),
 		play("audioTrack a999", film, `"audioTrack":"a999"`),
 		play("audioTrack a1000: 400", film, `"audioTrack":"a1000"`),
 		play("audioTrack with a leading zero: 400", film, `"audioTrack":"a01"`),
 		play("audioTrack in capitals: 400", film, `"audioTrack":"A1"`),
 		play("audioTrack naming a subtitle: 400", film, `"audioTrack":"s4"`),
+		play("an empty audioTrack: 400", film, `"audioTrack":""`),
 		play("audioTrack that isn't a string: 400", film, `"audioTrack":1`),
 		play("subtitleTrack off", film, `"subtitleTrack":"off"`),
 		play("subtitleTrack s999", film, `"subtitleTrack":"s999"`),
 		play("subtitleTrack with leading zeros: 400", film, `"subtitleTrack":"s007"`),
 		play("subtitleTrack Off: 400", film, `"subtitleTrack":"Off"`),
+		play("an empty subtitleTrack: 400", film, `"subtitleTrack":""`),
 		play("order: a malformed audioTrack of a title not offered is 404 (step 3 before step 4)", `"title":"movie/tmdb/603"`, `"audioTrack":"a01"`),
+		play("order: a malformed burnSubtitle of a title not offered is 404 (step 3 before step 4)", `"title":"movie/tmdb/603"`, `"delivery":"transcode"`, `"transcode":{"burnSubtitle":"s04"}`),
 		{name: "order: a malformed audioTrack with streams 0 is 409 (step 2 before step 4)", text: pbObj(film, `"audioTrack":"a01"`), limits: pbLim(func(l *playbackLimits) { l.Streams = 0 })},
+		{name: "order: a malformed burnSubtitle with streams 0 is 409 (step 2 before step 4)", text: pbObj(film, `"delivery":"transcode"`, `"transcode":{"burnSubtitle":4}`), limits: pbLim(func(l *playbackLimits) { l.Streams = 0 })},
 		{name: "order: a bad startPositionMs with streams 0 is 400 (step 1 first)", text: pbObj(film, `"startPositionMs":-1`), limits: pbLim(func(l *playbackLimits) { l.Streams = 0 })},
+		{name: "order: a delivery that isn't a token with streams 0 is 400 (step 1 first)", text: pbObj(film, `"delivery":"File"`), limits: pbLim(func(l *playbackLimits) { l.Streams = 0 })},
+		{name: "order: an unknown delivery with streams 0 is 409 stream-limit-reached (step 2 before step 7)", text: pbObj(film, `"delivery":"direct"`), limits: pbLim(func(l *playbackLimits) { l.Streams = 0 })},
 		{name: "order: a title not offered with streams 0 is 409 (step 2 before step 3)", text: pbObj(`"title":"movie/tmdb/603"`), limits: pbLim(func(l *playbackLimits) { l.Streams = 0 })},
 		{name: "streams 0: 409 stream-limit-reached", text: pbObj(film), limits: pbLim(func(l *playbackLimits) { l.Streams = 0 })},
 		{name: "streams all in use: 409 stream-limit-reached", text: pbObj(film), inUse: pbUse(func(u *playbackUse) { u.Streams = 2 })},
 		{name: "one stream left", text: pbObj(film), inUse: pbUse(func(u *playbackUse) { u.Streams = 1 })},
 		{name: "downloads all in use: play is not concerned", text: pbObj(film), inUse: pbUse(func(u *playbackUse) { u.Downloads = 1 })},
-		play("versionId names a copy", film, `"versionId":"Lw3pX9cJ"`),
-		play("versionId names no copy: the first", film, `"versionId":"zzz"`),
-		play("versionId of any form, naming no copy: the first", film, `"versionId":"../x"`),
+		play("versionId names a copy: it wins", film, `"versionId":"Lw3pX9cJ"`),
+		play("versionId names no copy: the owning server chooses (default: the first)", film, `"versionId":"zzz"`),
+		play("versionId of any form, naming no copy: the owning server chooses", film, `"versionId":"../x"`),
 		play("versionId that isn't a string: 400", film, `"versionId":7`),
 		play("versionId wins over audioLanguage", film, `"versionId":"Lw3pX9cJ"`, `"audioLanguage":"fr"`),
-		play("audioLanguage: the same tag first, in any copy (fr: the second)", film, `"audioLanguage":"fr"`),
+		play("versionId and audioTrack named: no default used", film, `"versionId":"Uk4nR7vT"`, `"audioTrack":"a2"`, `"delivery":"remux"`, `"container":"mpegts"`),
+		play("default: audioLanguage, the same tag first, in any copy (fr: the second)", film, `"audioLanguage":"fr"`),
 		play("audioLanguage in another case than a server sends: 400", film, `"audioLanguage":"FR-ca"`),
-		play("audioLanguage: then the same base language (fr-FR: fr-CA of the first)", film, `"audioLanguage":"fr-FR"`),
-		play("audioLanguage: the same base language (de-AT: de of the second)", film, `"audioLanguage":"de-AT"`),
-		play("audioLanguage no copy has: the first copy, its default audio", film, `"audioLanguage":"es"`),
-		play("audioLanguage en: the title's own sound, never the commentary", film, `"audioLanguage":"en"`),
-		play("a description is never chosen by language: the first audio", film, `"versionId":"Lw3pX9cJ"`, `"audioLanguage":"en"`),
+		play("default: audioLanguage, then the same base language (fr-FR: the dub fr-CA of the first)", film, `"audioLanguage":"fr-FR"`),
+		play("default: audioLanguage, the same base language (de-AT: de, main, of the second)", film, `"audioLanguage":"de-AT"`),
+		play("default: an unknown role is never the title's own sound (es: the first copy)", film, `"audioLanguage":"es"`),
+		play("default: audioLanguage no copy has: the first copy, its default audio", film, `"audioLanguage":"it"`),
+		play("default: audioLanguage en, the title's own sound, never the commentary", film, `"audioLanguage":"en"`),
+		play("default: a description is never chosen by language: the first audio", film, `"versionId":"Lw3pX9cJ"`, `"audioLanguage":"en"`),
+		play("default: an unknown role is never chosen by language: the first audio", film, `"versionId":"Lw3pX9cJ"`, `"audioLanguage":"es"`),
 		play("audioTrack names a commentary: that track", film, `"audioTrack":"a3"`),
+		play("audioTrack names a track of an unknown role: that track", film, `"versionId":"Lw3pX9cJ"`, `"audioTrack":"a3"`),
 		play("audioTrack not of the copy: as if absent, by audioLanguage", film, `"audioTrack":"a7"`, `"audioLanguage":"fr-CA"`),
 		play("audioTrack wins over audioLanguage", film, `"audioTrack":"a1"`, `"audioLanguage":"fr-CA"`),
-		play("capabilities: unknown entries (in another case too) ignored, repeats once, sorted", film, pbCaps(`"containers":["ts","mp4","MP4","mp4","dash"]`, `"videoCodecs":["H264","hevc","h265","av1"]`, `"audioCodecs":["opus","aac","dts-hd"]`, `"audioProfiles":["lc","atmos","Atmos"]`)),
-		play("capabilities: an empty array or one of unknown entries says nothing", film, pbCaps(`"containers":[]`, `"audioCodecs":["xyz"]`, `"subtitles":["vtt"]`)),
-		play("capabilities: values not coarsened are read as they are", film, pbCaps(`"maxAudioChannels":7`, `"maxAudioSampleRate":44000`, `"maxAudioBitDepth":20`, `"maxHeight":1081`, `"maxBitrateKbps":1500`)),
-		play("capabilities: 0 means not said", film, pbCaps(`"maxAudioChannels":0`, `"maxAudioSampleRate":0`, `"maxAudioBitDepth":0`, `"maxHeight":0`, `"maxBitrateKbps":0`)),
-		play("capabilities: every number at its top", film, pbCaps(`"maxAudioChannels":64`, `"maxAudioSampleRate":768000`, `"maxAudioBitDepth":64`, `"maxHeight":100000`, `"maxBitrateKbps":10000000`)),
-		play("capabilities: maxAudioChannels above 64: 400", film, pbCaps(`"maxAudioChannels":65`)),
-		play("capabilities: maxAudioSampleRate above 768,000: 400", film, pbCaps(`"maxAudioSampleRate":768001`)),
-		play("capabilities: maxAudioBitDepth above 64: 400", film, pbCaps(`"maxAudioBitDepth":65`)),
-		play("capabilities: maxHeight above 100,000: 400", film, pbCaps(`"maxHeight":100001`)),
-		play("capabilities: maxBitrateKbps above 10,000,000: 400", film, pbCaps(`"maxBitrateKbps":10000001`)),
-		play("capabilities: a negative maxAudioChannels: 400", film, pbCaps(`"maxAudioChannels":-1`)),
-		play("capabilities: maxAudioSampleRate with a fraction: 400", film, pbCaps(`"maxAudioSampleRate":48000.0`)),
-		play("capabilities: an entry that isn't a string: 400", film, pbCaps(`"audioCodecs":["aac",1]`)),
-		play("capabilities: a null entry: 400", film, pbCaps(`"containers":["mp4",null]`)),
-		play("capabilities: a list that isn't an array: 400", film, pbCaps(`"containers":"mp4"`)),
-		play("capabilities that aren't an object: 400", film, `"capabilities":["mp4"]`),
-		play("capabilities null: 400", film, `"capabilities":null`),
-		play("capabilities: unknown members ignored", film, pbCaps(`"maxWidth":1920`, `"codecs":7`)),
-		play("capabilities: dvProfiles listed, increasing, unknown ignored", film, pbCaps(`"hdr":["dv","hdr10"]`, `"dvProfiles":[8,5,6,5]`)),
-		play("capabilities: dv without dvProfiles counts as no Dolby Vision", film, pbCaps(`"hdr":["dv","hlg"]`)),
-		play("capabilities: dv with only unknown dvProfiles counts as no Dolby Vision", film, pbCaps(`"hdr":["dv"]`, `"dvProfiles":[1,2]`)),
-		play("capabilities: a dvProfiles entry that isn't an integer: 400", film, pbCaps(`"hdr":["dv"]`, `"dvProfiles":[5,"8"]`)),
-		play("capabilities: a dvProfiles entry with a fraction: 400", film, pbCaps(`"dvProfiles":[5.0]`)),
-		viewer("coarsening: lowercase, listed values only, each once, sorted", pbCaps(`"containers":["MP4","ts","mp4","dash"]`, `"videoCodecs":["HEVC","h264","h265"]`, `"audioCodecs":["EAC3","aac","aac"]`, `"audioProfiles":["Atmos","lc"]`, `"hdr":["HDR10","DV","hdr10plus"]`, `"dvProfiles":[8,5,5,6,"7"]`)),
-		viewer("coarsening: steps at their values", pbCaps(`"maxHeight":1080`, `"maxAudioChannels":6`, `"maxAudioSampleRate":48000`, `"maxAudioBitDepth":24`, `"maxBitrateKbps":1000`)),
-		viewer("coarsening: just below a step, the step below", pbCaps(`"maxHeight":1079`, `"maxAudioChannels":5`, `"maxAudioSampleRate":47999`, `"maxAudioBitDepth":23`, `"maxBitrateKbps":1999`)),
-		viewer("coarsening: below the first step, the first", pbCaps(`"maxHeight":360`, `"maxAudioChannels":1`, `"maxAudioSampleRate":22050`, `"maxAudioBitDepth":8`)),
-		viewer("coarsening: above the last step, the last", pbCaps(`"maxHeight":8640`, `"maxAudioChannels":24`, `"maxAudioSampleRate":384000`, `"maxAudioBitDepth":64`, `"maxBitrateKbps":10000000`)),
-		viewer("coarsening: between steps", pbCaps(`"maxHeight":1600`, `"maxAudioChannels":7`, `"maxAudioSampleRate":88200`, `"maxAudioBitDepth":20`, `"maxBitrateKbps":25999`)),
-		viewer("coarsening: 0 is not said", pbCaps(`"maxHeight":0`, `"maxAudioChannels":0`, `"maxAudioSampleRate":0`, `"maxAudioBitDepth":0`, `"maxBitrateKbps":0`)),
-		viewer("coarsening: capabilities.maxBitrateKbps below 1,000 left out", pbCaps(`"maxBitrateKbps":999`, `"containers":["mp4"]`)),
-		viewer("coarsening: the request's maxBitrateKbps from 1,000 up, rounded down", `"maxBitrateKbps":25999`),
-		viewer("coarsening: the request's maxBitrateKbps at 1,000", `"maxBitrateKbps":1000`),
-		viewer("coarsening: the request's maxBitrateKbps below 1,000, kept as it is", `"maxBitrateKbps":999`),
-		viewer("coarsening: the request's maxBitrateKbps 0, kept", `"maxBitrateKbps":0`),
 	}
 }
 
@@ -317,29 +290,42 @@ func playbackDeliveryCases() []pbIn {
 		play("file of a copy of several parts: 409 delivery-refused", `"delivery":"file"`, parts),
 		play("file of a copy of several parts, for a download: 409 delivery-refused", `"purpose":"download"`, `"delivery":"file"`, parts),
 		play("file of a copy of several parts, for a scan: 409 delivery-refused", `"purpose":"scan"`, `"delivery":"file"`, parts),
-		play("remux of a copy of several parts", `"delivery":"remux"`, `"container":"ts"`, parts),
+		play("remux of a copy of several parts", `"delivery":"remux"`, `"container":"mpegts"`, parts),
 		play("transcode of a copy of several parts", `"delivery":"transcode"`, parts),
-		play("no delivery, a copy of several parts: the owning server decides (HLS)", parts),
+		play("no delivery, a copy of several parts: the baseline", parts),
 		play("file at a cap equal to the copy's bitrate", `"delivery":"file"`, `"maxBitrateKbps":8000`),
 		play("file at a cap below the copy's bitrate: 409 delivery-refused", `"delivery":"file"`, `"maxBitrateKbps":7999`),
-		play("remux above the cap: 409 delivery-refused", `"delivery":"remux"`, `"container":"mkv"`, parts, `"maxBitrateKbps":20000`),
-		play("file above the capabilities' cap: 409 delivery-refused", `"delivery":"file"`, pbCaps(`"maxBitrateKbps":7000`)),
+		play("a remux of 40,000 kbit/s with no cap: no ceiling of its own", `"delivery":"remux"`, `"container":"mp4"`, parts),
+		play("remux above the cap: 409 delivery-refused", `"delivery":"remux"`, `"container":"mpegts"`, parts, `"maxBitrateKbps":20000`),
 		{name: "file above the pairing's bitrateKbps: 409 delivery-refused", text: pbObj(film, `"delivery":"file"`), limits: pbLim(func(l *playbackLimits) { l.BitrateKbps = 5000 })},
 		{name: "the pairing's bitrateKbps is a cap: the lowest", text: pbObj(film, `"maxBitrateKbps":20000`), limits: pbLim(func(l *playbackLimits) { l.BitrateKbps = 9000 })},
 		play("a transcode above the cap is not refused for bandwidth", `"delivery":"transcode"`, `"maxBitrateKbps":2000`),
-		play("no delivery above the cap: the owning server decides", `"maxBitrateKbps":2000`),
+		play("no delivery above the cap: the baseline", `"maxBitrateKbps":2000`),
 		play("remux without container: 400", `"delivery":"remux"`),
 		play("container with delivery file: 400", `"delivery":"file"`, `"container":"mp4"`),
 		play("container without delivery: 400", `"container":"mp4"`),
-		play("container in capitals: 400", `"delivery":"remux"`, `"container":"MKV"`),
-		play("container other: 400", `"delivery":"remux"`, `"container":"other"`),
-		play("container avi (known for conversion)", `"delivery":"remux"`, `"container":"avi"`),
-		play("container that isn't a string: 400", `"delivery":"remux"`, `"container":["mkv"]`),
+		play("container with an unknown delivery: 400", `"delivery":"dash"`, `"container":"mp4"`),
+		play("container mpegts", `"delivery":"remux"`, `"container":"mpegts"`),
+		play("container mp4 (fragmented MP4)", `"delivery":"remux"`, `"container":"mp4"`),
+		play("container matroska, a token: 409 delivery-refused", `"delivery":"remux"`, `"container":"matroska"`),
+		play("container ts, not ffmpeg's name: 409 delivery-refused", `"delivery":"remux"`, `"container":"ts"`),
+		play("container other: 409 delivery-refused", `"delivery":"remux"`, `"container":"other"`),
+		play("container in capitals, not a token: 400", `"delivery":"remux"`, `"container":"MP4"`),
+		play("an empty container, not a token: 400", `"delivery":"remux"`, `"container":""`),
+		play("container that isn't a string: 400", `"delivery":"remux"`, `"container":["mp4"]`),
 		tc("transcode, every target", `{"videoCodec":"hevc","maxHeight":2160,"maxBitrateKbps":30000,"audioCodec":"eac3","audioChannels":6,"burnSubtitle":"s5"}`),
-		tc("transcode, no targets: each the owning server's choice", `{}`),
+		tc("transcode, no targets: each the baseline's (h264, the copy's height, aac, 2 channels)", `{}`),
+		tc("transcode, only maxHeight: the others the baseline's", `{"maxHeight":720}`),
 		tc("transcode, unknown members ignored", `{"maxHeight":720,"preset":"fast"}`),
-		tc("transcode videoCodec outside the list: 400", `{"videoCodec":"h265"}`),
-		tc("transcode videoCodec in capitals: 400", `{"videoCodec":"H264"}`),
+		tc("transcode videoCodec av1, an encoder the owning server has", `{"videoCodec":"av1"}`),
+		tc("transcode videoCodec vvc, a token it doesn't encode: 409 delivery-refused", `{"videoCodec":"vvc"}`),
+		tc("transcode videoCodec h265, a token it doesn't know: 409 delivery-refused", `{"videoCodec":"h265"}`),
+		tc("transcode videoCodec in capitals, not a token: 400", `{"videoCodec":"H264"}`),
+		tc("transcode videoCodec of 33 characters, not a token: 400", `{"videoCodec":"`+strings.Repeat("h", 33)+`"}`),
+		tc("transcode videoCodec that isn't a string: 400", `{"videoCodec":264}`),
+		tc("transcode audioCodec opus", `{"audioCodec":"opus"}`),
+		tc("transcode audioCodec flac, a token it doesn't encode: 409 delivery-refused", `{"audioCodec":"flac"}`),
+		tc("transcode audioCodec in capitals, not a token: 400", `{"audioCodec":"AAC"}`),
 		tc("transcode maxHeight 480", `{"maxHeight":480}`),
 		tc("transcode maxHeight 4320", `{"maxHeight":4320}`),
 		tc("transcode maxHeight not of the six: 400", `{"maxHeight":1000}`),
@@ -350,7 +336,6 @@ func playbackDeliveryCases() []pbIn {
 		tc("transcode maxBitrateKbps not a whole 1,000: 400", `{"maxBitrateKbps":1500}`),
 		tc("transcode maxBitrateKbps above 10,000,000: 400", `{"maxBitrateKbps":10001000}`),
 		tc("transcode maxBitrateKbps is a cap: the lowest wins", `{"maxBitrateKbps":4000}`, `"maxBitrateKbps":20000`),
-		tc("transcode audioCodec outside the list: 400", `{"audioCodec":"AAC"}`),
 		tc("transcode audioChannels 2", `{"audioChannels":2}`),
 		tc("transcode audioChannels 8", `{"audioChannels":8}`),
 		tc("transcode audioChannels not 2, 6 or 8: 400", `{"audioChannels":5}`),
@@ -360,17 +345,21 @@ func playbackDeliveryCases() []pbIn {
 		tc("burnSubtitle with a leading zero: 400", `{"burnSubtitle":"s04"}`),
 		tc("burnSubtitle off: 400", `{"burnSubtitle":"off"}`),
 		tc("burnSubtitle a number: 400", `{"burnSubtitle":4}`),
+		tc("burnSubtitle null: 400", `{"burnSubtitle":null}`),
 		tc("a transcode that isn't an object: 400", `"h264"`),
 		play("a transcode object with delivery file: 400", `"delivery":"file"`, `"transcode":{}`),
 		play("a transcode object without delivery: 400", `"transcode":{"maxHeight":720}`),
 		{name: "transcode with the pairing's transcodes all used: 503 server-busy", text: pbObj(film, `"delivery":"transcode"`), inUse: pbUse(func(u *playbackUse) { u.Transcodes = 1 })},
 		{name: "transcode with transcodes 0: 503 server-busy", text: pbObj(film, `"delivery":"transcode"`), limits: pbLim(func(l *playbackLimits) { l.Transcodes = 0 })},
 		{name: "transcode with the server's budget used: 503 server-busy", text: pbObj(film, `"delivery":"transcode"`), inUse: pbUse(func(u *playbackUse) { u.ServerTranscodesFree = 0 })},
-		{name: "remux with the transcodes all used: no transcode needed", text: pbObj(film, `"delivery":"remux"`, `"container":"mkv"`), inUse: pbUse(func(u *playbackUse) { u.Transcodes = 1; u.ServerTranscodesFree = 0 })},
+		{name: "a codec it doesn't encode with the transcodes all used: 409 delivery-refused (step 7 before step 8)", text: pbObj(film, `"delivery":"transcode"`, `"transcode":{"videoCodec":"vvc"}`), inUse: pbUse(func(u *playbackUse) { u.Transcodes = 1 })},
+		{name: "remux with the transcodes all used: no transcode needed", text: pbObj(film, `"delivery":"remux"`, `"container":"mpegts"`), inUse: pbUse(func(u *playbackUse) { u.Transcodes = 1; u.ServerTranscodesFree = 0 })},
 		{name: "file with the transcodes all used: no transcode needed", text: pbObj(film, `"delivery":"file"`), inUse: pbUse(func(u *playbackUse) { u.Transcodes = 1; u.ServerTranscodesFree = 0 })},
 		{name: "streams all in use before delivery: 409 stream-limit-reached", text: pbObj(film, `"delivery":"file"`, parts), inUse: pbUse(func(u *playbackUse) { u.Streams = 2 })},
+		{name: "a container it doesn't make with streams all in use: 409 stream-limit-reached (step 5 before step 7)", text: pbObj(film, `"delivery":"remux"`, `"container":"matroska"`), inUse: pbUse(func(u *playbackUse) { u.Streams = 2 })},
 		{name: "a track, file", text: pbObj(`"title":"`+pbTrackKeyA+`"`, `"delivery":"file"`)},
-		{name: "a track, transcode: video targets read, ignored for a title without a picture", text: pbObj(`"title":"`+pbTrackKeyA+`"`, `"delivery":"transcode"`, `"transcode":{"videoCodec":"h264","maxHeight":720,"audioCodec":"aac"}`)},
+		{name: "a track, transcode: video targets ignored for a title without a picture, an unknown one too", text: pbObj(`"title":"`+pbTrackKeyA+`"`, `"delivery":"transcode"`, `"transcode":{"videoCodec":"vvc","maxHeight":720,"audioCodec":"aac"}`)},
+		{name: "a track, transcode with no targets: aac, 2 channels", text: pbObj(`"title":"`+pbTrackKeyA+`"`, `"delivery":"transcode"`)},
 	}
 }
 
@@ -436,10 +425,14 @@ func playbackScanCases() []pbIn {
 	live := &playbackState{State: "active", Purpose: "scan", Title: pbFilmKey, PlayedAt: pbNow - 60}
 	id := pbObj(`"id":"` + pbPID + `"`)
 	return []pbIn{
-		{name: "file: scansPerDay, a 10-minute ticket, the idle rule, 32 MiB", text: file},
+		{name: "file: scansPerDay, a 10-minute ticket, the idle rule, the pairing's scanBytes", text: file},
+		{name: "no scanBytes sent: the floor, 4 MiB", text: file, limits: pbLim(func(l *playbackLimits) { l.ScanBytes = 0 })},
+		{name: "scanBytes at 1 GiB", text: file, limits: pbLim(func(l *playbackLimits) { l.ScanBytes = 1 << 30 })},
+		{name: "scanBytes at its floor", text: file, limits: pbLim(func(l *playbackLimits) { l.ScanBytes = 4 << 20 })},
+		{name: "an unknown delivery: 409 delivery-refused", text: sc(`"delivery":"blocks"`)},
 		{name: "a track", text: pbObj(`"title":"`+pbTrackKeyA+`"`, `"purpose":"scan"`, `"delivery":"file"`)},
 		{name: "no delivery: 400", text: sc()},
-		{name: "remux: 400", text: sc(`"delivery":"remux"`, `"container":"mkv"`)},
+		{name: "remux: 400", text: sc(`"delivery":"remux"`, `"container":"mpegts"`)},
 		{name: "transcode: 400", text: sc(`"delivery":"transcode"`, `"transcode":{"maxHeight":720}`)},
 		{name: "a copy of several parts: 409 delivery-refused", text: sc(`"delivery":"file"`, `"versionId":"Uk4nR7vT"`)},
 		{name: "scansPerDay 0: 409 stream-limit-reached", text: file, limits: pbLim(func(l *playbackLimits) { l.ScansPerDay = 0 })},
@@ -489,9 +482,12 @@ func playbackReportCases() []pbIn {
 		p("a negative positionMs: 400", active, idm, `"positionMs":-1`),
 		p("paused that isn't a boolean: 400", active, idm, `"paused":"yes"`),
 		p("no id: 400", active, `"positionMs":0`),
-		p("an id of another form: 400", active, `"id":"play_ABCDEFGHIJKLMNOPQRSTUVWXYZ"`),
-		p("an id one character short: 400", active, `"id":"play_abcdefghijklmnopqrstuvwxy"`),
-		p("an id with 1, outside base32: 400", active, `"id":"play_abcdefghijklmnopqrstuvwxy1"`),
+		p("an id of capitals and digits, the opaque form", active, `"id":"Pb7Q-x_9"`),
+		p("an id of 64 characters", active, `"id":"`+strings.Repeat("P", 64)+`"`),
+		p("an id of 65 characters: 400", active, `"id":"`+strings.Repeat("P", 65)+`"`),
+		p("an empty id: 400", active, `"id":""`),
+		p("an id with a dot: 400", active, `"id":"play.1"`),
+		p("an id that isn't a string: 400", active, `"id":7`),
 		{name: "a body that isn't an object: 400", call: "progress", playback: active, text: `"` + pbPID + `"`},
 		p("progress of an ended playback: 410 playback-stopped", ended, idm, `"positionMs":0`),
 		p("progress of an ended playback, with at: 410 (not a download)", ended, idm, t(pbNow-60)),
@@ -503,6 +499,7 @@ func playbackReportCases() []pbIn {
 		p("music: no title, the request's", queued, idm, `"positionMs":12000`),
 		p("music: a title neither the request's nor of the queue: 400", queued, idm, `"title":"track/local/Other1"`),
 		p("music: a title that isn't a string: 400", queued, idm, `"title":7`),
+		p("music: an empty title, neither the request's nor of the queue: 400", queued, idm, `"title":""`),
 		p("a film with its own title", active, idm, `"title":"`+pbFilmKey+`"`),
 		p("a film with another title: 400", active, idm, `"title":"movie/tmdb/603"`),
 		s("stop: position recorded, the playback ends", active, idm, `"positionMs":600000`),
@@ -514,6 +511,9 @@ func playbackReportCases() []pbIn {
 		s("a second stop: 200, nothing changes", ended, idm),
 		s("stop of another pairing's or an unknown playback: 200, nothing changes", unknown, idm),
 		s("stop without id: 400", active, `"positionMs":0`),
+		s("stop with paused: unknown there, ignored", active, idm, `"paused":true`),
+		s("stop with paused null: unknown there, ignored", active, idm, `"paused":null`),
+		s("stop with paused of another type: ignored", active, idm, `"paused":"yes"`),
 		s("music: stop with the title of the queue's last entry", queued, idm, `"title":"`+pbTrackKeyC+`"`, `"positionMs":30000`),
 		s("music: stop with the request's title", queued, idm, `"title":"`+pbTrackKeyA+`"`, `"positionMs":30000`),
 		s("music: stop without title, the request's", queued, idm, `"positionMs":30000`),
@@ -539,14 +539,17 @@ func playbackAnswerCases() []playbackAnswerCase {
 	type in struct{ name, delivery, text string }
 	list := []in{
 		{"every member of playback, cleaned", "", pbObj(id, `"method":"transcode"`, hls, etag, `"positionMs":60000`, `"durationMs":8160000`,
-			`"versions":[{"id":"Hd8kQ2mZ","name":"1080p"},{"id":"Uk4nR7vT","name":"4K HDR"}]`, `"versionId":"Hd8kQ2mZ"`,
-			`"audioTracks":[{"id":"a1","language":"en","channels":6,"default":true},{"id":"a2","language":"fr-CA","channels":2},{"id":"a3","language":"en","channels":2,"role":"commentary"}]`,
-			`"audioTrack":"a1"`, `"maxBitrateKbps":20000`, `"info":{"reasons":["codec"],"container":"ts","bitrateKbps":8000}`)},
+			`"versionId":"Hd8kQ2mZ"`,
+			`"audioTracks":[{"id":"a1","language":"en","channels":6,"default":true},{"id":"a2","language":"fr-CA","channels":2,"role":"dub"},{"id":"a3","language":"en","channels":2,"role":"commentary"}]`,
+			`"audioTrack":"a1"`, `"audioRenditions":true`, `"maxBitrateKbps":20000`)},
+		{"versions and info, dropped members, are unknown: ignored", "", tr(`"versions":[{"id":"Hd8kQ2mZ","name":"1080p"}]`, `"info":{"reasons":["codec"],"container":"mpegts","bitrateKbps":8000}`)},
+		{"versions that isn't an array: ignored, an unknown member", "", tr(`"versions":{"id":"v1"}`)},
 		{"the required members alone", "", tr()},
 		{"delivery file: method direct, the file", "file", pbObj(id, `"method":"direct"`, file, etag, pos)},
 		{"delivery remux: method remux, HLS", "remux", pbObj(id, `"method":"remux"`, hls, etag, pos)},
 		{"no delivery: direct as HLS", "", pbObj(id, `"method":"direct"`, hls, etag, pos)},
-		{"no delivery: direct as the file", "", pbObj(id, `"method":"direct"`, file, etag, pos)},
+		{"no delivery: the file is refused, the baseline is HLS", "", pbObj(id, `"method":"direct"`, file, etag, pos)},
+		{"no delivery: remux as HLS", "", pbObj(id, `"method":"remux"`, hls, etag, pos)},
 		{"delivery file, method remux: refused", "file", pbObj(id, `"method":"remux"`, hls, etag, pos)},
 		{"delivery file, method direct as HLS: refused", "file", pbObj(id, `"method":"direct"`, hls, etag, pos)},
 		{"delivery transcode, method direct: refused", "transcode", pbObj(id, `"method":"direct"`, file, etag, pos)},
@@ -554,8 +557,11 @@ func playbackAnswerCases() []playbackAnswerCase {
 		{"method in capitals: refused", "", pbObj(id, `"method":"Direct"`, file, etag, pos)},
 		{"an unknown method: refused", "", pbObj(id, `"method":"copy"`, hls, etag, pos)},
 		{"no method: refused", "", pbObj(id, hls, etag, pos)},
-		{"an id in capitals: refused", "", pbObj(`"id":"play_ABCDEFGHIJKLMNOPQRSTUVWXYZ"`, `"method":"transcode"`, hls, etag, pos)},
-		{"an id of 27 characters after play_: refused", "", pbObj(`"id":"`+pbPID+`a"`, `"method":"transcode"`, hls, etag, pos)},
+		{"an id in capitals and digits, the opaque form", "", pbObj(`"id":"Pb7Q-x_9"`, `"method":"transcode"`, hls, etag, pos)},
+		{"an id of 64 characters", "", pbObj(`"id":"`+long+`"`, `"method":"transcode"`, hls, etag, pos)},
+		{"an id of 65 characters: refused", "", pbObj(`"id":"`+long+`A"`, `"method":"transcode"`, hls, etag, pos)},
+		{"an id with a dot: refused", "", pbObj(`"id":"play.1"`, `"method":"transcode"`, hls, etag, pos)},
+		{"an empty id: refused", "", pbObj(`"id":""`, `"method":"transcode"`, hls, etag, pos)},
 		{"no id: refused", "", pbObj(`"method":"transcode"`, hls, etag, pos)},
 		{"stream under another root: refused", "", url("https://b.example.org/api/v1/stream/Tk3vQ9xY/master.m3u8")},
 		{"stream over http: refused", "", url("http://a.example.org/api/v1/stream/Tk3vQ9xY/master.m3u8")},
@@ -588,17 +594,22 @@ func playbackAnswerCases() []playbackAnswerCase {
 		{"a negative durationMs: set to 0", "", tr(`"durationMs":-5`)},
 		{"durationMs with a fraction: refused", "", tr(`"durationMs":2.5`)},
 		{"durationMs null: refused", "", tr(`"durationMs":null`)},
-		{"versions: bad IDs and entries dropped, names made plain and cut to 32", "", tr(`"versions":[{"id":"ok_1","name":"  Director's\tcut​ "},{"id":"a b","name":"x"},7,{"name":"no id"},{"id":"` + long + `","name":"` + strings.Repeat("n", 40) + `"},{"id":"` + long + `A"},{"id":"v2","name":5}]`)},
-		{"versions that isn't an array: refused", "", tr(`"versions":{"id":"v1"}`)},
 		{"versionId of another form: cleared", "", tr(`"versionId":"../v1"`)},
 		{"versionId that isn't a string: refused", "", tr(`"versionId":1`)},
-		{"audioTracks: bad IDs dropped, off kept, unknown members and bad values dropped", "", tr(`"audioTracks":[{"id":"a 1"},{"id":"off"},{"id":"a1","label":"English","codec":"aac","role":"director","channels":"6","default":"true","forced":false,"hearingImpaired":true},{"id":"a2","language":"not_a_tag"},"a3",{"id":1}]`)},
+		{"audioTracks: bad IDs dropped, off kept, unknown members and bad values dropped", "", tr(`"audioTracks":[{"id":"a 1"},{"id":"off"},{"id":"a1","label":"English","codec":"aac","role":"Director","channels":"6","default":"true","forced":false,"hearingImpaired":true},{"id":"a2","language":"not_a_tag"},"a3",{"id":1}]`)},
+		{"track roles: tokens kept, unknown ones too; others dropped", "", tr(`"audioTracks":[{"id":"a1","role":"main"},{"id":"a2","role":"supplementary"},{"id":"a3","role":"karaoke"},{"id":"a4","role":"x.y_z-1"},{"id":"a5","role":""},{"id":"a6","role":"` + strings.Repeat("r", 33) + `"},{"id":"a7","role":7}]`)},
+		{"track channels: 1 to 64 kept, others dropped", "", tr(`"audioTracks":[{"id":"a1","channels":1},{"id":"a2","channels":64},{"id":"a3","channels":0},{"id":"a4","channels":65},{"id":"a5","channels":-2},{"id":"a6","channels":2.5}]`)},
 		{"track languages kept only as valid tags", "", tr(`"audioTracks":[{"id":"a1","language":"fr-CA"},{"id":"a2","language":"fre"},{"id":"a3","language":"fr-ca"},{"id":"a4","language":"e"},{"id":"a5","language":"zh-Hant-TW"}]`)},
 		{"audioTracks that isn't an array: refused", "", tr(`"audioTracks":"a1"`)},
 		{"audioTrack of another form: cleared", "", tr(`"audioTrack":"a 1"`)},
+		{"audioRenditions true with HLS: kept", "", tr(`"audioRenditions":true`)},
+		{"audioRenditions false: none made, nothing kept", "", tr(`"audioRenditions":false`)},
+		{"audioRenditions true with the file: dropped", "file", pbObj(id, `"method":"direct"`, file, etag, pos, `"audioRenditions":true`)},
+		{"audioRenditions that isn't a boolean: refused", "", tr(`"audioRenditions":"true"`)},
+		{"audioRenditions null: refused", "", tr(`"audioRenditions":null`)},
 		{"maxBitrateKbps above 10,000,000: dropped", "", tr(`"maxBitrateKbps":10000001`)},
 		{"maxBitrateKbps that isn't an integer: refused", "", tr(`"maxBitrateKbps":"20000"`)},
-		{"title and next dropped whatever they hold", "", tr(`"title":"movie/tmdb/603"`, `"next":{"title":"movie/tmdb/604"}`)},
+		{"unknown members, title and next among them, ignored", "", tr(`"title":"movie/tmdb/603"`, `"next":{"title":"movie/tmdb/604"}`)},
 		{"an answer that isn't an object: refused", "", `[]`},
 	}
 	var out []playbackAnswerCase
@@ -642,8 +653,8 @@ func playbackRestartCases() []playbackRestartCase {
 		{"a play of another copy: not a restart", reading, `{"title":"` + pbFilmKey + `","versionId":"Lw3pX9cJ","delivery":"file"}`, 200, "", ok},
 		{"a play without versionId: not a restart", reading, `{"title":"` + pbFilmKey + `","delivery":"file"}`, 200, "", ok},
 		{"a play of another purpose: not a restart", reading, `{"title":"` + pbFilmKey + `","purpose":"download","versionId":"Hd8kQ2mZ","delivery":"file"}`, 200, "", ok},
-		{"a play of another delivery: not a restart", reading, `{"title":"` + pbFilmKey + `","versionId":"Hd8kQ2mZ","delivery":"remux","container":"mkv"}`, 200, "", ans("9c1e4f70", "remux", "master.m3u8")},
-		{"a reading of a remux: never restarted", remux, `{"title":"` + pbFilmKey + `","versionId":"Hd8kQ2mZ","delivery":"remux","container":"mkv"}`, 200, "", ans("9c1e4f70", "remux", "master.m3u8")},
+		{"a play of another delivery: not a restart", reading, `{"title":"` + pbFilmKey + `","versionId":"Hd8kQ2mZ","delivery":"remux","container":"mpegts"}`, 200, "", ans("9c1e4f70", "remux", "master.m3u8")},
+		{"a reading of a remux: never restarted", remux, `{"title":"` + pbFilmKey + `","versionId":"Hd8kQ2mZ","delivery":"remux","container":"mpegts"}`, 200, "", ans("9c1e4f70", "remux", "master.m3u8")},
 		{"a download past its 24 hours, the same etag: goes on", dl, `{"title":"` + pbFilmKey + `","purpose":"download","versionId":"Hd8kQ2mZ","delivery":"file"}`, 200, "", ok},
 		{"a download past its 24 hours, another etag: failed", dl, `{"title":"` + pbFilmKey + `","purpose":"download","versionId":"Hd8kQ2mZ","delivery":"file"}`, 200, "", ans("0d0d0d0d", "direct", "file")},
 	}
@@ -657,17 +668,23 @@ func playbackRestartCases() []playbackRestartCase {
 
 func playbackLimitsCases() []playbackLimitsCase {
 	list := []struct{ name, text string }{
-		{"every member", `{"streams":2,"transcodes":1,"bitrateKbps":0,"downloads":1,"downloadsPerDay":10,"downloadKbps":20000,"scansPerDay":1000}`},
-		{"the new members absent: 0, no downloads, no scan access", `{"streams":2,"transcodes":1,"bitrateKbps":20000}`},
+		{"every member", `{"streams":2,"transcodes":1,"bitrateKbps":0,"downloads":1,"downloadsPerDay":10,"downloadKbps":20000,"scansPerDay":1000,"scanBytes":33554432}`},
+		{"the new members absent: 0, no downloads, no scan access, scanBytes its floor", `{"streams":2,"transcodes":1,"bitrateKbps":20000}`},
 		{"an empty object", `{}`},
-		{"every member at its top", `{"streams":50,"transcodes":50,"bitrateKbps":1000000,"downloads":50,"downloadsPerDay":10000,"downloadKbps":1000000,"scansPerDay":1000000}`},
-		{"every member above its top: each ignored alone", `{"streams":51,"transcodes":51,"bitrateKbps":1000001,"downloads":51,"downloadsPerDay":10001,"downloadKbps":1000001,"scansPerDay":1000001}`},
+		{"every member at its top", `{"streams":1000,"transcodes":1000,"bitrateKbps":1000000,"downloads":1000,"downloadsPerDay":10000,"downloadKbps":1000000,"scansPerDay":1000000,"scanBytes":1073741824}`},
+		{"every member above its top: each ignored alone", `{"streams":1001,"transcodes":1001,"bitrateKbps":1000001,"downloads":1001,"downloadsPerDay":10001,"downloadKbps":1000001,"scansPerDay":1000001,"scanBytes":1073741825}`},
+		{"a pool of 51 streams and downloads, above the old top", `{"streams":51,"transcodes":51,"downloads":51}`},
+		{"scanBytes at its floor, 4 MiB", `{"scansPerDay":10,"scanBytes":4194304}`},
+		{"scanBytes below its floor: ignored, the floor", `{"scansPerDay":10,"scanBytes":4194303}`},
+		{"scanBytes 0: out of range, the floor", `{"scansPerDay":10,"scanBytes":0}`},
+		{"scanBytes as a string: the limits ignored", `{"scansPerDay":10,"scanBytes":"33554432"}`},
 		{"negative members: each ignored alone", `{"streams":-1,"downloads":-1,"scansPerDay":-1,"transcodes":0}`},
 		{"transcodes above streams: ignored", `{"streams":2,"transcodes":3}`},
 		{"transcodes equal to streams", `{"streams":3,"transcodes":3}`},
 		{"downloads 0 with a daily cap: no downloads", `{"downloads":0,"downloadsPerDay":10,"downloadKbps":20000}`},
 		{"scansPerDay 1: scan access", `{"scansPerDay":1}`},
 		{"music's audioStreams and audioTranscodes", `{"streams":2,"transcodes":1,"audioStreams":4,"audioTranscodes":2}`},
+		{"audioStreams at 1,000, audioTranscodes above it: ignored", `{"audioStreams":1000,"audioTranscodes":1001}`},
 		{"audioTranscodes above audioStreams: ignored", `{"audioStreams":1,"audioTranscodes":2}`},
 		{"unknown members ignored", `{"streams":2,"Downloads":5,"uploads":"x"}`},
 		{"a member as a string: the limits ignored", `{"streams":2,"downloads":"1"}`},
@@ -688,14 +705,14 @@ func playbackFile() v0PlaybackFile {
 	ctx := playbackContextOf()
 	return v0PlaybackFile{
 		About: []string{
-			"MSFP playback part version 0 (spec/v0/playback.md, with video section 5.1's request members and capabilities, music section 5.2's title in progress and stop, media section 1's stream URLs), as revised by proposal 16. Generated by tools/vectors; no implementation has produced them yet.",
-			"context: the owning server's copies of each title it offers the caller (parts above 1: a copy of several files), its own bitrate cap (ownCapKbps, 0: none), the pairing's limits and what is in use, its stream root, and now (Unix seconds). A case's limits or inUse replaces the context's for that case.",
-			"requests, deliveries, downloads, scans, reports: call play, progress or stop; text is the request body as received. valid true: status 200 and output; valid false: status and type, the refusal (playback sections 2.2, 2.5, 3, 4). For play, output is what the owning server starts: the request as read (capabilities with unknown entries ignored, each once, sorted; 0 left out; dv only with dvProfiles), the copy (versionId) and audio (audioTrack) of section 2.6, the start position, the bitrate cap of step 6 (play only), the speed cap (downloadKbps, downloads only), what it counts against, which transcodes it takes, the ticket's lifetime and idle rule, a scan's read cap. Members in that order, absent ones left out. play doesn't model the choice of method without delivery, nor music's queue (in music.json).",
-			"requests with by \"viewer\": text is what the device says, output what the viewer's server sends once coarsened (playback section 2.1, video section 5.1); always valid.",
+			"MSFP playback part version 0 (spec/v0/playback.md, with video section 5.1's request members, music section 5.2's title in progress and stop, media section 1's stream URLs), as revised by proposals 16 and 17. Generated by tools/vectors; no implementation has produced them yet.",
+			"context: the owning server's copies of each title it offers the caller (parts above 1: a copy of several files; audio tracks with their roles), the codecs it encodes (videoEncoders, audioEncoders: a transcode codec outside them is refused with 409 delivery-refused), its own bitrate cap (ownCapKbps, 0: none), the pairing's limits (scanBytes 0: none sent) and what is in use, its stream root, and now (Unix seconds). A case's limits or inUse replaces the context's for that case.",
+			"requests, deliveries, downloads, scans, reports: call play, progress or stop; text is the request body as received. valid true: status 200 and output; valid false: status and type, the refusal (playback sections 2.2, 2.5, 3, 4). Unknown values follow core section 8.5: a token not of a list is 409 delivery-refused where it names what to serve (delivery, container, a transcode codec), a value that isn't a token 400.",
+			"For play, output is what the owning server starts: the request as read; baseline, without delivery, what it serves (playback section 2.7); a transcode's targets with the baseline's values for those left out (maxHeight left out: the copy's own height; video targets dropped for a track); the copy (versionId) and audio (audioTrack); defaults true when either was not named by the request, so that it follows section 2.6's recommended defaults: an owning server that chooses otherwise still conforms, and only these two members may then differ; the start position, the bitrate cap of step 6 (play only, absent: none), the speed cap (downloadKbps, downloads only), what it counts against, which transcodes it takes, the ticket's lifetime and idle rule, a scan's read cap (the pairing's scanBytes, 4 MiB when none is sent). Members in that order, absent ones left out. play doesn't model the choice of method without delivery, nor music's queue (in music.json).",
 			"progress and stop cases carry playback: the owning server's playback the id names (state started, active or ended; unknown: another pairing's or never given), its purpose, title and queue, when its play was answered (playedAt), the at of the latest report it has (lastAt). output: effect (recorded, recorded and ended, ended, ignored, unchanged), the state after, and what is recorded.",
-			"answers: text is a play answer, delivery what the request asked, catalogEtag the copy's etag in the catalog. valid false: the viewer's server sends stop and gives up. valid true: output is what it keeps of playback's own members, in the order id, method, stream, etag, positionMs, durationMs, versions, versionId, audioTracks, audioTrack, maxBitrateKbps, then readTitleAgain when the etag isn't the catalog's. info, title and next are not kept; video's members (subtitleTracks and the rest) are video's.",
+			"answers: text is a play answer, delivery what the request asked, catalogEtag the copy's etag in the catalog. valid false: the viewer's server sends stop and gives up. valid true: output is what it keeps of playback's own members, in the order id, method, stream, etag, positionMs, durationMs, versionId, audioTracks, audioTrack, audioRenditions (only when true, with hls), maxBitrateKbps, then readTitleAgain when the etag isn't the catalog's. Unknown members (versions, info, title, next) are not kept; video's members (subtitleTracks and the rest) are video's.",
 			"restarts: a viewer's server reading a playback's file (reading: its copy, etag, purpose, delivery and the byte it was at) sends request, a new play; status (and type) is the answer's, answer its body when 200. valid true: it goes on reading at offset; false: output says whether it stops the new playback, fails the read and reads the title again from titles (playback section 2.7).",
-			"limits: text is the limits object of a libraries answer; valid false: ignored whole; output is what the caller keeps, the new members 0 when absent, and whether it offers downloads and asks for scans (playback section 5).",
+			"limits: text is the limits object of a libraries answer; valid false: ignored whole; output is what the caller keeps, the new members 0 when absent (scanBytes its floor, 4,194,304, when absent or out of range), and whether it offers downloads and asks for scans (playback section 5).",
 		},
 		Context:    ctx,
 		Requests:   pbJudge(ctx, playbackRequestCases()),

@@ -1,7 +1,7 @@
 # Proposal 16: The revision of version 0
 
 Status: Adopted (2026-11-22) as a whole, the unmarked points included;
-being written into spec/v0.
+written into spec/v0 (with proposal 17).
 Absorbs [proposal 15](0015-copies-in-the-catalog.md) (copies in the
 catalog) and its settled points. Every choice marked "decided" is the
 owner's, taken on 2026-11-21 and 2026-11-22.

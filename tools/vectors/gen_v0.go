@@ -284,6 +284,61 @@ type v1StrictFile struct {
 	Pages     []catalogPageCase  `json:"titlePages"`
 	Opaque    []verdict          `json:"opaqueKeyParts"`
 	Images    []catalogImageCase `json:"localImages"`
+	Tokens    []verdict          `json:"openTokens"`
+	Kinds     []libraryKindCase  `json:"libraryKinds"`
+}
+
+// libraryKindCase is a library, as JSON, and the kind a caller keeps of
+// it; kind is absent when the caller keeps none.
+type libraryKindCase struct {
+	Name    string  `json:"name"`
+	Library string  `json:"library"`
+	Kind    *string `json:"kind,omitempty"`
+}
+
+// openTokenVerdicts are values of open fields (spec/v0/core.md section
+// 8.5): kept (valid) when they are tokens, known or not.
+func openTokenVerdicts() []verdict {
+	var out []verdict
+	for _, t := range []string{"h264", "matroska", "movies", "vvc", "pcm_s24le", "hdr10plus", "dv", "a", "0", ".", "_", "-", "..",
+		"audio.drama", "x-new_kind.2", "other", strings.Repeat("a", 32), strings.Repeat("a", 33),
+		"", "H264", "Movies", "a b", "a/b", "a+b", "a:b", "é", "a\tb", " h264", "h264 ", "mixed,music"} {
+		ok, r := reason(openTokenReason(t))
+		if ok != openToken(t) {
+			panic("openToken and openTokenReason differ on " + t)
+		}
+		out = append(out, verdict{Text: t, Valid: ok, Reason: r})
+	}
+	return out
+}
+
+// libraryKindCases are libraries and the kind a caller keeps of each
+// (spec/v0/catalog.md sections 2 and 2.2).
+func libraryKindCases() []libraryKindCase {
+	var out []libraryKindCase
+	lib := func(name, kind string) {
+		body := `{"id":"L1","name":"Films"` + kind + `}`
+		k, err := catalogLibraryKind([]byte(body))
+		if err != nil {
+			panic(err)
+		}
+		out = append(out, libraryKindCase{Name: name, Library: body, Kind: k})
+	}
+	lib("a kind the part gives", `,"kind":"movies"`)
+	lib("mixed", `,"kind":"mixed"`)
+	lib("a kind no part reads, kept", `,"kind":"photos"`)
+	lib("an unknown kind, kept", `,"kind":"audiobooks"`)
+	lib("an unknown kind with . _ -, kept", `,"kind":"x.live_tv-2"`)
+	lib("other is a token like any, kept", `,"kind":"other"`)
+	lib("32 characters, kept", `,"kind":"`+strings.Repeat("k", 32)+`"`)
+	lib("absent", ``)
+	lib("empty: absent", `,"kind":""`)
+	lib("33 characters: absent", `,"kind":"`+strings.Repeat("k", 33)+`"`)
+	lib("another case: absent", `,"kind":"Movies"`)
+	lib("a space: absent", `,"kind":"home videos"`)
+	lib("not a string: absent", `,"kind":1`)
+	lib("an array: absent", `,"kind":["movies"]`)
+	return out
 }
 
 // catalogPageCases are pages of titles (spec/v0/catalog.md section 3.1).
@@ -531,6 +586,8 @@ func genV0Strict() []byte {
 			"titlePages: pages of titles (spec/v0/catalog.md section 3.1). Input: changes (a changes answer or a whole-list one), titles and gone (how many keys the page holds), bytes (the answer body's size), remain (whole list: whether titles remain after the page on the owning server), after (the request's), lastKey (the page's last title key), next (absent when the answer has none). Output: valid (the owning server may send it: at most 5,000 keys, titles and gone together; at most 3 MiB, 3,145,728 bytes, of JSON; in a whole list, next is the last key exactly when titles remain), and caller: what the caller does with it whatever valid says: fail (past the core's 4 MiB, 4,194,304 bytes: core section 3), stop (next absent, empty, or not greater than after in byte order), or ask on.",
 			"opaqueKeyParts: the opaque parts of title keys, a local title's identifier or an extra's part after x/ (spec/v0/catalog.md section 4.2): 1 to 64 characters of A-Z a-z 0-9 _ -, compared byte for byte.",
 			"localImages: the image of a local title (spec/v0/catalog.md section 4.4), on three sides. request: the owning server's answer (status, type: the problem's type) to the image request body, given parts (the content parts on between the two servers) and offered (the titles it offers the caller, with whether their description says image true): 404 not-supported with no content part with local titles on; 400 invalid-request for a malformed body; 404 not-found for a title not offered, not local, of a part that is off, of a kind without an image (only films, series, artists and albums have one), or without an image; else 200. answer: the viewer's server's check of the answer body (body) against the owning server's stream root (streamRoot, spec/v0/media.md section 1): url exactly <stream root><ticket>/image, the ticket 1 to 64 characters of A-Z a-z 0-9 _ -; valid with the ticket, or dropped (valid false). image: the image's first bytes (hex) and its whole length (size): valid when size is at most 1 MiB (1,048,576 bytes), the content is a JPEG (FF D8 FF) or a PNG (the 8-byte signature), whatever any Content-Type, and the header gives a width and a height of 1 to 4,096 pixels (a PNG's IHDR, a JPEG's frame header SOF0 to SOF15 but DHT, JPG and DAC); format jpeg or png.",
+			"openTokens: values of open fields (spec/v0/core.md section 8.5). A token is 1 to 32 characters of a-z 0-9 . _ -. In a fact (titles, play's answer) a token is kept as it is, known or not (valid true), never turned into another value; a value that isn't a token is malformed (valid false): dropped alone when the member is optional, with the entry holding it (a copy, a track, an extra) when the member is required. In a request, an unknown token is ignored where the field is a hint and refused with 409 delivery-refused where it names what to serve; only a value that isn't a token gets 400.",
+			"libraryKinds: a library (library, its JSON object) and the kind a caller keeps of it (spec/v0/catalog.md sections 2 and 2.2): the kind when it is a token, known or not; absent when the library has none, or its kind isn't a string or isn't a token.",
 		},
 		Addresses: addressVerdicts(false),
 		Codes:     codeVerdicts(core0, false),
@@ -543,5 +600,7 @@ func genV0Strict() []byte {
 		Pages:     catalogPageCases(),
 		Opaque:    catalogOpaqueVerdicts(),
 		Images:    catalogImageCases(),
+		Tokens:    openTokenVerdicts(),
+		Kinds:     libraryKindCases(),
 	})
 }

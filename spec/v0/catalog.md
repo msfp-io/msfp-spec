@@ -45,11 +45,12 @@ specifications.
   `copies` by its content part.
 - **Title key**: the text that names a title (section 4). Its form is
   defined by a content part.
-- **Scheme**: the source of the identifier in a title key. Each content
-  part defines its own: `tmdb` (The Movie Database) and `tvdb`
-  (TheTVDB) for [video](video.md#4-title-keys), `mb` (MusicBrainz) for
-  [music](music.md#2-title-keys), and `local`, the owning server's own, for both
-  (section 4.3).
+- **Scheme**: the source of the identifier in a title key, or of an
+  identifier in `ids`. The [registry](../registry.md) lists them; each
+  content part defines the key forms of its own: `tmdb` (The Movie
+  Database) and `tvdb` (TheTVDB) for [video](video.md#4-title-keys), `mb`
+  (MusicBrainz) for [music](music.md#2-title-keys), and `local`, the
+  owning server's own, for both (section 4.3).
 - **Content part**: a part that names one kind of content's titles and
   says how they play: `video` and `music` in version 0
   ([core section 10.1](core.md#101-the-parts)).
@@ -75,13 +76,16 @@ Library:
 |-------|------|---------|
 | `id` | string | the library's ID: 1 to 64 characters of `A–Z a–z 0–9 _ -` |
 | `name` | string | its name, text |
-| `kind` | string | one of `movies`, `tvshows`, `music`, `musicvideos`, `homevideos`, `boxsets`, `books`, `photos`, `mixed`, or `""` |
+| `kind` | string, optional | what the library holds: an open token ([core section 8.5](core.md#85-unknown-values)), such as `movies`, `tvshows`, `music`, `mixed`; absent when the owning server has no kind for it |
 
-`mixed` is for a library that holds several kinds; `""` is for kinds
-outside the list. Which titles a kind holds is said by the content parts:
-`movies` and `tvshows` by [video](video.md#2-libraries), `music` by
-[music](music.md#7-libraries), `mixed` by both. The other kinds are
-labels only.
+`kind` is open: a server sends the kind its media server gives the
+library, as a token, and a caller keeps a kind it doesn't know. `mixed`
+is for a library that holds several kinds. Which titles a kind holds is
+said by the content parts: `movies` and `tvshows` by
+[video](video.md#2-libraries), `music` by [music](music.md#7-libraries),
+`mixed` by both. Other kinds are labels: a caller shows them as it sees
+fit, and reads the library's titles all the same, by the kinds of their
+keys (section 3).
 
 ### 2.1 Library IDs
 
@@ -123,15 +127,20 @@ for identifiers applies to them.
 - names cleaned as in [core section 9.1](core.md#91-pair) (`?` when
   empty). Names are text, never markup: a receiver treats them as text
   wherever it shows them, and may clean further;
-- an unknown `kind` becomes `""`;
+- a `kind` that is a token is kept as it is, known or not; one that
+  isn't a token (`""`, too long, other characters) counts as absent
+  ([core section 8.5](core.md#85-unknown-values));
 - members of the wrong JSON type ([core section 2.3](core.md#23-json)): a
   `libraries` that isn't an array, or a top-level `name` that isn't a
   string, fails the answer (the caller treats the peer as unreachable and
   keeps what it had); an entry of `libraries` that isn't an object, or
   whose `id` isn't a string, is skipped; a library's `name` or `kind`
-  that isn't a string counts as absent (`?`, `""`); a `limits` that isn't
+  that isn't a string counts as absent (`?`, no kind); a `limits` that isn't
   an object, or whose members aren't integers, is ignored, as are limits
   out of range.
+
+Test cases: `libraryKinds` in
+[vectors/v0/strict.json](../../vectors/v0/strict.json).
 
 Refusals: signed `404` when the caller isn't `paired`, or when the body
 isn't a JSON object; signed `404` `not-supported` when `catalog` is off;
@@ -178,10 +187,9 @@ and tracks.
 ISO 639-1 code where one exists (`en`, `fr`), else ISO 639-2/T or 639-3
 (`yue`), with a region when known (`fr-CA`), in the case conventions of
 [core section 2.5](core.md#25-case). `und`, `mul`, `zxx` and `mis` are not
-sent. Media servers often give the file's ISO 639-2/B code (`fre`,
-`ger`, `chi`) or its 639-2/T code (`fra`, `deu`, `zho`); either is sent
-as the ISO 639-1 code (`fr`, `de`, `zh`), a region kept (`fre-CA` is
-sent `fr-CA`). Test cases: `languageCodes` in
+sent. An ISO 639-2 code, /B (`fre`, `ger`, `chi`) or /T (`fra`, `deu`,
+`zho`), of a language that has an ISO 639-1 code is sent as that code
+(`fr`, `de`, `zh`), a region kept (`fre-CA` is sent `fr-CA`). Test cases: `languageCodes` in
 [vectors/v0/strict.json](../../vectors/v0/strict.json).
 
 **A valid tag** is one already in the form a server sends: the tag these
@@ -350,25 +358,28 @@ public source knows, by an opaque identifier the owning server chooses
 title key is ASCII text: a name for the kind, the scheme, and the
 identifier, joined by `/`, followed by what the content part adds (a
 season's or an episode's place in its series, an extra's opaque part).
-The content parts define the kinds and the schemes:
+The content parts define the kinds and the key forms; the
+[registry](../registry.md) lists the schemes, which kinds each keys, and
+where its key forms are defined:
 
 | Content part | Kinds | Schemes, in order of preference | Example | Defined in |
 |--------------|-------|---------------------------------|---------|------------|
 | `video` | `movie`, `series`, `season`, `episode`, `extra` | `tmdb`, `tvdb`, `local` | `movie/tmdb/949`, `series/tvdb/81189/a12` | [video section 4](video.md#4-title-keys) |
 | `music` | `artist`, `album`, `track` | `mb`, `local` | `album/mb/<mbid>` | [music section 2](music.md#2-title-keys) |
 
-- **`tmdb`**: The Movie Database, for films and series.
-- **`tvdb`**: TheTVDB, for series and episodes TMDB has no match for,
-  absolute numbering included (anime). Only `video` uses it.
-- **`mb`**: MusicBrainz, for music.
-- **`local`**: the owning server's own identifier, for titles no public
-  source knows (home videos, personal recordings, untagged music). It
-  never names the same title on two servers (section 4.1), and is shared
-  only when the owner allows it (section 5).
-- **A server keys a title under the first scheme of its part's list that
-  can name it**: under TMDB whenever it can, under TVDB otherwise, under
-  `local` only when no public source names it. Every server so picks the
-  same key for the same title, where one exists.
+- **A new scheme is a registry entry**, not a new version of a part. A
+  receiver skips the keys of a scheme it doesn't know, and ignores the
+  `ids` of a scheme it doesn't know.
+- **`local`** is the owning server's own identifier, for titles no public
+  source knows. It never names the same title on two servers
+  (section 4.1), and is shared only when the owner allows it
+  (section 5).
+- **A server should key a title under the first scheme of its part's
+  list that can name it**: under TMDB whenever it can, under TVDB
+  otherwise, under `local` only when no public source names it. Servers
+  that do so pick the same key for the same title, where one exists.
+  Where two servers still key one title under two schemes, `ids` join
+  them (section 4.1).
 
 - Keys are canonical: each content part gives one form for each title. A
   key in another form is a different string, and the receiver skips it.
@@ -386,10 +397,17 @@ viewer's server uses this to tell that a peer's title is one it already
 has, or to carry watched state across.
 
 - **Across schemes**, a viewer's server may also match a title through
-  its `ids` (other identifiers, as its content part defines them): a
-  series one server keys under `tvdb` and another under `tmdb` with the
-  same TVDB ID in `ids` is the same show. The content parts say which
-  identifiers match ([video section 4.3](video.md#43-other-identifiers),
+  its `ids`: other identifiers of the same title, by scheme, in the forms
+  the [registry](../registry.md#ids-schemes) gives. One title may have
+  two keys on two servers, `tmdb` on one and `tvdb` on the other; `ids`
+  join them. A series one server keys under `tmdb` with `ids.tvdb` *n*,
+  and one another server keys `series/tvdb/<n>`, are the same show; so
+  are a series keyed `series/tvdb/<n>` with `ids.tmdb` *m* and one keyed
+  `series/tmdb/<m>`. `tmdb` is in `ids` so that a title keyed under
+  another scheme can name its TMDB ID once TMDB has it. They are still
+  two titles, each played from its own key. The content parts say which
+  of their kinds carry `ids`
+  ([video section 4.3](video.md#43-other-identifiers),
   [music section 3.1](music.md#31-other-identifiers)).
 - **A `local` key never matches** another server's title, even an equal
   key: it is equal only to the same key from the same owning server. A
@@ -487,8 +505,7 @@ Answer `200`:
   ([core section 8.3](core.md#83-limits-and-overload)).
 - The image is a JPEG or a PNG of at most 1 MiB (1,048,576 bytes; an
   image of exactly that size is accepted), 1 to 4,096 pixels wide and
-  tall, as its header says. A JPEG whose frame header gives a height of 0
-  (one that leaves it to a later DNL marker) is refused. The viewer's server reads it
+  tall, as its header says. The viewer's server reads it
   whole, refuses it past 1 MiB, checks from its header, before decoding,
   that it is a JPEG or a PNG (by its content, whatever its
   `Content-Type`) within those sizes, and re-encodes it in the same
@@ -515,6 +532,7 @@ anything.
   peer.
 - **`local` titles** (section 4.3) are shared only when the owner allows
   it: off by default, set per pairing and per group, beside the offers.
+  An owning server must not share them until its owner allows it.
   A link shares them when one of its relations allows it and offers the
   library that holds them ([groups section 9](groups.md#9-sharing-and-limits)).
   While it is off, the owning server leaves its `local` titles out of
@@ -532,14 +550,16 @@ anything.
 
 - **A compromised peer** can make the other store a long title list, and
   look those titles up at the outside services the content parts name
-  (TMDB, TheTVDB, the Cover Art Archive). Readers cap what they keep (section 3.3)
-  and should cap the total per peer.
+  (TMDB, TheTVDB, MusicBrainz and the public sources of pictures).
+  Readers cap what they keep (section 3.3) and should cap the total per
+  peer.
 - **Hostile answers.** Treat every name and key as untrusted input: clean
   names, parse keys strictly, never show text as markup.
 - **Descriptions and images** of `local` titles are the owning server's
   words and pictures, reaching the viewer's people: a viewer's server
   cleans the name, checks an image's type and size before decoding it,
-  decodes it with bounds, and serves its people a copy of its own, never
+  decodes it with bounds (the [implementers' notes](implementers.md#decoding-safely)
+  give advice), and serves its people a copy of its own, never
   the owning server's URL.
 - **Copies** describe the owning server's files closely (sizes, tracks,
   lengths). They are what a viewer would learn by playing; the content
@@ -601,3 +621,19 @@ gave no bound for them):
 11. **After `play` disagrees with the catalog**, the viewer's server
     reads again with `since` as soon as section 3.2's spacing allows
     (section 3.4).
+
+**Neutrality, decided by the owner on 2026-11-22**
+([proposal 17](../../proposals/0017-neutrality.md)):
+
+12. **A library's `kind` is open** (section 2): a token, kept when
+    unknown; absent when the owning server has none. `""` is no longer
+    sent, and counts as absent.
+13. **Schemes in a registry** ([spec/registry.md](../registry.md)): a
+    new scheme is an entry there. `tmdb` joins `ids`, and `ids` join one
+    title keyed under two schemes (section 4.1). The order of schemes is
+    a "should".
+14. **No product text here.** What this part said of media servers, and
+    the JPEG DNL rule, moved to the
+    [implementers' notes](implementers.md#catalog). The image's bounds
+    are unchanged: a JPEG whose header gives a height of 0 is still
+    refused, being under 1 pixel tall.

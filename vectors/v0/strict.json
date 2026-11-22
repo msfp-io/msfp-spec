@@ -8,7 +8,9 @@
     "languageCodes: a media server's language code (text) and the tag a server sends for it (output), or none (valid false): an ISO 639-2 code, /B or /T, of a language with an ISO 639-1 code sent as that code, the rest kept, in BCP 47's case conventions; und, mul, zxx and mis not sent (spec/v0/catalog.md section 3, language tags; spec/v0/core.md section 2.5).",
     "titlePages: pages of titles (spec/v0/catalog.md section 3.1). Input: changes (a changes answer or a whole-list one), titles and gone (how many keys the page holds), bytes (the answer body's size), remain (whole list: whether titles remain after the page on the owning server), after (the request's), lastKey (the page's last title key), next (absent when the answer has none). Output: valid (the owning server may send it: at most 5,000 keys, titles and gone together; at most 3 MiB, 3,145,728 bytes, of JSON; in a whole list, next is the last key exactly when titles remain), and caller: what the caller does with it whatever valid says: fail (past the core's 4 MiB, 4,194,304 bytes: core section 3), stop (next absent, empty, or not greater than after in byte order), or ask on.",
     "opaqueKeyParts: the opaque parts of title keys, a local title's identifier or an extra's part after x/ (spec/v0/catalog.md section 4.2): 1 to 64 characters of A-Z a-z 0-9 _ -, compared byte for byte.",
-    "localImages: the image of a local title (spec/v0/catalog.md section 4.4), on three sides. request: the owning server's answer (status, type: the problem's type) to the image request body, given parts (the content parts on between the two servers) and offered (the titles it offers the caller, with whether their description says image true): 404 not-supported with no content part with local titles on; 400 invalid-request for a malformed body; 404 not-found for a title not offered, not local, of a part that is off, of a kind without an image (only films, series, artists and albums have one), or without an image; else 200. answer: the viewer's server's check of the answer body (body) against the owning server's stream root (streamRoot, spec/v0/media.md section 1): url exactly <stream root><ticket>/image, the ticket 1 to 64 characters of A-Z a-z 0-9 _ -; valid with the ticket, or dropped (valid false). image: the image's first bytes (hex) and its whole length (size): valid when size is at most 1 MiB (1,048,576 bytes), the content is a JPEG (FF D8 FF) or a PNG (the 8-byte signature), whatever any Content-Type, and the header gives a width and a height of 1 to 4,096 pixels (a PNG's IHDR, a JPEG's frame header SOF0 to SOF15 but DHT, JPG and DAC); format jpeg or png."
+    "localImages: the image of a local title (spec/v0/catalog.md section 4.4), on three sides. request: the owning server's answer (status, type: the problem's type) to the image request body, given parts (the content parts on between the two servers) and offered (the titles it offers the caller, with whether their description says image true): 404 not-supported with no content part with local titles on; 400 invalid-request for a malformed body; 404 not-found for a title not offered, not local, of a part that is off, of a kind without an image (only films, series, artists and albums have one), or without an image; else 200. answer: the viewer's server's check of the answer body (body) against the owning server's stream root (streamRoot, spec/v0/media.md section 1): url exactly <stream root><ticket>/image, the ticket 1 to 64 characters of A-Z a-z 0-9 _ -; valid with the ticket, or dropped (valid false). image: the image's first bytes (hex) and its whole length (size): valid when size is at most 1 MiB (1,048,576 bytes), the content is a JPEG (FF D8 FF) or a PNG (the 8-byte signature), whatever any Content-Type, and the header gives a width and a height of 1 to 4,096 pixels (a PNG's IHDR, a JPEG's frame header SOF0 to SOF15 but DHT, JPG and DAC); format jpeg or png.",
+    "openTokens: values of open fields (spec/v0/core.md section 8.5). A token is 1 to 32 characters of a-z 0-9 . _ -. In a fact (titles, play's answer) a token is kept as it is, known or not (valid true), never turned into another value; a value that isn't a token is malformed (valid false): dropped alone when the member is optional, with the entry holding it (a copy, a track, an extra) when the member is required. In a request, an unknown token is ignored where the field is a hint and refused with 409 delivery-refused where it names what to serve; only a value that isn't a token gets 400.",
+    "libraryKinds: a library (library, its JSON object) and the kind a caller keeps of it (spec/v0/catalog.md sections 2 and 2.2): the kind when it is a token, known or not; absent when the library has none, or its kind isn't a string or isn't a token."
   ],
   "addresses": [
     {
@@ -2601,6 +2603,205 @@
       "side": "image",
       "valid": false,
       "reason": "neither a JPEG nor a PNG by its content"
+    }
+  ],
+  "openTokens": [
+    {
+      "text": "h264",
+      "valid": true
+    },
+    {
+      "text": "matroska",
+      "valid": true
+    },
+    {
+      "text": "movies",
+      "valid": true
+    },
+    {
+      "text": "vvc",
+      "valid": true
+    },
+    {
+      "text": "pcm_s24le",
+      "valid": true
+    },
+    {
+      "text": "hdr10plus",
+      "valid": true
+    },
+    {
+      "text": "dv",
+      "valid": true
+    },
+    {
+      "text": "a",
+      "valid": true
+    },
+    {
+      "text": "0",
+      "valid": true
+    },
+    {
+      "text": ".",
+      "valid": true
+    },
+    {
+      "text": "_",
+      "valid": true
+    },
+    {
+      "text": "-",
+      "valid": true
+    },
+    {
+      "text": "..",
+      "valid": true
+    },
+    {
+      "text": "audio.drama",
+      "valid": true
+    },
+    {
+      "text": "x-new_kind.2",
+      "valid": true
+    },
+    {
+      "text": "other",
+      "valid": true
+    },
+    {
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "valid": true
+    },
+    {
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "valid": false,
+      "reason": "33 bytes, not 1 to 32"
+    },
+    {
+      "valid": false,
+      "reason": "0 bytes, not 1 to 32"
+    },
+    {
+      "text": "H264",
+      "valid": false,
+      "reason": "byte 'H' outside a-z 0-9 . _ -"
+    },
+    {
+      "text": "Movies",
+      "valid": false,
+      "reason": "byte 'M' outside a-z 0-9 . _ -"
+    },
+    {
+      "text": "a b",
+      "valid": false,
+      "reason": "byte ' ' outside a-z 0-9 . _ -"
+    },
+    {
+      "text": "a/b",
+      "valid": false,
+      "reason": "byte '/' outside a-z 0-9 . _ -"
+    },
+    {
+      "text": "a+b",
+      "valid": false,
+      "reason": "byte '+' outside a-z 0-9 . _ -"
+    },
+    {
+      "text": "a:b",
+      "valid": false,
+      "reason": "byte ':' outside a-z 0-9 . _ -"
+    },
+    {
+      "text": "é",
+      "valid": false,
+      "reason": "byte 'Ã' outside a-z 0-9 . _ -"
+    },
+    {
+      "text": "a\tb",
+      "valid": false,
+      "reason": "byte '\\t' outside a-z 0-9 . _ -"
+    },
+    {
+      "text": " h264",
+      "valid": false,
+      "reason": "byte ' ' outside a-z 0-9 . _ -"
+    },
+    {
+      "text": "h264 ",
+      "valid": false,
+      "reason": "byte ' ' outside a-z 0-9 . _ -"
+    },
+    {
+      "text": "mixed,music",
+      "valid": false,
+      "reason": "byte ',' outside a-z 0-9 . _ -"
+    }
+  ],
+  "libraryKinds": [
+    {
+      "name": "a kind the part gives",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\",\"kind\":\"movies\"}",
+      "kind": "movies"
+    },
+    {
+      "name": "mixed",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\",\"kind\":\"mixed\"}",
+      "kind": "mixed"
+    },
+    {
+      "name": "a kind no part reads, kept",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\",\"kind\":\"photos\"}",
+      "kind": "photos"
+    },
+    {
+      "name": "an unknown kind, kept",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\",\"kind\":\"audiobooks\"}",
+      "kind": "audiobooks"
+    },
+    {
+      "name": "an unknown kind with . _ -, kept",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\",\"kind\":\"x.live_tv-2\"}",
+      "kind": "x.live_tv-2"
+    },
+    {
+      "name": "other is a token like any, kept",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\",\"kind\":\"other\"}",
+      "kind": "other"
+    },
+    {
+      "name": "32 characters, kept",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\",\"kind\":\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\"}",
+      "kind": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+    },
+    {
+      "name": "absent",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\"}"
+    },
+    {
+      "name": "empty: absent",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\",\"kind\":\"\"}"
+    },
+    {
+      "name": "33 characters: absent",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\",\"kind\":\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\"}"
+    },
+    {
+      "name": "another case: absent",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\",\"kind\":\"Movies\"}"
+    },
+    {
+      "name": "a space: absent",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\",\"kind\":\"home videos\"}"
+    },
+    {
+      "name": "not a string: absent",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\",\"kind\":1}"
+    },
+    {
+      "name": "an array: absent",
+      "library": "{\"id\":\"L1\",\"name\":\"Films\",\"kind\":[\"movies\"]}"
     }
   ]
 }

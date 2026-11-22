@@ -22,7 +22,7 @@ parts, and has a glossary. Then read the core.
 
 | Folder | What it holds |
 |--------|---------------|
-| [spec/](spec/v0/README.md) | the specification: version 0, and earlier drafts as history |
+| [spec/](spec/v0/README.md) | the specification: version 0, the [registry](spec/registry.md) of title-key and `ids` schemes, and earlier drafts as history |
 | [proposals/](proposals/README.md) | changes to the specification, adopted or under discussion |
 | [vectors/](vectors/README.md) | signed sample requests and answers, valid and invalid, for an implementation's tests |
 | [conformance/](conformance/README.md) | a test suite that pairs with your server as a peer and checks it against version 0 (Python 3, standard library only) |

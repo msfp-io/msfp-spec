@@ -51,6 +51,8 @@ type videoFile struct {
 	LocalKeys   []videoKeyCase      `json:"localKeys"`
 	TVDBKeys    []videoKeyCase      `json:"tvdbKeys"`
 	Previews    []videoPreviewsCase `json:"previews"`
+	FontURLs    []videoCase         `json:"fontURLs"`
+	FontSets    []videoCase         `json:"fontSets"`
 }
 
 type videoInput struct{ name, text string }
@@ -84,7 +86,7 @@ func videoKeySet(in []videoInput) []videoKeyCase {
 
 // videoCore is a copy's required core with the given audio tracks.
 func videoCore(audio string) string {
-	return `{"id":"v1","durationMs":3600000,"container":"mkv","size":1000000,"etag":"t1","audioTracks":[` + audio + `]`
+	return `{"id":"v1","durationMs":3600000,"container":"matroska","size":1000000,"etag":"t1","audioTracks":[` + audio + `]`
 }
 
 // videoCp is a copy with the required core and members (",..." or "").
@@ -104,16 +106,16 @@ func videoQuoted(n int, f func(i int) string) string {
 }
 
 // A copy every title case uses.
-var videoC = `{"id":"v1","durationMs":8160000,"container":"mkv","size":1000,"etag":"t1","audioTracks":[{"id":"a1","codec":"aac","language":"en"}]}`
+var videoC = `{"id":"v1","durationMs":8160000,"container":"matroska","size":1000,"etag":"t1","audioTracks":[{"id":"a1","codec":"aac","language":"en"}]}`
 
 func videoCopyCases() []videoCase {
 	long := strings.Repeat("x", 64)
-	example := `{"id":"v_2HqXo3","name":"4K HDR","durationMs":8160000,"container":"mkv","size":48213884928,"etag":"k9Tq2w","bitrateKbps":47000,"video":{"codec":"hevc","width":3840,"height":1600,"bitDepth":10,"hdr":["hdr10","dv"],"dv":{"profile":7,"level":6,"compatibility":6},"fps":23.98},"audioTracks":[{"id":"a1","language":"en","channels":8,"codec":"truehd","profile":"atmos","default":true,"original":true}],"subtitleTracks":[{"id":"s2","language":"fr","format":"pgs"}],"chapters":[{"startMs":0},{"startMs":312000,"name":"The Desert"}],"previews":true}`
+	example := `{"id":"v_2HqXo3","name":"4K HDR","durationMs":8160043,"container":"matroska","size":48213884928,"etag":"k9Tq2w","bitrateKbps":47268,"video":{"codec":"hevc","codecs":"dvhe.07.06","profile":"Main 10","width":3840,"height":1600,"bitDepth":10,"colour":{"primaries":"bt2020","transfer":"smpte2084","matrix":"bt2020nc","range":"tv"},"hdr":["dv"],"dv":{"profile":7,"level":6,"compatibility":6,"el":true,"bl":true,"rpu":true},"fps":"24000/1001"},"audioTracks":[{"id":"a1","language":"en","channels":8,"codec":"truehd","profile":"Dolby TrueHD + Dolby Atmos","default":true,"original":true}],"subtitleTracks":[{"id":"s2","language":"fr","format":"hdmv_pgs_subtitle"}],"chapters":[{"startMs":0},{"startMs":312000,"name":"The Desert"}],"previews":true}`
 	in := []videoInput{
 		{"the example of section 3.2", example},
 		{"the required core only, no audio track", videoCp("")},
-		{"every member", `{"id":"v2","name":"Director's cut","edition":"directors","durationMs":7200000,"startMs":0,"container":"mp4","size":3000,"etag":"t2","parts":[{"size":1000,"durationMs":3600000},{"size":2000,"durationMs":3600000}],"bitrateKbps":8000,"video":{"codec":"h264","codecTag":"avc1","profile":"high","level":4.1,"width":1920,"height":1080,"bitDepth":8,"fps":24,"interlaced":false,"colour":{"primaries":"bt709","transfer":"bt709","matrix":"bt709","range":"tv"}},"audioTracks":[{"id":"a0","language":"fr","channels":6,"role":"commentary","default":false,"forced":false,"fileIndex":1,"codec":"ac3","layout":"5.1(side)","sampleRate":48000,"bitDepth":16,"title":"Commentary","original":false}],"subtitleTracks":[{"id":"s0","language":"en","default":true,"forced":false,"hearingImpaired":true,"format":"subrip","external":true,"title":"SDH"}],"chapters":[{"startMs":0,"name":"Opening"}],"segments":[{"kind":"intro","startMs":1000,"endMs":60000},{"kind":"outro","startMs":7000000,"endMs":7200000,"final":true}],"previews":false,"added":"2024-02-29","threeD":"sbs"}`},
-		{"unknown members of a copy, a stream and a track ignored", `{"id":"v1","durationMs":3600000,"container":"mkv","size":1000000,"etag":"t1","path":"/media/a.mkv","video":{"codec":"hevc","width":1920,"height":1080,"label":"x"},"audioTracks":[{"id":"a1","codec":"aac","label":"English"}]}`},
+		{"every member", `{"id":"v2","name":"Director's cut","edition":"directors","durationMs":7200001,"startMs":0,"container":"mp4","size":3000,"etag":"t2","parts":[{"size":1000,"durationMs":3600000},{"size":2000,"durationMs":3600001}],"bitrateKbps":8123,"video":{"codec":"h264","codecTag":"avc1","codecs":"avc1.640028","profile":"High","level":4.1,"width":1920,"height":1080,"sampleAspect":"1:1","rotation":0,"bitDepth":8,"colour":{"primaries":"bt709","transfer":"bt709","matrix":"bt709","range":"tv"},"fps":"24/1","interlaced":false},"audioTracks":[{"id":"a0","language":"fr","channels":6,"role":"commentary","default":false,"forced":false,"fileIndex":1,"codec":"ac3","codecs":"ac-3","profile":"Dolby Digital","layout":"5.1(side)","sampleRate":48000,"bitDepth":16,"title":"Commentary","original":false}],"subtitleTracks":[{"id":"s0","language":"en","default":true,"forced":false,"hearingImpaired":true,"format":"subrip","external":true,"title":"SDH"}],"chapters":[{"startMs":0,"name":"Opening"}],"segments":[{"kind":"intro","startMs":1000,"endMs":60000},{"kind":"outro","startMs":7000000,"endMs":7200000,"final":true}],"previews":false,"added":"2024-02-29","threeD":"sbs"}`},
+		{"unknown members of a copy, a stream and a track ignored", `{"id":"v1","durationMs":3600000,"container":"matroska","size":1000000,"etag":"t1","path":"/media/a.mkv","video":{"codec":"hevc","width":1920,"height":1080,"label":"x"},"audioTracks":[{"id":"a1","codec":"aac","label":"English"}]}`},
 
 		// The required core.
 		{"id: 64 characters", strings.Replace(videoCp(""), `"v1"`, `"`+long+`"`, 1)},
@@ -122,51 +124,60 @@ func videoCopyCases() []videoCase {
 		{"id: empty: skipped", strings.Replace(videoCp(""), `"v1"`, `""`, 1)},
 		{"id: a dot: skipped", strings.Replace(videoCp(""), `"v1"`, `"v.1"`, 1)},
 		{"id: not a string: skipped", strings.Replace(videoCp(""), `"v1"`, `1`, 1)},
-		{"id missing: skipped", `{"durationMs":3600000,"container":"mkv","size":1000000,"etag":"t1","audioTracks":[]}`},
+		{"id missing: skipped", `{"durationMs":3600000,"container":"matroska","size":1000000,"etag":"t1","audioTracks":[]}`},
+		{"durationMs: exact, not rounded to the second", strings.Replace(videoCp(""), `3600000`, `3600999`, 1)},
 		{"durationMs: 0", strings.Replace(videoCp(""), `3600000`, `0`, 1)},
 		{"durationMs: 8,640,000,000 (100 days)", strings.Replace(videoCp(""), `3600000`, `8640000000`, 1)},
 		{"durationMs: 8,640,000,001: skipped", strings.Replace(videoCp(""), `3600000`, `8640000001`, 1)},
 		{"durationMs: negative: skipped", strings.Replace(videoCp(""), `3600000`, `-1`, 1)},
 		{"durationMs: 3600000.0 isn't an integer: skipped", strings.Replace(videoCp(""), `3600000`, `3600000.0`, 1)},
 		{"durationMs: a string: skipped", strings.Replace(videoCp(""), `3600000`, `"3600000"`, 1)},
-		{"durationMs missing: skipped", `{"id":"v1","container":"mkv","size":1000000,"etag":"t1","audioTracks":[]}`},
-		{"container: one known for conversion only", strings.Replace(videoCp(""), `"mkv"`, `"avi"`, 1)},
-		{"container: unknown, kept as other", strings.Replace(videoCp(""), `"mkv"`, `"matroska"`, 1)},
-		{"container: another case is unknown, kept as other", strings.Replace(videoCp(""), `"mkv"`, `"MKV"`, 1)},
-		{"container: not a string: skipped", strings.Replace(videoCp(""), `"mkv"`, `7`, 1)},
+		{"durationMs missing: skipped", `{"id":"v1","container":"matroska","size":1000000,"etag":"t1","audioTracks":[]}`},
+		{"container: an ffmpeg muxer name (mp4, not mov)", strings.Replace(videoCp(""), `"matroska"`, `"mp4"`, 1)},
+		{"container: a name MSFP never listed, kept as it is", strings.Replace(videoCp(""), `"matroska"`, `"ivf"`, 1)},
+		{"container: a token of 32 characters, kept", strings.Replace(videoCp(""), `"matroska"`, `"`+strings.Repeat("m", 32)+`"`, 1)},
+		{"container: a token with a dot and an underscore, kept", strings.Replace(videoCp(""), `"matroska"`, `"x.y_z"`, 1)},
+		{"container: 33 characters isn't a token: skipped", strings.Replace(videoCp(""), `"matroska"`, `"`+strings.Repeat("m", 33)+`"`, 1)},
+		{"container: capitals aren't a token: skipped", strings.Replace(videoCp(""), `"matroska"`, `"MKV"`, 1)},
+		{"container: ffprobe's comma list isn't a token: skipped", strings.Replace(videoCp(""), `"matroska"`, `"matroska,webm"`, 1)},
+		{"container: empty: skipped", strings.Replace(videoCp(""), `"matroska"`, `""`, 1)},
+		{"container: not a string: skipped", strings.Replace(videoCp(""), `"matroska"`, `7`, 1)},
 		{"container missing: skipped", `{"id":"v1","durationMs":3600000,"size":1000000,"etag":"t1","audioTracks":[]}`},
 		{"size: 1", strings.Replace(videoCp(""), `1000000`, `1`, 1)},
 		{"size: 999,999,999,999,999", strings.Replace(videoCp(""), `1000000`, `999999999999999`, 1)},
 		{"size: 0: skipped", strings.Replace(videoCp(""), `1000000`, `0`, 1)},
 		{"size: 1,000,000,000,000,000: skipped", strings.Replace(videoCp(""), `1000000`, `1000000000000000`, 1)},
 		{"size: in exponent form: skipped", strings.Replace(videoCp(""), `1000000`, `1e6`, 1)},
-		{"size missing: skipped", `{"id":"v1","durationMs":3600000,"container":"mkv","etag":"t1","audioTracks":[]}`},
+		{"size missing: skipped", `{"id":"v1","durationMs":3600000,"container":"matroska","etag":"t1","audioTracks":[]}`},
 		{"etag: 64 characters", strings.Replace(videoCp(""), `"t1"`, `"`+long+`"`, 1)},
 		{"etag: 65 characters: skipped", strings.Replace(videoCp(""), `"t1"`, `"`+long+`x"`, 1)},
 		{"etag: empty: skipped", strings.Replace(videoCp(""), `"t1"`, `""`, 1)},
 		{"etag: a character outside the form: skipped", strings.Replace(videoCp(""), `"t1"`, `"t+1"`, 1)},
-		{"etag missing: skipped", `{"id":"v1","durationMs":3600000,"container":"mkv","size":1000000,"audioTracks":[]}`},
-		{"audioTracks missing: skipped", `{"id":"v1","durationMs":3600000,"container":"mkv","size":1000000,"etag":"t1"}`},
-		{"audioTracks not an array: skipped", `{"id":"v1","durationMs":3600000,"container":"mkv","size":1000000,"etag":"t1","audioTracks":{"a1":"aac"}}`},
-		{"audioTracks null: skipped", `{"id":"v1","durationMs":3600000,"container":"mkv","size":1000000,"etag":"t1","audioTracks":null}`},
+		{"etag missing: skipped", `{"id":"v1","durationMs":3600000,"container":"matroska","size":1000000,"audioTracks":[]}`},
+		{"audioTracks missing: skipped", `{"id":"v1","durationMs":3600000,"container":"matroska","size":1000000,"etag":"t1"}`},
+		{"audioTracks not an array: skipped", `{"id":"v1","durationMs":3600000,"container":"matroska","size":1000000,"etag":"t1","audioTracks":{"a1":"aac"}}`},
+		{"audioTracks null: skipped", `{"id":"v1","durationMs":3600000,"container":"matroska","size":1000000,"etag":"t1","audioTracks":null}`},
 		{"not an object: skipped", `["v1"]`},
 
 		// Optional members of a copy.
 		{"name: made plain text", videoCp(`,"name":"  4K\tHDR\u200b "`)},
-		{"name: 32 characters kept", videoCp(`,"name":"` + strings.Repeat("é", 32) + `"`)},
-		{"name: cut to 32 characters", videoCp(`,"name":"` + strings.Repeat("ab", 16) + `cd"`)},
+		{"name: 64 characters kept", videoCp(`,"name":"` + strings.Repeat("é", 64) + `"`)},
+		{"name: cut to 64 characters", videoCp(`,"name":"` + strings.Repeat("ab", 32) + `cd"`)},
+		{"name: whatever plain text it says, kept (the owner's choice)", videoCp(`,"name":"Movie.2019.2160p.UHD.mkv"`)},
 		{"name: empty once cleaned: absent", videoCp(`,"name":" \u200b\t"`)},
 		{"name: not a string: absent", videoCp(`,"name":4`)},
 		{"edition: each of the list", videoCp(`,"edition":"imax"`)},
-		{"edition: unknown, kept as other", videoCp(`,"edition":"fan"`)},
+		{"edition: a value not among the examples, kept", videoCp(`,"edition":"fan"`)},
+		{"edition: other, a token like any", videoCp(`,"edition":"other"`)},
+		{"edition: capitals aren't a token: absent", videoCp(`,"edition":"Directors"`)},
 		{"edition: not a string: absent", videoCp(`,"edition":true`)},
 		{"startMs: equal to durationMs", videoCp(`,"startMs":3600000`)},
 		{"startMs: above durationMs: absent", videoCp(`,"startMs":3600001`)},
 		{"startMs: negative: absent", videoCp(`,"startMs":-1`)},
-		{"bitrateKbps: 500", videoCp(`,"bitrateKbps":500`)},
-		{"bitrateKbps: rounded down to a whole 500", videoCp(`,"bitrateKbps":47999`)},
+		{"bitrateKbps: 1", videoCp(`,"bitrateKbps":1`)},
+		{"bitrateKbps: exact, not rounded", videoCp(`,"bitrateKbps":47999`)},
 		{"bitrateKbps: 10,000,000", videoCp(`,"bitrateKbps":10000000`)},
-		{"bitrateKbps: 499: absent", videoCp(`,"bitrateKbps":499`)},
+		{"bitrateKbps: 0: absent", videoCp(`,"bitrateKbps":0`)},
 		{"bitrateKbps: 10,000,001: absent", videoCp(`,"bitrateKbps":10000001`)},
 		{"bitrateKbps: not an integer: absent", videoCp(`,"bitrateKbps":1500.5`)},
 		{"added: a valid date", videoCp(`,"added":"2024-02-29"`)},
@@ -208,50 +219,81 @@ func videoCopyCases() []videoCase {
 		{"video: no height: absent", videoCp(`,"video":{"codec":"av1","width":1920}`)},
 		{"video: no codec: absent", videoCp(`,"video":{"width":1920,"height":1080}`)},
 		{"video: a codec that isn't a string: absent", videoCp(`,"video":{"codec":27,"width":1920,"height":1080}`)},
-		{"video: an unknown codec, kept as other", videoCp(`,"video":{"codec":"prores","width":1920,"height":1080}`)},
-		{"video: a codec known for conversion only", videoCp(`,"video":{"codec":"mpeg2video","width":720,"height":576,"interlaced":true}`)},
+		{"video: a codec MSFP never listed, kept as it is", videoCp(`,"video":{"codec":"vvc","width":3840,"height":2160}`)},
+		{"video: prores, kept", videoCp(`,"video":{"codec":"prores","width":1920,"height":1080}`)},
+		{"video: mpeg2video, interlaced", videoCp(`,"video":{"codec":"mpeg2video","width":720,"height":576,"interlaced":true}`)},
+		{"video: a codec in capitals isn't a token: absent", videoCp(`,"video":{"codec":"HEVC","width":1920,"height":1080}`)},
+		{"video: a codec of 33 characters: absent", videoCp(`,"video":{"codec":"` + strings.Repeat("c", 33) + `","width":1920,"height":1080}`)},
 		{"video: not an object: absent", videoCp(`,"video":"1080p"`)},
 		{"video: codecTag of 8 characters", videoVid(`,"codecTag":"dvhe1234"`)},
 		{"video: codecTag of 9 characters: absent alone", videoVid(`,"codecTag":"dvhe12345"`)},
 		{"video: codecTag with a dash: absent alone", videoVid(`,"codecTag":"hv-1"`)},
-		{"video: profile of 32 characters", videoVid(`,"profile":"` + strings.Repeat("m", 32) + `"`)},
-		{"video: profile of 33 characters: absent alone", videoVid(`,"profile":"` + strings.Repeat("m", 33) + `"`)},
+		{"video: codecs, an RFC 6381 string", videoVid(`,"codecs":"hvc1.2.4.L153.B0"`)},
+		{"video: codecs of 64 characters", videoVid(`,"codecs":"` + strings.Repeat("a", 64) + `"`)},
+		{"video: codecs of 65 characters: absent alone", videoVid(`,"codecs":"` + strings.Repeat("a", 65) + `"`)},
+		{"video: codecs with a comma: absent alone", videoVid(`,"codecs":"hvc1.2.4.L153.B0,mp4a.40.2"`)},
+		{"video: codecs empty or not a string: absent alone", videoVid(`,"codecs":""`)},
+		{"video: profile as ffmpeg prints it", videoVid(`,"profile":"Main 10"`)},
+		{"video: profile made plain text", videoVid(`,"profile":" Main\t10\u200b"`)},
+		{"video: profile of 64 characters", videoVid(`,"profile":"` + strings.Repeat("m", 64) + `"`)},
+		{"video: profile of 65 characters: absent alone, not cut", videoVid(`,"profile":"` + strings.Repeat("m", 65) + `"`)},
+		{"video: profile not a string: absent alone", videoVid(`,"profile":2`)},
 		{"video: level 0", videoVid(`,"level":0`)},
 		{"video: level 1,000", videoVid(`,"level":1000`)},
 		{"video: level 5.1, a number", videoVid(`,"level":5.1`)},
 		{"video: level above 1,000: absent alone", videoVid(`,"level":1000.5`)},
 		{"video: level negative: absent alone", videoVid(`,"level":-1`)},
 		{"video: level as a string: absent alone", videoVid(`,"level":"5.1"`)},
-		{"video: bitDepth 12", videoVid(`,"bitDepth":12`)},
-		{"video: bitDepth 9: absent alone", videoVid(`,"bitDepth":9`)},
-		{"video: bitDepth 16: absent alone", videoVid(`,"bitDepth":16`)},
-		{"video: hdr kept in the order hdr10, hdr10plus, hlg, dv", videoVid(`,"hdr":["dv","hlg","hdr10plus","hdr10"]`)},
-		{"video: hdr repeats, unknown formats and non-strings skipped", videoVid(`,"hdr":["hdr10","HDR10","hdr10+","hdr10",7,"hdr10plus"]`)},
-		{"video: an empty hdr is standard range", videoVid(`,"hdr":[]`)},
-		{"video: hdr of only unknown formats is standard range", videoVid(`,"hdr":["sl-hdr1"]`)},
-		{"video: hdr not an array: absent alone", videoVid(`,"hdr":"hdr10"`)},
-		{"video: dv kept with dv in hdr, at its largest values", videoVid(`,"hdr":["dv"],"dv":{"profile":10,"level":13,"compatibility":15}`)},
-		{"video: dv at its smallest values", videoVid(`,"hdr":["hdr10","dv"],"dv":{"profile":0,"level":0,"compatibility":0}`)},
-		{"video: dv without dv in hdr: absent alone", videoVid(`,"hdr":["hdr10"],"dv":{"profile":8,"level":6,"compatibility":1}`)},
-		{"video: dv with a profile of 11: absent alone", videoVid(`,"hdr":["dv"],"dv":{"profile":11,"level":6,"compatibility":1}`)},
-		{"video: dv with a level of 14: absent alone", videoVid(`,"hdr":["dv"],"dv":{"profile":8,"level":14,"compatibility":1}`)},
+		{"video: bitDepth 9", videoVid(`,"bitDepth":9`)},
+		{"video: bitDepth 1", videoVid(`,"bitDepth":1`)},
+		{"video: bitDepth 16", videoVid(`,"bitDepth":16`)},
+		{"video: bitDepth 0: absent alone", videoVid(`,"bitDepth":0`)},
+		{"video: bitDepth 17: absent alone", videoVid(`,"bitDepth":17`)},
+		{"video: sampleAspect 32:27", videoVid(`,"sampleAspect":"32:27"`)},
+		{"video: sampleAspect 65535:1", videoVid(`,"sampleAspect":"65535:1"`)},
+		{"video: sampleAspect 65536:1: absent alone", videoVid(`,"sampleAspect":"65536:1"`)},
+		{"video: sampleAspect 0:1: absent alone", videoVid(`,"sampleAspect":"0:1"`)},
+		{"video: sampleAspect with a slash or as a number: absent alone", videoVid(`,"sampleAspect":"32/27"`)},
+		{"video: rotation 90", videoVid(`,"rotation":90`)},
+		{"video: rotation 270", videoVid(`,"rotation":270`)},
+		{"video: rotation 45: absent alone", videoVid(`,"rotation":45`)},
+		{"video: rotation -90: absent alone", videoVid(`,"rotation":-90`)},
+		{"video: rotation 360: absent alone", videoVid(`,"rotation":360`)},
+		{"video: rotation as a string: absent alone", videoVid(`,"rotation":"90"`)},
+		{"video: HDR10 told by colour alone, no hdr", videoVid(`,"bitDepth":10,"colour":{"primaries":"bt2020","transfer":"smpte2084","matrix":"bt2020nc"}`)},
+		{"video: HLG told by colour alone", videoVid(`,"colour":{"transfer":"arib-std-b67"}`)},
+		{"video: hdr sorted, each once", videoVid(`,"hdr":["hdr10plus","dv","hdr10plus"]`)},
+		{"video: hdr tokens MSFP never listed kept", videoVid(`,"hdr":["sl-hdr1","vivid"]`)},
+		{"video: hdr entries that aren't tokens skipped alone", videoVid(`,"hdr":["DV","hdr10+",7,"","dv"]`)},
+		{"video: hdr10 in hdr, a token like any: kept", videoVid(`,"hdr":["hdr10"]`)},
+		{"video: hdr: the first 8 once sorted kept", videoVid(`,"hdr":["i","h","g","f","e","d","c","b","a"]`)},
+		{"video: an empty hdr says nothing", videoVid(`,"hdr":[]`)},
+		{"video: hdr not an array: absent alone", videoVid(`,"hdr":"dv"`)},
+		{"video: dv kept with dv in hdr, at its largest values", videoVid(`,"hdr":["dv"],"dv":{"profile":127,"level":63,"compatibility":15,"el":false,"bl":true,"rpu":true}`)},
+		{"video: dv at its smallest values, without el, bl and rpu", videoVid(`,"hdr":["dv","hdr10plus"],"dv":{"profile":0,"level":0,"compatibility":0}`)},
+		{"video: dv's el, bl and rpu not booleans: absent alone", videoVid(`,"hdr":["dv"],"dv":{"profile":8,"level":6,"compatibility":1,"el":1,"bl":"true","rpu":null}`)},
+		{"video: dv without dv in hdr: absent alone", videoVid(`,"hdr":["hdr10plus"],"dv":{"profile":8,"level":6,"compatibility":1}`)},
+		{"video: dv with a profile of 128: absent alone", videoVid(`,"hdr":["dv"],"dv":{"profile":128,"level":6,"compatibility":1}`)},
+		{"video: dv with a level of 64: absent alone", videoVid(`,"hdr":["dv"],"dv":{"profile":8,"level":64,"compatibility":1}`)},
 		{"video: dv with a compatibility of 16: absent alone", videoVid(`,"hdr":["dv"],"dv":{"profile":8,"level":6,"compatibility":16}`)},
 		{"video: dv without its compatibility: absent alone", videoVid(`,"hdr":["dv"],"dv":{"profile":5,"level":6}`)},
-		{"video: fps rounded to two decimals", videoVid(`,"fps":23.976`)},
-		{"video: fps 1,000", videoVid(`,"fps":1000`)},
-		{"video: fps that rounds to 1,000", videoVid(`,"fps":1000.004`)},
-		{"video: fps above 1,000: absent alone", videoVid(`,"fps":1000.01`)},
-		{"video: fps 0: absent alone", videoVid(`,"fps":0`)},
-		{"video: fps that rounds to 0: absent alone", videoVid(`,"fps":0.004`)},
-		{"video: fps 0.01", videoVid(`,"fps":0.01`)},
-		{"video: fps as a string: absent alone", videoVid(`,"fps":"24"`)},
+		{"video: fps 24000/1001", videoVid(`,"fps":"24000/1001"`)},
+		{"video: fps 25/1", videoVid(`,"fps":"25/1"`)},
+		{"video: fps 1000000/1 and its largest denominator", videoVid(`,"fps":"1000000/1"`)},
+		{"video: fps 1/1000000", videoVid(`,"fps":"1/1000000"`)},
+		{"video: fps not reduced: absent alone", videoVid(`,"fps":"48000/2002"`)},
+		{"video: fps 0/0, as ffmpeg prints an unknown rate: absent alone", videoVid(`,"fps":"0/0"`)},
+		{"video: fps with a denominator of 0: absent alone", videoVid(`,"fps":"24/0"`)},
+		{"video: fps 1000001/1: absent alone", videoVid(`,"fps":"1000001/1"`)},
+		{"video: fps with a leading zero: absent alone", videoVid(`,"fps":"024/1"`)},
+		{"video: fps as a decimal string: absent alone", videoVid(`,"fps":"23.976"`)},
+		{"video: fps as a number: absent alone", videoVid(`,"fps":23.976`)},
 		{"video: interlaced not a boolean: absent alone", videoVid(`,"interlaced":1`)},
 		{"video: colour, every member", videoVid(`,"colour":{"primaries":"bt2020","transfer":"smpte2084","matrix":"bt2020nc","range":"pc"}`)},
-		{"video: colour members out of form absent alone", videoVid(`,"colour":{"primaries":"BT2020","transfer":"` + strings.Repeat("a", 33) + `","matrix":"bt2020nc","range":7}`)},
+		{"video: colour members that aren't tokens absent alone", videoVid(`,"colour":{"primaries":"BT2020","transfer":"` + strings.Repeat("a", 33) + `","matrix":"bt2020nc","range":7}`)},
 		{"video: colour range tv kept", videoVid(`,"colour":{"primaries":"bt709","range":"tv"}`)},
-		{"video: colour range full: absent alone, the rest kept", videoVid(`,"colour":{"primaries":"bt709","transfer":"bt709","range":"full"}`)},
-		{"video: colour range PC or limited: absent alone", videoVid(`,"colour":{"matrix":"bt709","range":"PC"}`)},
-		{"video: colour with only a range out of the list: absent alone", videoVid(`,"colour":{"range":"limited"}`)},
+		{"video: colour values MSFP never listed kept", videoVid(`,"colour":{"primaries":"bt709","transfer":"iec61966-2-1","matrix":"ictcp","range":"unknown"}`)},
+		{"video: colour range in capitals: absent alone", videoVid(`,"colour":{"matrix":"bt709","range":"PC"}`)},
 		{"video: colour member of 32 characters", videoVid(`,"colour":{"transfer":"` + strings.Repeat("a", 32) + `"}`)},
 		{"video: colour with no member left: absent alone", videoVid(`,"colour":{"primaries":"","range":"TV"}`)},
 		{"video: colour not an object: absent alone", videoVid(`,"colour":"bt709"`)},
@@ -260,9 +302,9 @@ func videoCopyCases() []videoCase {
 		{"audio: a0 and a999", videoCore(`{"id":"a0","codec":"aac"},{"id":"a999","codec":"opus"}`) + `}`},
 		{"audio: a1000, a01, 1 and a non-object skipped", videoCore(`{"id":"a1000","codec":"aac"},{"id":"a01","codec":"aac"},{"id":"1","codec":"aac"},"a2",{"id":"a2","codec":"aac"}`) + `}`},
 		{"audio: a repeated ID skipped", videoCore(`{"id":"a1","codec":"aac","language":"en"},{"id":"a1","codec":"ac3","language":"fr"}`) + `}`},
-		{"audio: a track without a codec, or with one that isn't a string, skipped", videoCore(`{"id":"a1"},{"id":"a2","codec":null},{"id":"a3","codec":"flac"}`) + `}`},
-		{"audio: an unknown codec, kept as other", videoCore(`{"id":"a1","codec":"dts-hd"}`) + `}`},
-		{"audio: a codec known for conversion only", videoCore(`{"id":"a1","codec":"truehd"}`) + `}`},
+		{"audio: a track without a codec, or with one that isn't a token, skipped", videoCore(`{"id":"a1"},{"id":"a2","codec":null},{"id":"a3","codec":"FLAC"},{"id":"a4","codec":""},{"id":"a5","codec":"flac"}`) + `}`},
+		{"audio: codecs MSFP never listed, kept as they are", videoCore(`{"id":"a1","codec":"iamf"},{"id":"a2","codec":"ac4"},{"id":"a3","codec":"pcm_s24le"}`) + `}`},
+		{"audio: codecs strings of RFC 6381; out of form absent alone", videoCore(`{"id":"a1","codec":"aac","codecs":"mp4a.40.2"},{"id":"a2","codec":"eac3","codecs":"ec-3"},{"id":"a3","codec":"aac","codecs":"mp4a 40 2"}`) + `}`},
 		{"audio: the first 32 tracks kept", videoCore(videoQuoted(33, func(i int) string { return fmt.Sprintf(`{"id":"a%d","codec":"aac"}`, i) })) + `}`},
 		{"audio: valid tags kept", videoCore(`{"id":"a1","codec":"aac","language":"zh-Hant-TW"},{"id":"a2","codec":"aac","language":"fr-CA"},{"id":"a3","codec":"aac","language":"yue"},{"id":"a4","codec":"aac","language":"es-419"}`) + `}`},
 		{"audio: tags not in the form a server sends: absent alone", videoCore(`{"id":"a1","codec":"aac","language":"fre"},{"id":"a2","codec":"aac","language":"fr-ca"},{"id":"a3","codec":"aac","language":"FR"},{"id":"a4","codec":"aac","language":"und"},{"id":"a5","codec":"aac","language":"zh-Hant-TW1"}`) + `}`},
@@ -270,22 +312,26 @@ func videoCopyCases() []videoCase {
 		{"audio: language of one character: absent alone", videoCore(`{"id":"a1","codec":"aac","language":"e"}`) + `}`},
 		{"audio: channels 1 and 64", videoCore(`{"id":"a1","codec":"aac","channels":1},{"id":"a2","codec":"aac","channels":64}`) + `}`},
 		{"audio: channels 0 and 65: absent alone", videoCore(`{"id":"a1","codec":"aac","channels":0},{"id":"a2","codec":"aac","channels":65}`) + `}`},
-		{"audio: role description; an unknown role absent alone", videoCore(`{"id":"a1","codec":"aac","role":"description"},{"id":"a2","codec":"aac","role":"director"}`) + `}`},
+		{"audio: roles of the DASH scheme, and one MSFP never listed, kept", videoCore(`{"id":"a1","codec":"aac","role":"main"},{"id":"a2","codec":"aac","role":"dub"},{"id":"a3","codec":"aac","role":"description"},{"id":"a4","codec":"aac","role":"karaoke"}`) + `}`},
+		{"audio: roles that aren't tokens absent alone", videoCore(`{"id":"a1","codec":"aac","role":"Commentary"},{"id":"a2","codec":"aac","role":7}`) + `}`},
 		{"audio: flags that aren't booleans: absent alone", videoCore(`{"id":"a1","codec":"aac","default":"true","forced":1,"original":null}`) + `}`},
 		{"audio: fileIndex 0 and 999; 1,000 absent alone", videoCore(`{"id":"a1","codec":"aac","fileIndex":0},{"id":"a2","codec":"aac","fileIndex":999},{"id":"a3","codec":"aac","fileIndex":1000}`) + `}`},
-		{"audio: profiles of the list; others absent alone", videoCore(`{"id":"a1","codec":"dts","profile":"dts-hd-ma"},{"id":"a2","codec":"aac","profile":"he-aac"},{"id":"a3","codec":"dts","profile":"dts-x"},{"id":"a4","codec":"eac3","profile":"Atmos"}`) + `}`},
+		{"audio: profiles as ffmpeg prints them, plain text", videoCore(`{"id":"a1","codec":"dts","profile":"DTS-HD MA"},{"id":"a2","codec":"aac","profile":"HE-AAC"},{"id":"a3","codec":"eac3","profile":"Dolby Digital Plus + Dolby Atmos"},{"id":"a4","codec":"aac","profile":"LC"}`) + `}`},
+		{"audio: profile of 64 characters kept; 65, empty or not a string absent alone", videoCore(`{"id":"a1","codec":"aac","profile":"`+strings.Repeat("p", 64)+`"},{"id":"a2","codec":"aac","profile":"`+strings.Repeat("p", 65)+`"},{"id":"a3","codec":"aac","profile":" "},{"id":"a4","codec":"aac","profile":["LC"]}`) + `}`},
 		{"audio: layout of 32 characters; 33 or a space absent alone", videoCore(`{"id":"a1","codec":"aac","layout":"`+strings.Repeat("7", 32)+`"},{"id":"a2","codec":"aac","layout":"`+strings.Repeat("7", 33)+`"},{"id":"a3","codec":"aac","layout":"5.1 side"}`) + `}`},
 		{"audio: sampleRate 8,000 and 768,000; 7,999 and 768,001 absent alone", videoCore(`{"id":"a1","codec":"pcm_s24le","sampleRate":8000},{"id":"a2","codec":"pcm_s24le","sampleRate":768000},{"id":"a3","codec":"aac","sampleRate":7999},{"id":"a4","codec":"aac","sampleRate":768001}`) + `}`},
 		{"audio: bitDepth 8 and 32; 7 and 33 absent alone", videoCore(`{"id":"a1","codec":"flac","bitDepth":8},{"id":"a2","codec":"flac","bitDepth":32},{"id":"a3","codec":"flac","bitDepth":7},{"id":"a4","codec":"flac","bitDepth":33}`) + `}`},
-		{"audio: title made plain text and cut to 32 characters; empty absent", videoCore(`{"id":"a1","codec":"aac","title":" Signs\n& Songs "},{"id":"a2","codec":"aac","title":"`+strings.Repeat("c", 33)+`"},{"id":"a3","codec":"aac","title":"\u0007"}`) + `}`},
+		{"audio: title made plain text and cut to 64 characters; empty absent", videoCore(`{"id":"a1","codec":"aac","title":" Signs\n& Songs "},{"id":"a2","codec":"aac","title":"`+strings.Repeat("c", 65)+`"},{"id":"a3","codec":"aac","title":"\u0007"}`) + `}`},
 
 		// subtitleTracks.
-		{"subtitles: s0 and s999, every format of the list", videoCp(`,"subtitleTracks":[{"id":"s0","format":"subrip"},{"id":"s1","format":"ass"},{"id":"s2","format":"ssa"},{"id":"s3","format":"webvtt"},{"id":"s4","format":"mov_text"},{"id":"s5","format":"ttml"},{"id":"s6","format":"pgs"},{"id":"s7","format":"vobsub"},{"id":"s8","format":"dvb"},{"id":"s999","format":"other"}]`)},
-		{"subtitles: s1000, s01, a repeat and a non-object skipped", videoCp(`,"subtitleTracks":[{"id":"s1000","format":"pgs"},{"id":"s01","format":"pgs"},{"id":"s1","format":"pgs"},{"id":"s1","format":"ass"},["s2"]]`)},
-		{"subtitles: an unknown, missing or non-string format kept as other", videoCp(`,"subtitleTracks":[{"id":"s1","format":"srt"},{"id":"s2"},{"id":"s3","format":4}]`)},
-		{"subtitles: members out of range or of the wrong type absent alone", videoCp(`,"subtitleTracks":[{"id":"s1","format":"pgs","language":"fr_FR","default":"yes","forced":true,"hearingImpaired":0,"external":false,"fileIndex":1000,"title":"  "}]`)},
+		{"subtitles: s0 and s999, ffmpeg's names", videoCp(`,"subtitleTracks":[{"id":"s0","format":"subrip"},{"id":"s1","format":"ass"},{"id":"s2","format":"ssa"},{"id":"s3","format":"webvtt"},{"id":"s4","format":"mov_text"},{"id":"s5","format":"ttml"},{"id":"s6","format":"hdmv_pgs_subtitle"},{"id":"s7","format":"dvd_subtitle"},{"id":"s8","format":"dvb_subtitle"},{"id":"s9","format":"dvb_teletext"},{"id":"s999","format":"eia_608"}]`)},
+		{"subtitles: s1000, s01, a repeat and a non-object skipped", videoCp(`,"subtitleTracks":[{"id":"s1000","format":"hdmv_pgs_subtitle"},{"id":"s01","format":"hdmv_pgs_subtitle"},{"id":"s1","format":"hdmv_pgs_subtitle"},{"id":"s1","format":"ass"},["s2"]]`)},
+		{"subtitles: a format MSFP never listed kept as it is", videoCp(`,"subtitleTracks":[{"id":"s1","format":"arib_caption"},{"id":"s2","format":"pgs"},{"id":"s3","format":"other"}]`)},
+		{"subtitles: a missing format, or one that isn't a token, absent; the track kept", videoCp(`,"subtitleTracks":[{"id":"s1","format":"SRT"},{"id":"s2"},{"id":"s3","format":4}]`)},
+		{"subtitles: members out of range or of the wrong type absent alone", videoCp(`,"subtitleTracks":[{"id":"s1","format":"hdmv_pgs_subtitle","language":"fr_FR","default":"yes","forced":true,"hearingImpaired":0,"external":false,"fileIndex":1000,"title":"  "}]`)},
 		{"subtitles: the first 64 tracks kept", videoCp(`,"subtitleTracks":[` + videoQuoted(65, func(i int) string { return fmt.Sprintf(`{"id":"s%d","format":"subrip"}`, i) }) + `]`)},
-		{"subtitles: not an array: absent", videoCp(`,"subtitleTracks":{"id":"s1","format":"pgs"}`)},
+		{"subtitles: title cut to 64 characters", videoCp(`,"subtitleTracks":[{"id":"s1","format":"subrip","title":"` + strings.Repeat("t", 65) + `"}]`)},
+		{"subtitles: not an array: absent", videoCp(`,"subtitleTracks":{"id":"s1","format":"subrip"}`)},
 
 		// chapters.
 		{"chapters: from 0 to durationMs", videoCp(`,"chapters":[{"startMs":0,"name":"Opening"},{"startMs":3600000,"name":"End"}]`)},
@@ -298,7 +344,9 @@ func videoCopyCases() []videoCase {
 
 		// segments.
 		{"segments: every kind, end at durationMs", videoCp(`,"segments":[{"kind":"recap","startMs":0,"endMs":30000},{"kind":"intro","startMs":30000,"endMs":90000},{"kind":"commercial","startMs":1800000,"endMs":1860000},{"kind":"outro","startMs":3400000,"endMs":3600000,"final":true},{"kind":"preview","startMs":3500000,"endMs":3600000}]`)},
-		{"segments: unknown kinds and times out of range or order dropped", videoCp(`,"segments":[{"kind":"credits","startMs":0,"endMs":1000},{"kind":"intro","startMs":1000,"endMs":1000},{"kind":"intro","startMs":2000,"endMs":1000},{"kind":"intro","startMs":-1,"endMs":1000},{"kind":"outro","startMs":0,"endMs":3600001},{"kind":"outro","startMs":0},{"kind":"intro","startMs":0,"endMs":1000,"final":"yes"}]`)},
+		{"segments: a kind MSFP never listed kept", videoCp(`,"segments":[{"kind":"credits","startMs":0,"endMs":1000},{"kind":"hook","startMs":1000,"endMs":2000}]`)},
+		{"segments: kinds that aren't tokens dropped", videoCp(`,"segments":[{"kind":"Intro","startMs":0,"endMs":1000},{"kind":7,"startMs":0,"endMs":1000},{"startMs":0,"endMs":1000},{"kind":"intro","startMs":0,"endMs":1000}]`)},
+		{"segments: times out of range or order dropped", videoCp(`,"segments":[{"kind":"intro","startMs":1000,"endMs":1000},{"kind":"intro","startMs":2000,"endMs":1000},{"kind":"intro","startMs":-1,"endMs":1000},{"kind":"outro","startMs":0,"endMs":3600001},{"kind":"outro","startMs":0},{"kind":"intro","startMs":0,"endMs":1000,"final":"yes"}]`)},
 		{"segments: the first 32 kept", videoCp(`,"segments":[` + videoQuoted(33, func(i int) string {
 			return fmt.Sprintf(`{"kind":"commercial","startMs":%d,"endMs":%d}`, i*1000, i*1000+500)
 		}) + `]`)},
@@ -365,11 +413,12 @@ func videoTitleCases() []videoCase {
 		{"not an object: skipped", `"movie/tmdb/949"`},
 
 		// copies (sections 3.1 and 3.8).
-		{"copies: the first 8 kept", `{` + film + `,"copies":[` + videoQuoted(9, copyN) + `]}`},
-		{"copies: skipped copies don't count toward the 8", `{` + film + `,"copies":[7,{"id":"bad"},` + videoQuoted(9, copyN) + `]}`},
+		{"copies: 16 copies kept", `{` + film + `,"copies":[` + videoQuoted(16, copyN) + `]}`},
+		{"copies: the first 16 kept", `{` + film + `,"copies":[` + videoQuoted(17, copyN) + `]}`},
+		{"copies: skipped copies don't count toward the 16", `{` + film + `,"copies":[7,{"id":"bad"},` + videoQuoted(17, copyN) + `]}`},
 		{"copies: a repeated id skipped alone", `{` + film + `,"copies":[` + copyN(1) + `,` + strings.Replace(copyN(1), `"t1"`, `"t2"`, 1) + `,` + copyN(2) + `]}`},
 		{"copies: an entry that isn't an object skipped alone", `{` + film + `,"copies":["v0",` + videoC + `]}`},
-		{"copies: a film with no copy left: skipped", `{` + film + `,"copies":[{"id":"v1","durationMs":-1,"container":"mkv","size":1,"etag":"t1","audioTracks":[]}]}`},
+		{"copies: a film with no copy left: skipped", `{` + film + `,"copies":[{"id":"v1","durationMs":-1,"container":"matroska","size":1,"etag":"t1","audioTracks":[]}]}`},
 		{"copies: empty: skipped", `{` + film + `,"copies":[]}`},
 		{"copies missing on a film: skipped", `{` + film + `}`},
 		{"copies missing on an episode: skipped", `{"key":"series/tmdb/1399/s1/e2","kind":"episode","library":"v2"}`},
@@ -405,6 +454,9 @@ func videoTitleCases() []videoCase {
 		{"ids: imdb of 10 digits", `{` + film + cs + `,"ids":{"imdb":"tt1234567890"}}`},
 		{"ids: values out of form, unknown schemes and non-strings skipped", `{` + film + cs + `,"ids":{"imdb":"tt012345","tvdb":"081189","tmdb":"949","mb":"x"}}`},
 		{"ids: imdb of 11 digits and tvdb of 11 digits skipped", `{` + film + cs + `,"ids":{"imdb":"tt12345678901","tvdb":"10000000000"}}`},
+		{"ids: tmdb on a tvdb series, once TMDB has it", `{"key":"series/tvdb/81189","kind":"series","library":"v2","ids":{"tmdb":"1396","imdb":"tt0903747"}}`},
+		{"ids: tmdb on a tvdb episode", `{"key":"series/tvdb/81189/s1/e2","kind":"episode","library":"v2"` + cs + `,"ids":{"tmdb":"62086"}}`},
+		{"ids: tmdb out of form on a tvdb series skipped", `{"key":"series/tvdb/81189","kind":"series","library":"v2","ids":{"tmdb":"01396"}}`},
 		{"ids: one good, one not a string", `{` + film + cs + `,"ids":{"imdb":7,"tvdb":"81189"}}`},
 		{"ids: not an object: absent", `{` + film + cs + `,"ids":["tt0113277"]}`},
 		{"ids of a season: ignored", `{` + season + `,"ids":{"tvdb":"81189"}}`},
@@ -431,10 +483,12 @@ func videoExtraCases() []videoCase {
 		{"an extra of a local season", x("series/local/Hk2v9TnA/s1/x/De6", `,"extraType":"deletedscene"`)},
 		{"extraType clip", x("movie/tmdb/348/x/Cl7", `,"extraType":"clip"`)},
 		{"extra part of 64 characters", x("movie/tmdb/348/x/"+opaque, `,"extraType":"trailer"`)},
-		{"extraType unknown: clip", x("movie/tmdb/348/x/Tr7aQ1", `,"extraType":"themesong"`)},
-		{"extraType in another case: clip", x("movie/tmdb/348/x/Tr7aQ1", `,"extraType":"Trailer"`)},
-		{"extraType missing: clip", x("movie/tmdb/348/x/Tr7aQ1", ``)},
-		{"extraType not a string: clip", x("movie/tmdb/348/x/Tr7aQ1", `,"extraType":1`)},
+		{"extraType themesong", x("movie/tmdb/348/x/Th1", `,"extraType":"themesong"`)},
+		{"extraType themevideo of a series", x("series/tmdb/1399/x/Th2", `,"extraType":"themevideo"`)},
+		{"extraType MSFP never listed, kept as it is", x("movie/tmdb/348/x/Tr7aQ1", `,"extraType":"bloopers"`)},
+		{"extraType in capitals isn't a token: skipped", x("movie/tmdb/348/x/Tr7aQ1", `,"extraType":"Trailer"`)},
+		{"extraType missing: skipped", x("movie/tmdb/348/x/Tr7aQ1", ``)},
+		{"extraType not a string: skipped", x("movie/tmdb/348/x/Tr7aQ1", `,"extraType":1`)},
 		{"name made plain text", x("movie/tmdb/348/x/Tr7aQ1", `,"extraType":"trailer","name":"\tMaking\u00a0of \u200e"`)},
 		{"name of 64 characters kept", x("movie/tmdb/348/x/Tr7aQ1", `,"extraType":"trailer","name":"`+strings.Repeat("é", 64)+`"`)},
 		{"name cut to 64 characters", x("movie/tmdb/348/x/Tr7aQ1", `,"extraType":"trailer","name":"`+strings.Repeat("n", 65)+`"`)},
@@ -640,15 +694,83 @@ func videoPreviewCases() []videoPreviewsCase {
 	return out
 }
 
+func videoFontURLCases() []videoCase {
+	root := videoStreamRoot
+	tk := "Tk7Qw2xLp9mZ"
+	urls := func(n int) string {
+		return `[` + videoQuoted(n, func(i int) string { return fmt.Sprintf(`"%s%s/fonts/%d"`, root, tk, i) }) + `]`
+	}
+	in := []videoInput{
+		{"one font", urls(1)},
+		{"64 fonts", urls(64)},
+		{"no font", `[]`},
+		{"65 fonts: dropped", urls(65)},
+		{"out of order: dropped", `["` + root + tk + `/fonts/1","` + root + tk + `/fonts/0"]`},
+		{"an index with a leading zero: dropped", `["` + root + tk + `/fonts/00"]`},
+		{"under another ticket: dropped", `["` + root + tk + `/fonts/0","` + root + `Other1/fonts/1"]`},
+		{"under another stream root: dropped", `["https://b.example.org/api/v1/stream/` + tk + `/fonts/0"]`},
+		{"another file shape: dropped", `["` + root + tk + `/trickplay/0"]`},
+		{"an entry that isn't a string: dropped", `[0]`},
+		{"not an array: dropped", `"` + root + tk + `/fonts/0"`},
+	}
+	var out []videoCase
+	for _, c := range in {
+		got, err := keepVideoFonts([]byte(c.text), root)
+		ok, r := videoReason(err)
+		out = append(out, videoCase{c.name, c.text, ok, string(got), r})
+	}
+	return out
+}
+
+func videoFontSetCases() []videoCase {
+	const mib = 1 << 20
+	sizes := func(n int, f func(i int) int) string {
+		return `[` + videoQuoted(n, func(i int) string { return fmt.Sprint(f(i)) }) + `]`
+	}
+	in := []videoInput{
+		{"no font", `[]`},
+		{"one font of 10 MiB", sizes(1, func(int) int { return 10 * mib })},
+		{"64 fonts of 1 MiB: 64 MiB in all", sizes(64, func(int) int { return mib })},
+		{"six fonts of 10 MiB and one of 4 MiB: 64 MiB in all", sizes(7, func(i int) int {
+			if i == 6 {
+				return 4 * mib
+			}
+			return 10 * mib
+		})},
+		{"a font of 1 byte", `[1]`},
+		{"65 fonts of 1 byte: refused", sizes(65, func(int) int { return 1 })},
+		{"a font of 10 MiB and 1 byte: refused", sizes(1, func(int) int { return 10*mib + 1 })},
+		{"seven fonts of 10 MiB: over 64 MiB in all, refused", sizes(7, func(int) int { return 10 * mib })},
+		{"64 MiB and 1 byte in all: refused", sizes(7, func(i int) int {
+			if i == 6 {
+				return 4*mib + 1
+			}
+			return 10 * mib
+		})},
+		{"a size of 0: refused", `[1000,0]`},
+		{"a size that isn't an integer: refused", `[1000.5]`},
+		{"not an array: refused", `{"fonts":1}`},
+	}
+	var out []videoCase
+	for _, c := range in {
+		got, err := checkVideoFontSet([]byte(c.text))
+		ok, r := videoReason(err)
+		out = append(out, videoCase{c.name, c.text, ok, string(got), r})
+	}
+	return out
+}
+
 func genV0Video() []byte {
 	return encode(videoFile{
 		About: []string{
-			"MSFP video part version 0, as revised by proposal 16 (spec/v0/video.md): what a caller keeps of a video title (section 3.1), of its copies (sections 3.2 to 3.8), of an extra (section 3.9) and of a local title (section 3.10); title keys of the tvdb and local schemes (sections 4.4 and 4.5); the previews call (sections 5.5 and 5.6). Generated by tools/vectors, which re-derives every output from its text; no implementation has produced them yet.",
+			"MSFP video part version 0, as revised by proposals 16 and 17 (spec/v0/video.md): what a caller keeps of a video title (section 3.1), of its copies (sections 3.2 to 3.8), of an extra (section 3.9) and of a local title (section 3.10); title keys of the tvdb and local schemes (sections 4.4 and 4.5); the previews call (sections 5.5 and 5.6); the fonts of a copy (sections 5.3 and 6.6). Generated by tools/vectors, which re-derives every output from its text; no implementation has produced them yet.",
 			"titles, extras, localTitles: text is one entry of a titles answer, as JSON; the caller asked for the libraries listed in libraries. valid false: the caller skips the title, for the reason given. valid true: output is what it keeps, members in this order: key, kind, library, extraType, name, year, image, place (season, episode), with, ids (its members sorted), copies (each as in copies); absent members left out.",
-			"copies: text is one entry of a title's copies. valid false: the caller skips that copy alone. valid true: output is what it keeps, members in the order of the table of section 3.2 (id, name, edition, durationMs, startMs, container, size, etag, parts, bitrateKbps, video, audioTracks, subtitleTracks, chapters, segments, previews, added, threeD), streams and tracks in the order of the tables of sections 3.3 and 3.4; absent members left out, audioTracks always written. Numbers that aren't integers (level, fps) are written in their shortest decimal form. The cap of 8 copies, repeated copy IDs and a title left without copies are in titles.",
+			"copies: text is one entry of a title's copies. valid false: the caller skips that copy alone. valid true: output is what it keeps, members in the order of the table of section 3.2 (id, name, edition, durationMs, startMs, container, size, etag, parts, bitrateKbps, video, audioTracks, subtitleTracks, chapters, segments, previews, added, threeD), streams and tracks in the order of the tables of sections 3.3 and 3.4; absent members left out, audioTracks always written. A level that isn't an integer is written in its shortest decimal form. The cap of 16 copies, repeated copy IDs and a title left without copies are in titles.",
+			"Open fields (container, the codecs, edition, role, subtitle format, segment kind, extraType, hdr, the colour members) keep any token of core section 8.5 (1 to 32 characters of a-z 0-9 . _ -), known or not; a value that isn't a token is dropped alone when optional, and a required one (container, a video or audio codec, extraType) takes its copy, video, track or extra with it. Profiles are plain text of at most 64 characters, never cut.",
+			"fontURLs: text is the fonts member of play's answer, the owning server's stream root being streamRoot. valid true: output is what the viewer's server keeps; valid false: it drops the member. fontSets: text is the sizes in bytes of one copy's fonts, in the order of fonts. valid true: within the bounds of section 6.6, output their count and total; valid false: the first font that breaks a bound, which the owning server doesn't list and a viewer's server refuses.",
 			"localKeys, tvdbKeys: text is a title key. valid true: kind is the kind it names (movie, series, season, episode or extra); valid false: the receiver skips a title with that key.",
 			"previews: side request is a previews request as the owning server reads it: valid false means it answers 400 (the 404s depend on what it offers, not on the request). side answer is a previews answer as the viewer's server reads it, the owning server's stream root being streamRoot: valid false means it refuses the whole answer; valid true: output is what it keeps, {} when it drops the previews and plays on without them.",
-			"Tracks' languages are kept only as valid tags, in the form catalog section 3 sends them (a tag sentTag of strict.json's languageCodes leaves unchanged), never converted; colour.range only as tv or pc, the other colour members by form (1 to 32 characters of a-z 0-9 _ -); the conversions of catalog section 3 are in strict.json (languageCodes). The WebVTT, ASS, PGS and font cases of video section 6 are in media.json.",
+			"Tracks' languages are kept only as valid tags, in the form catalog section 3 sends them (a tag sentTag of strict.json's languageCodes leaves unchanged), never converted; the conversions of catalog section 3 are in strict.json (languageCodes). The WebVTT, ASS, PGS and font cases of video section 6 are in media.json.",
 		},
 		Libraries:   videoLibraries,
 		StreamRoot:  videoStreamRoot,
@@ -659,5 +781,7 @@ func genV0Video() []byte {
 		LocalKeys:   videoKeySet(videoLocalKeyCases()),
 		TVDBKeys:    videoKeySet(videoTVDBKeyCases()),
 		Previews:    videoPreviewCases(),
+		FontURLs:    videoFontURLCases(),
+		FontSets:    videoFontSetCases(),
 	})
 }
