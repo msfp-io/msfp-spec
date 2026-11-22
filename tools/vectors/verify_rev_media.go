@@ -143,7 +143,8 @@ func verifyRevMedia(read func(string) []byte) []error {
 		}
 	}
 	for _, x := range list("scans") {
-		status, cr := scanAnswer(num(x, "sent"), str(x, "range"), num(x, "size"))
+		scanCap := scanCapOf(num(x, "scanBytes"))
+		status, cr := scanAnswer(scanCap, num(x, "sent"), str(x, "range"), num(x, "size"))
 		if status != int(num(x, "status")) || cr != str(x, "contentRange") {
 			bad("scans %q: the file says %d %q; the rules give %d %q", str(x, "name"), num(x, "status"), str(x, "contentRange"), status, cr)
 		}

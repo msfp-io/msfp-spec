@@ -1,11 +1,9 @@
 package main
 
 // The playback part's data rules (spec/v0/playback.md, with video section
-// 5.1's request members and capabilities and media section 1's URLs), as
-// a viewer's server and an owning server apply them:
+// 5.1's request members and media section 1's URLs), as a viewer's server
+// and an owning server apply them:
 //
-//   - playbackCoarsen: what a viewer's server sends of a device's
-//     capabilities (playback section 2.1, video section 5.1);
 //   - playbackPlay: an owning server's checks of a play request, in the
 //     order of section 2.2, against the copies and limits of a context;
 //   - playbackKeepAnswer: what a viewer's server keeps of a play answer
@@ -23,46 +21,44 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
-// The coarse lists (playback section 2.1, video section 5.1).
+// The protocol's own lists and steps (playback sections 2.1 and 2.7).
 var (
-	playbackContainers    = []string{"mp4", "m4v", "mov", "webm", "mkv", "ts", "mp3", "aac", "m4a", "flac", "ogg", "opus", "wav", "avi", "m2ts", "wmv", "flv", "3gp"}
-	playbackAudioCodecs   = []string{"aac", "mp3", "opus", "vorbis", "flac", "ac3", "eac3", "alac", "pcm_s16le", "dts", "truehd", "mp2", "wmav2", "pcm_s24le", "pcm_bluray"}
-	playbackAudioProfiles = []string{"atmos", "dtsx", "dts-hd-ma", "dts-hd-hra", "dts-es", "he-aac", "lc"}
-	playbackVideoCodecs   = []string{"h264", "hevc", "av1", "vp8", "vp9", "mpeg2video", "mpeg4", "vc1", "wmv3", "h263", "theora"}
-	playbackHDR           = []string{"hdr10", "hdr10plus", "hlg", "dv"}
-	playbackDVProfiles    = []int64{4, 5, 7, 8, 9, 10}
-	playbackHeights       = []int64{480, 720, 1080, 1440, 2160, 4320}
-	playbackChannelSteps  = []int64{2, 6, 8}
-	playbackRateSteps     = []int64{44100, 48000, 96000, 192000}
-	playbackDepthSteps    = []int64{16, 24, 32}
+	playbackPurposes         = []string{"play", "download", "scan"}
+	playbackDeliveries       = []string{"file", "remux", "transcode"}
+	playbackRemuxContainers  = []string{"mpegts", "mp4"}
+	playbackHeights          = []int64{480, 720, 1080, 1440, 2160, 4320}
+	playbackChannelSteps     = []int64{2, 6, 8}
+	playbackBaselineVideo    = "h264"
+	playbackBaselineAudio    = "aac"
+	playbackBaselineChannels = int64(2)
 )
 
 // Bounds.
 const (
 	playbackMaxPositionMs = 8640000000 // 100 days
 	playbackMaxKbps       = 10000000
-	playbackDefaultCap    = 120000
 	playbackAtBack        = 30 * 86400
 	playbackAtAhead       = 5 * 60
 	playbackLateWindow    = 30 * 86400
 	playbackDownloadTTL   = 86400
 	playbackScanTTL       = 600
 	playbackIdleSeconds   = 120
-	playbackScanCapBytes  = 33554432
+	playbackMaxStreams    = 1000
+	playbackScanFloor     = 4 << 20 // scanBytes absent or out of range
+	playbackScanTop       = 1 << 30
 )
 
 var (
-	playbackIDForm     = regexp.MustCompile(`^play_[a-z2-7]{26}$`)
+	playbackIDForm     = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 	playbackEtagForm   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 	playbackObjIDForm  = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 	playbackAudioForm  = regexp.MustCompile(`^a(0|[1-9][0-9]{0,2})$`)
 	playbackSubForm    = regexp.MustCompile(`^s(0|[1-9][0-9]{0,2})$`)
+	playbackTokenForm  = regexp.MustCompile(`^[a-z0-9._-]{1,32}$`)
 	playbackTicketForm = `[A-Za-z0-9_-]{1,64}`
 
 	// Title keys (video section 4, music section 2).
@@ -88,6 +84,10 @@ var (
 		{"artist", "", regexp.MustCompile(`^artist/(mb/` + pbMBID + `|local/` + pbOpaque + `)$`)},
 	}
 )
+
+// playbackToken: a token of core section 8.5, 1 to 32 characters of
+// a-z 0-9 . _ -. (Core's own helper is openToken; the two are one rule.)
+func playbackToken(s string) bool { return playbackTokenForm.MatchString(s) }
 
 // playbackTitleKind names the kind (IDs of at most 10 digits are at most
 // 9,999,999,999 by their form) of a title key and the content part
@@ -170,206 +170,9 @@ func playbackEncode(v any) []byte {
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 }
 
-// stepDown: the largest step at most v; below the first, the first.
-func playbackStepDown(v int64, steps []int64) int64 {
-	out := steps[0]
-	for _, s := range steps {
-		if s <= v {
-			out = s
-		}
-	}
-	return out
-}
-
-// playbackCaps is a capabilities object as the vectors write it: lists
-// sorted, each value once, members left out when nothing is said.
-type playbackCaps struct {
-	Containers         []string `json:"containers,omitempty"`
-	VideoCodecs        []string `json:"videoCodecs,omitempty"`
-	AudioCodecs        []string `json:"audioCodecs,omitempty"`
-	AudioProfiles      []string `json:"audioProfiles,omitempty"`
-	HDR                []string `json:"hdr,omitempty"`
-	DVProfiles         []int64  `json:"dvProfiles,omitempty"`
-	MaxHeight          int64    `json:"maxHeight,omitempty"`
-	MaxAudioChannels   int64    `json:"maxAudioChannels,omitempty"`
-	MaxAudioSampleRate int64    `json:"maxAudioSampleRate,omitempty"`
-	MaxAudioBitDepth   int64    `json:"maxAudioBitDepth,omitempty"`
-	MaxBitrateKbps     int64    `json:"maxBitrateKbps,omitempty"`
-}
-
-func (c playbackCaps) empty() bool {
-	return len(c.Containers)+len(c.VideoCodecs)+len(c.AudioCodecs)+len(c.AudioProfiles)+len(c.HDR)+len(c.DVProfiles) == 0 &&
-		c.MaxHeight == 0 && c.MaxAudioChannels == 0 && c.MaxAudioSampleRate == 0 && c.MaxAudioBitDepth == 0 && c.MaxBitrateKbps == 0
-}
-
-var playbackStringLists = []struct {
-	name string
-	list []string
-	set  func(*playbackCaps, []string)
-}{
-	{"containers", playbackContainers, func(c *playbackCaps, v []string) { c.Containers = v }},
-	{"videoCodecs", playbackVideoCodecs, func(c *playbackCaps, v []string) { c.VideoCodecs = v }},
-	{"audioCodecs", playbackAudioCodecs, func(c *playbackCaps, v []string) { c.AudioCodecs = v }},
-	{"audioProfiles", playbackAudioProfiles, func(c *playbackCaps, v []string) { c.AudioProfiles = v }},
-	{"hdr", playbackHDR, func(c *playbackCaps, v []string) { c.HDR = v }},
-	{"subtitles", nil, func(*playbackCaps, []string) {}}, // no values defined yet
-}
-
-var playbackIntCaps = []struct {
-	name string
-	max  int64
-	set  func(*playbackCaps, int64)
-}{
-	{"maxHeight", 100000, func(c *playbackCaps, v int64) { c.MaxHeight = v }},
-	{"maxAudioChannels", 64, func(c *playbackCaps, v int64) { c.MaxAudioChannels = v }},
-	{"maxAudioSampleRate", 768000, func(c *playbackCaps, v int64) { c.MaxAudioSampleRate = v }},
-	{"maxAudioBitDepth", 64, func(c *playbackCaps, v int64) { c.MaxAudioBitDepth = v }},
-	{"maxBitrateKbps", playbackMaxKbps, func(c *playbackCaps, v int64) { c.MaxBitrateKbps = v }},
-}
-
-// keepListed keeps the entries of list, each once, sorted.
-func playbackKeepListed(entries []string, list []string) []string {
-	var out []string
-	for _, e := range entries {
-		if slices.Contains(list, e) && !slices.Contains(out, e) {
-			out = append(out, e)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// playbackReadCaps is the owning server's reading of capabilities
-// (playback sections 2.1 and 2.2, video section 5.1): a wrong type, a
-// non-string (or, in dvProfiles, non-integer) entry or a number out of
-// range refuses the request; unknown entries are ignored, in another case
-// included; dv counts only with dvProfiles.
-func playbackReadCaps(v any) (playbackCaps, error) {
-	var c playbackCaps
-	o, ok := v.(map[string]any)
-	if !ok {
-		return c, pbBad("capabilities isn't an object")
-	}
-	for _, l := range playbackStringLists {
-		raw, present := o[l.name]
-		if !present {
-			continue
-		}
-		arr, ok := raw.([]any)
-		if !ok {
-			return c, pbBad("capabilities.%s isn't an array", l.name)
-		}
-		var entries []string
-		for _, e := range arr {
-			s, ok := e.(string)
-			if !ok {
-				return c, pbBad("capabilities.%s has an entry that isn't a string", l.name)
-			}
-			entries = append(entries, s)
-		}
-		l.set(&c, playbackKeepListed(entries, l.list))
-	}
-	if raw, present := o["dvProfiles"]; present {
-		arr, ok := raw.([]any)
-		if !ok {
-			return c, pbBad("capabilities.dvProfiles isn't an array")
-		}
-		for _, e := range arr {
-			n, ok := playbackInt(e)
-			if !ok {
-				return c, pbBad("capabilities.dvProfiles has an entry that isn't an integer")
-			}
-			if slices.Contains(playbackDVProfiles, n) && !slices.Contains(c.DVProfiles, n) {
-				c.DVProfiles = append(c.DVProfiles, n)
-			}
-		}
-		slices.Sort(c.DVProfiles)
-	}
-	for _, f := range playbackIntCaps {
-		raw, present := o[f.name]
-		if !present {
-			continue
-		}
-		n, ok := playbackInt(raw)
-		if !ok {
-			return c, pbBad("capabilities.%s isn't an integer", f.name)
-		}
-		if n < 0 || n > f.max {
-			return c, pbBad("capabilities.%s out of 0 to %d", f.name, f.max)
-		}
-		f.set(&c, n)
-	}
-	if len(c.DVProfiles) == 0 {
-		c.HDR = slices.DeleteFunc(c.HDR, func(s string) bool { return s == "dv" })
-		if len(c.HDR) == 0 {
-			c.HDR = nil
-		}
-	}
-	return c, nil
-}
-
-// playbackCoarsen is what a viewer's server sends of its device's
-// capabilities and bitrate cap (playback section 2.1, video section 5.1).
-// text is {"title", "capabilities", "maxBitrateKbps"} as the device
-// describes itself; the result is the same request, coarsened.
-func playbackCoarsen(raw []byte) ([]byte, error) {
-	o, err := playbackDecode(raw)
-	if err != nil {
-		return nil, err
-	}
-	title, _ := o["title"].(string)
-	in, _ := o["capabilities"].(map[string]any)
-	var c playbackCaps
-	for _, l := range playbackStringLists {
-		arr, _ := in[l.name].([]any)
-		var entries []string
-		for _, e := range arr {
-			if s, ok := e.(string); ok {
-				entries = append(entries, strings.ToLower(s))
-			}
-		}
-		l.set(&c, playbackKeepListed(entries, l.list))
-	}
-	arr, _ := in["dvProfiles"].([]any)
-	for _, e := range arr {
-		if n, ok := playbackInt(e); ok && slices.Contains(playbackDVProfiles, n) && !slices.Contains(c.DVProfiles, n) {
-			c.DVProfiles = append(c.DVProfiles, n)
-		}
-	}
-	slices.Sort(c.DVProfiles)
-	step := func(name string, steps []int64) int64 {
-		n, ok := playbackInt(in[name])
-		if !ok || n <= 0 {
-			return 0 // not said
-		}
-		return playbackStepDown(n, steps)
-	}
-	c.MaxHeight = step("maxHeight", playbackHeights)
-	c.MaxAudioChannels = step("maxAudioChannels", playbackChannelSteps)
-	c.MaxAudioSampleRate = step("maxAudioSampleRate", playbackRateSteps)
-	c.MaxAudioBitDepth = step("maxAudioBitDepth", playbackDepthSteps)
-	if n, ok := playbackInt(in["maxBitrateKbps"]); ok && n >= 1000 {
-		c.MaxBitrateKbps = n / 1000 * 1000
-	}
-	out := struct {
-		Title          string        `json:"title"`
-		Capabilities   *playbackCaps `json:"capabilities,omitempty"`
-		MaxBitrateKbps *int64        `json:"maxBitrateKbps,omitempty"`
-	}{Title: title}
-	if !c.empty() {
-		out.Capabilities = &c
-	}
-	if n, ok := playbackInt(o["maxBitrateKbps"]); ok && n >= 0 {
-		if n >= 1000 {
-			n = n / 1000 * 1000
-		}
-		out.MaxBitrateKbps = &n
-	}
-	return playbackEncode(out), nil
-}
-
 // playbackTargets is a transcode object as read (playback section 2.7,
-// video section 5.1).
+// video section 5.1); the output gives the baseline's values for targets
+// left out (maxHeight left out: the copy's own height).
 type playbackTargets struct {
 	VideoCodec     string `json:"videoCodec,omitempty"`
 	MaxHeight      int64  `json:"maxHeight,omitempty"`
@@ -377,30 +180,35 @@ type playbackTargets struct {
 	AudioCodec     string `json:"audioCodec,omitempty"`
 	AudioChannels  int64  `json:"audioChannels,omitempty"`
 	BurnSubtitle   string `json:"burnSubtitle,omitempty"`
+	burn           any    // burnSubtitle as received, checked at step 4
+	hasBurn        bool
 }
 
+// playbackReadTargets reads a transcode object at step 1: codecs must be
+// tokens (an unknown token is refused at step 7, 409), numbers of their
+// steps. burnSubtitle is checked at step 4.
 func playbackReadTargets(v any) (playbackTargets, error) {
 	var t playbackTargets
 	o, ok := v.(map[string]any)
 	if !ok {
 		return t, pbBad("transcode isn't an object")
 	}
-	str := func(name string, list []string, dst *string) error {
+	str := func(name string, dst *string) error {
 		raw, present := o[name]
 		if !present {
 			return nil
 		}
 		s, ok := raw.(string)
-		if !ok || !slices.Contains(list, s) {
-			return pbBad("transcode.%s isn't one of its list", name)
+		if !ok || !playbackToken(s) {
+			return pbBad("transcode.%s isn't a token (core section 8.5)", name)
 		}
 		*dst = s
 		return nil
 	}
-	if err := str("videoCodec", playbackVideoCodecs, &t.VideoCodec); err != nil {
+	if err := str("videoCodec", &t.VideoCodec); err != nil {
 		return t, err
 	}
-	if err := str("audioCodec", playbackAudioCodecs, &t.AudioCodec); err != nil {
+	if err := str("audioCodec", &t.AudioCodec); err != nil {
 		return t, err
 	}
 	num := func(name string, ok func(int64) bool, dst *int64) error {
@@ -424,18 +232,12 @@ func playbackReadTargets(v any) (playbackTargets, error) {
 	if err := num("audioChannels", func(n int64) bool { return slices.Contains(playbackChannelSteps, n) }, &t.AudioChannels); err != nil {
 		return t, err
 	}
-	if raw, present := o["burnSubtitle"]; present {
-		s, ok := raw.(string)
-		if !ok || !playbackSubForm.MatchString(s) {
-			return t, pbBad("transcode.burnSubtitle isn't s and a number from 0 to 999")
-		}
-		t.BurnSubtitle = s
-	}
+	t.burn, t.hasBurn = o["burnSubtitle"]
 	return t, nil
 }
 
-// The owning server's context: its copies, the pairing's limits, what is
-// in use.
+// The owning server's context: its copies, the encoders it has, the
+// pairing's limits, what is in use.
 
 type playbackTrackInfo struct {
 	ID       string `json:"id"`
@@ -461,6 +263,7 @@ type playbackLimits struct {
 	DownloadsPerDay int64 `json:"downloadsPerDay"`
 	DownloadKbps    int64 `json:"downloadKbps"`
 	ScansPerDay     int64 `json:"scansPerDay"`
+	ScanBytes       int64 `json:"scanBytes,omitempty"`
 }
 
 type playbackUse struct {
@@ -473,12 +276,14 @@ type playbackUse struct {
 }
 
 type playbackContext struct {
-	Copies     map[string][]playbackCopy `json:"copies"`
-	OwnCapKbps int64                     `json:"ownCapKbps"`
-	Limits     playbackLimits            `json:"limits"`
-	InUse      playbackUse               `json:"inUse"`
-	StreamRoot string                    `json:"streamRoot"`
-	Now        int64                     `json:"now"`
+	Copies        map[string][]playbackCopy `json:"copies"`
+	VideoEncoders []string                  `json:"videoEncoders"`
+	AudioEncoders []string                  `json:"audioEncoders"`
+	OwnCapKbps    int64                     `json:"ownCapKbps"`
+	Limits        playbackLimits            `json:"limits"`
+	InUse         playbackUse               `json:"inUse"`
+	StreamRoot    string                    `json:"streamRoot"`
+	Now           int64                     `json:"now"`
 }
 
 // playbackStarted is what the owning server starts for a play it accepts.
@@ -486,12 +291,13 @@ type playbackStarted struct {
 	Title           string           `json:"title"`
 	Purpose         string           `json:"purpose"`
 	Delivery        string           `json:"delivery,omitempty"`
+	Baseline        string           `json:"baseline,omitempty"`
 	Container       string           `json:"container,omitempty"`
 	Transcode       *playbackTargets `json:"transcode,omitempty"`
 	AudioRenditions bool             `json:"audioRenditions,omitempty"`
-	Capabilities    *playbackCaps    `json:"capabilities,omitempty"`
 	VersionID       string           `json:"versionId"`
 	AudioTrack      string           `json:"audioTrack"`
+	Defaults        bool             `json:"defaults,omitempty"`
 	StartPositionMs int64            `json:"startPositionMs"`
 	BitrateCapKbps  int64            `json:"bitrateCapKbps,omitempty"`
 	SpeedCapKbps    int64            `json:"speedCapKbps,omitempty"`
@@ -508,14 +314,18 @@ func playbackLangBase(tag string) string {
 	return strings.ToLower(base)
 }
 
-// playbackOwnSound: a track of the title's own sound (no role).
-func playbackOwnSound(t playbackTrackInfo) bool { return t.Role == "" }
+// playbackOwnSound: a track of the title's own sound (section 2.6's
+// recommended defaults): no role, main or dub; never an unknown role.
+func playbackOwnSound(t playbackTrackInfo) bool {
+	return t.Role == "" || t.Role == "main" || t.Role == "dub"
+}
 
-// playbackPickCopy is section 2.6's table of the copy.
-func playbackPickCopy(copies []playbackCopy, versionID, lang string) playbackCopy {
+// playbackPickCopy is the copy a request names, else section 2.6's
+// recommended default; named says whether the request named it.
+func playbackPickCopy(copies []playbackCopy, versionID, lang string) (c playbackCopy, named bool) {
 	for _, c := range copies {
 		if versionID != "" && c.ID == versionID {
-			return c
+			return c, true
 		}
 	}
 	if lang != "" {
@@ -526,20 +336,21 @@ func playbackPickCopy(copies []playbackCopy, versionID, lang string) playbackCop
 			for _, c := range copies {
 				for _, a := range c.Audio {
 					if playbackOwnSound(a) && a.Language != "" && same(a.Language) {
-						return c
+						return c, false
 					}
 				}
 			}
 		}
 	}
-	return copies[0]
+	return copies[0], false
 }
 
-// playbackPickAudio is section 2.6's table of the audio.
-func playbackPickAudio(c playbackCopy, track, lang string) string {
+// playbackPickAudio is the track a request names, else section 2.6's
+// recommended default; named says whether the request named it.
+func playbackPickAudio(c playbackCopy, track, lang string) (id string, named bool) {
 	for _, a := range c.Audio {
 		if a.ID == track {
-			return a.ID
+			return a.ID, true
 		}
 	}
 	if lang != "" {
@@ -549,23 +360,24 @@ func playbackPickAudio(c playbackCopy, track, lang string) string {
 		} {
 			for _, a := range c.Audio {
 				if playbackOwnSound(a) && a.Language != "" && same(a.Language) {
-					return a.ID
+					return a.ID, false
 				}
 			}
 		}
 	}
 	for _, a := range c.Audio {
 		if a.Default {
-			return a.ID
+			return a.ID, false
 		}
 	}
 	if len(c.Audio) > 0 {
-		return c.Audio[0].ID
+		return c.Audio[0].ID, false
 	}
-	return ""
+	return "", false
 }
 
-// playbackAllowed is section 2.7's table of purpose and delivery.
+// playbackAllowed is section 2.7's table of purpose and a delivery of the
+// list ("" for none).
 func playbackAllowed(purpose, delivery string, t *playbackTargets) bool {
 	switch purpose {
 	case "play":
@@ -585,7 +397,7 @@ func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw 
 		return nil, pbBad("%v", err)
 	}
 	// Step 1: forms, types, ranges, combinations.
-	for _, name := range []string{"title", "purpose", "delivery", "container", "transcode", "audioRenditions", "capabilities", "startPositionMs", "maxBitrateKbps", "audioLanguage", "audioTrack", "versionId", "subtitleLanguage", "subtitleTrack"} {
+	for _, name := range []string{"title", "purpose", "delivery", "container", "transcode", "audioRenditions", "startPositionMs", "maxBitrateKbps", "audioLanguage", "audioTrack", "versionId", "subtitleLanguage", "subtitleTrack"} {
 		if v, present := o[name]; present && v == nil {
 			return nil, pbBad("%s is null", name)
 		}
@@ -619,17 +431,19 @@ func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw 
 	if p, present, err := text("purpose"); err != nil {
 		return nil, err
 	} else if present {
-		if !slices.Contains([]string{"play", "download", "scan"}, p) {
+		if !slices.Contains(playbackPurposes, p) {
 			return nil, pbBad("purpose %q isn't play, download or scan", p)
 		}
 		s.Purpose = p
 	}
+	unknownDelivery := false
 	if d, present, err := text("delivery"); err != nil {
 		return nil, err
 	} else if present {
-		if !slices.Contains([]string{"file", "remux", "transcode"}, d) {
-			return nil, pbBad("delivery %q isn't file, remux or transcode", d)
+		if !playbackToken(d) {
+			return nil, pbBad("delivery %q isn't a token (core section 8.5)", d)
 		}
+		unknownDelivery = !slices.Contains(playbackDeliveries, d)
 		s.Delivery = d
 	}
 	if c, present, err := text("container"); err != nil {
@@ -638,8 +452,8 @@ func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw 
 		if s.Delivery != "remux" {
 			return nil, pbBad("container without delivery remux")
 		}
-		if !slices.Contains(playbackContainers, c) {
-			return nil, pbBad("container %q isn't one of containers", c)
+		if !playbackToken(c) {
+			return nil, pbBad("container %q isn't a token (core section 8.5)", c)
 		}
 		s.Container = c
 	} else if s.Delivery == "remux" {
@@ -654,6 +468,8 @@ func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw 
 			return nil, err
 		}
 		s.Transcode = &t
+	} else if s.Delivery == "transcode" {
+		s.Transcode = &playbackTargets{}
 	}
 	if v, present := o["audioRenditions"]; present {
 		b, ok := v.(bool)
@@ -661,15 +477,6 @@ func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw 
 			return nil, pbBad("audioRenditions isn't a boolean")
 		}
 		s.AudioRenditions = b
-	}
-	if v, present := o["capabilities"]; present {
-		c, err := playbackReadCaps(v)
-		if err != nil {
-			return nil, err
-		}
-		if !c.empty() {
-			s.Capabilities = &c
-		}
 	}
 	intIn := func(name string, max int64) (int64, error) {
 		v, present := o[name]
@@ -717,7 +524,8 @@ func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw 
 	if err != nil {
 		return nil, err
 	}
-	if !playbackAllowed(s.Purpose, s.Delivery, s.Transcode) {
+	// An unknown delivery is answered at step 7, whatever the purpose.
+	if !unknownDelivery && !playbackAllowed(s.Purpose, s.Delivery, s.Transcode) {
 		d := s.Delivery
 		if d == "" {
 			d = "none"
@@ -738,16 +546,25 @@ func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw 
 	if len(copies) == 0 {
 		return nil, pbRefuse(404, "not-found", "no copy of that key is offered")
 	}
-	// Step 4: the copy, then malformed track IDs.
-	c := playbackPickCopy(copies, versionID, lang)
+	// Step 4: the copy, then malformed track IDs and burnSubtitle.
+	c, copyNamed := playbackPickCopy(copies, versionID, lang)
 	if hasAudio && !playbackAudioForm.MatchString(audioTrack) {
 		return nil, pbBad("audioTrack isn't a and a number from 0 to 999")
 	}
 	if hasSub && subTrack != "off" && !playbackSubForm.MatchString(subTrack) {
 		return nil, pbBad("subtitleTrack isn't s and a number from 0 to 999, or off")
 	}
+	if t := s.Transcode; t != nil && t.hasBurn {
+		b, ok := t.burn.(string)
+		if !ok || !playbackSubForm.MatchString(b) {
+			return nil, pbBad("transcode.burnSubtitle isn't s and a number from 0 to 999")
+		}
+		t.BurnSubtitle = b
+	}
 	s.VersionID = c.ID
-	s.AudioTrack = playbackPickAudio(c, audioTrack, lang)
+	var audioNamed bool
+	s.AudioTrack, audioNamed = playbackPickAudio(c, audioTrack, lang)
+	s.Defaults = !copyNamed || !audioNamed
 	// Step 5: the purpose's limits in use.
 	switch s.Purpose {
 	case "play":
@@ -768,14 +585,15 @@ func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw 
 		if use.ScansToday >= lim.ScansPerDay {
 			return nil, pbRefuse(409, "stream-limit-reached", "scansPerDay reached")
 		}
-		s.Counts, s.TicketSeconds, s.IdleSeconds, s.ReadCapBytes = "scansPerDay", playbackScanTTL, playbackIdleSeconds, playbackScanCapBytes
+		cap := lim.ScanBytes
+		if cap < playbackScanFloor || cap > playbackScanTop {
+			cap = playbackScanFloor // none sent: the floor its callers count on
+		}
+		s.Counts, s.TicketSeconds, s.IdleSeconds, s.ReadCapBytes = "scansPerDay", playbackScanTTL, playbackIdleSeconds, cap
 	}
-	// Step 6: the bitrate cap, for play only.
+	// Step 6: the bitrate cap, for play only; with none, no cap.
 	if s.Purpose == "play" {
 		caps := []int64{reqCap, ctx.OwnCapKbps, lim.BitrateKbps}
-		if s.Capabilities != nil {
-			caps = append(caps, s.Capabilities.MaxBitrateKbps)
-		}
 		if s.Transcode != nil {
 			caps = append(caps, s.Transcode.MaxBitrateKbps)
 		}
@@ -784,19 +602,53 @@ func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw 
 				s.BitrateCapKbps = v
 			}
 		}
-		if s.BitrateCapKbps == 0 {
-			s.BitrateCapKbps = playbackDefaultCap
-		}
 	}
 	// Step 7: the delivery asked, or a refusal.
+	if unknownDelivery {
+		return nil, pbRefuse(409, "delivery-refused", "a delivery the owning server doesn't make")
+	}
+	if s.Delivery == "remux" && !slices.Contains(playbackRemuxContainers, s.Container) {
+		return nil, pbRefuse(409, "delivery-refused", "a remux container other than mpegts or mp4")
+	}
+	if t := s.Transcode; t != nil {
+		if t.VideoCodec != "" && part == "video" && !slices.Contains(ctx.VideoEncoders, t.VideoCodec) {
+			return nil, pbRefuse(409, "delivery-refused", "a video codec the owning server doesn't encode")
+		}
+		if t.AudioCodec != "" && !slices.Contains(ctx.AudioEncoders, t.AudioCodec) {
+			return nil, pbRefuse(409, "delivery-refused", "an audio codec the owning server doesn't encode")
+		}
+	}
 	if s.Delivery == "file" && c.Parts > 1 {
 		return nil, pbRefuse(409, "delivery-refused", "a copy of several parts is never delivered as file")
 	}
-	if (s.Delivery == "file" || s.Delivery == "remux") && s.Purpose == "play" && c.BitrateKbps > s.BitrateCapKbps {
+	if (s.Delivery == "file" || s.Delivery == "remux") && s.Purpose == "play" && s.BitrateCapKbps > 0 && c.BitrateKbps > s.BitrateCapKbps {
 		return nil, pbRefuse(409, "delivery-refused", "the copy's bitrate is above the cap")
 	}
 	if s.Transcode != nil && s.Transcode.BurnSubtitle != "" && !slices.Contains(c.Subtitles, s.Transcode.BurnSubtitle) {
 		return nil, pbRefuse(409, "delivery-refused", "burnSubtitle isn't a subtitle track of the copy")
+	}
+	// Targets left out take the baseline's values (maxHeight: the copy's
+	// own height, left out); without delivery, the baseline itself.
+	if t := s.Transcode; t != nil {
+		if part == "video" {
+			if t.VideoCodec == "" {
+				t.VideoCodec = playbackBaselineVideo
+			}
+		} else {
+			t.VideoCodec, t.MaxHeight = "", 0 // ignored for a title without a picture
+		}
+		if t.AudioCodec == "" {
+			t.AudioCodec = playbackBaselineAudio
+		}
+		if t.AudioChannels == 0 {
+			t.AudioChannels = playbackBaselineChannels
+		}
+	}
+	if s.Delivery == "" {
+		s.Baseline = "h264 aac hls"
+		if part == "music" {
+			s.Baseline = "aac hls"
+		}
 	}
 	// Step 8: transcodes.
 	if s.Delivery == "transcode" {
@@ -822,11 +674,6 @@ type playbackStream struct {
 	MimeType string `json:"mimeType,omitempty"`
 }
 
-type playbackVersion struct {
-	ID   string `json:"id"`
-	Name string `json:"name,omitempty"`
-}
-
 type playbackTrack struct {
 	ID              string `json:"id"`
 	Language        string `json:"language,omitempty"`
@@ -838,43 +685,18 @@ type playbackTrack struct {
 }
 
 type playbackAnswer struct {
-	ID             string            `json:"id"`
-	Method         string            `json:"method"`
-	Stream         playbackStream    `json:"stream"`
-	Etag           string            `json:"etag"`
-	PositionMs     int64             `json:"positionMs"`
-	DurationMs     *int64            `json:"durationMs,omitempty"`
-	Versions       []playbackVersion `json:"versions,omitempty"`
-	VersionID      string            `json:"versionId,omitempty"`
-	AudioTracks    []playbackTrack   `json:"audioTracks,omitempty"`
-	AudioTrack     string            `json:"audioTrack,omitempty"`
-	MaxBitrateKbps *int64            `json:"maxBitrateKbps,omitempty"`
-	ReadTitleAgain bool              `json:"readTitleAgain,omitempty"`
-}
-
-// playbackCleanName: core section 9.1's cleaning, cut to max code points.
-func playbackCleanName(s string, max int) string {
-	var b strings.Builder
-	space := false
-	for _, r := range s {
-		if unicode.Is(unicode.White_Space, r) {
-			if !space {
-				b.WriteRune(' ')
-			}
-			space = true
-			continue
-		}
-		space = false
-		if unicode.Is(unicode.Cc, r) || unicode.Is(unicode.Cf, r) {
-			continue
-		}
-		b.WriteRune(r)
-	}
-	out := strings.TrimSpace(b.String())
-	if r := []rune(out); len(r) > max {
-		out = strings.TrimSpace(string(r[:max]))
-	}
-	return out
+	ID              string          `json:"id"`
+	Method          string          `json:"method"`
+	Stream          playbackStream  `json:"stream"`
+	Etag            string          `json:"etag"`
+	PositionMs      int64           `json:"positionMs"`
+	DurationMs      *int64          `json:"durationMs,omitempty"`
+	VersionID       string          `json:"versionId,omitempty"`
+	AudioTracks     []playbackTrack `json:"audioTracks,omitempty"`
+	AudioTrack      string          `json:"audioTrack,omitempty"`
+	AudioRenditions bool            `json:"audioRenditions,omitempty"`
+	MaxBitrateKbps  *int64          `json:"maxBitrateKbps,omitempty"`
+	ReadTitleAgain  bool            `json:"readTitleAgain,omitempty"`
 }
 
 func playbackID(s string) bool { return s == "off" || playbackObjIDForm.MatchString(s) }
@@ -907,7 +729,7 @@ func playbackKeepAnswer(raw []byte, delivery, catalogEtag, root string) ([]byte,
 		return nil, err
 	}
 	if !playbackIDForm.MatchString(a.ID) {
-		return nil, errors.New("id doesn't match ^play_[a-z2-7]{26}$")
+		return nil, errors.New("id doesn't match ^[A-Za-z0-9_-]{1,64}$")
 	}
 	if a.Method, err = str("method", true); err != nil {
 		return nil, err
@@ -941,6 +763,9 @@ func playbackKeepAnswer(raw []byte, delivery, catalogEtag, root string) ([]byte,
 	if a.Stream.Protocol == "hls" && hasMT && a.Stream.MimeType != "application/vnd.apple.mpegurl" {
 		return nil, errors.New("an hls stream.mimeType other than application/vnd.apple.mpegurl")
 	}
+	if delivery == "" && a.Stream.Protocol != "hls" {
+		return nil, errors.New("without delivery, the baseline: hls only")
+	}
 	if (a.Method == "direct") != (a.Stream.Protocol == "file") && delivery != "" {
 		return nil, fmt.Errorf("protocol %s for delivery %s", a.Stream.Protocol, delivery)
 	}
@@ -973,24 +798,6 @@ func playbackKeepAnswer(raw []byte, delivery, catalogEtag, root string) ([]byte,
 		}
 		a.DurationMs = &n
 	}
-	if v, present := o["versions"]; present {
-		list, ok := v.([]any)
-		if !ok {
-			return nil, errors.New("versions isn't an array")
-		}
-		for _, e := range list {
-			eo, ok := e.(map[string]any)
-			if !ok {
-				continue
-			}
-			id, ok := eo["id"].(string)
-			if !ok || !playbackObjIDForm.MatchString(id) {
-				continue
-			}
-			nm, _ := eo["name"].(string)
-			a.Versions = append(a.Versions, playbackVersion{ID: id, Name: playbackCleanName(nm, 32)})
-		}
-	}
 	if a.VersionID, err = str("versionId", false); err != nil {
 		return nil, err
 	}
@@ -1015,10 +822,10 @@ func playbackKeepAnswer(raw []byte, delivery, catalogEtag, root string) ([]byte,
 			if l, ok := eo["language"].(string); ok && validTag(l) {
 				t.Language = l
 			}
-			if n, ok := playbackInt(eo["channels"]); ok && n >= 0 {
+			if n, ok := playbackInt(eo["channels"]); ok && n >= 1 && n <= 64 {
 				t.Channels = &n
 			}
-			if r, ok := eo["role"].(string); ok && (r == "commentary" || r == "description") {
+			if r, ok := eo["role"].(string); ok && playbackToken(r) {
 				t.Role = r
 			}
 			for _, f := range []struct {
@@ -1037,6 +844,13 @@ func playbackKeepAnswer(raw []byte, delivery, catalogEtag, root string) ([]byte,
 	}
 	if a.AudioTrack != "" && !playbackID(a.AudioTrack) {
 		a.AudioTrack = ""
+	}
+	if v, present := o["audioRenditions"]; present {
+		b, ok := v.(bool)
+		if !ok {
+			return nil, errors.New("audioRenditions isn't a boolean")
+		}
+		a.AudioRenditions = b && a.Stream.Protocol == "hls"
 	}
 	if v, present := o["maxBitrateKbps"]; present {
 		n, ok := playbackInt(v)
@@ -1140,14 +954,18 @@ func playbackReport(call string, now int64, pb playbackState, raw []byte) ([]byt
 	if err != nil {
 		return nil, pbBad("%v", err)
 	}
-	for _, name := range []string{"id", "positionMs", "paused", "at", "title"} {
+	members := []string{"id", "positionMs", "at", "title"}
+	if call == "progress" {
+		members = append(members, "paused") // stop has no paused: ignored there
+	}
+	for _, name := range members {
 		if v, present := o[name]; present && v == nil {
 			return nil, pbBad("%s is null", name)
 		}
 	}
 	id, ok := o["id"].(string)
 	if !ok || !playbackIDForm.MatchString(id) {
-		return nil, pbBad("id missing or not ^play_[a-z2-7]{26}$")
+		return nil, pbBad("id missing or not ^[A-Za-z0-9_-]{1,64}$")
 	}
 	var pos *int64
 	if v, present := o["positionMs"]; present {
@@ -1240,6 +1058,7 @@ type playbackKeptLimits struct {
 	DownloadsPerDay int64  `json:"downloadsPerDay"`
 	DownloadKbps    int64  `json:"downloadKbps"`
 	ScansPerDay     int64  `json:"scansPerDay"`
+	ScanBytes       int64  `json:"scanBytes"`
 	AudioStreams    *int64 `json:"audioStreams,omitempty"`
 	AudioTranscodes *int64 `json:"audioTranscodes,omitempty"`
 	OffersDownloads bool   `json:"offersDownloads"`
@@ -1257,7 +1076,8 @@ func playbackKeepLimits(raw []byte) ([]byte, error) {
 	known := []struct {
 		name string
 		max  int64
-	}{{"streams", 50}, {"transcodes", 50}, {"bitrateKbps", 1000000}, {"downloads", 50}, {"downloadsPerDay", 10000}, {"downloadKbps", 1000000}, {"scansPerDay", 1000000}, {"audioStreams", 50}, {"audioTranscodes", 50}}
+		min  int64
+	}{{"streams", playbackMaxStreams, 0}, {"transcodes", playbackMaxStreams, 0}, {"bitrateKbps", 1000000, 0}, {"downloads", playbackMaxStreams, 0}, {"downloadsPerDay", 10000, 0}, {"downloadKbps", 1000000, 0}, {"scansPerDay", 1000000, 0}, {"scanBytes", playbackScanTop, playbackScanFloor}, {"audioStreams", playbackMaxStreams, 0}, {"audioTranscodes", playbackMaxStreams, 0}}
 	got := map[string]int64{}
 	for _, k := range known {
 		v, present := o[k.name]
@@ -1268,7 +1088,7 @@ func playbackKeepLimits(raw []byte) ([]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("%s isn't an integer: limits ignored", k.name)
 		}
-		if n >= 0 && n <= k.max {
+		if n >= k.min && n <= k.max {
 			got[k.name] = n
 		}
 	}
@@ -1290,6 +1110,10 @@ func playbackKeepLimits(raw []byte) ([]byte, error) {
 		Streams: ptr("streams"), Transcodes: ptr("transcodes"), BitrateKbps: ptr("bitrateKbps"),
 		Downloads: got["downloads"], DownloadsPerDay: got["downloadsPerDay"], DownloadKbps: got["downloadKbps"], ScansPerDay: got["scansPerDay"],
 		AudioStreams: ptr("audioStreams"), AudioTranscodes: ptr("audioTranscodes"),
+		ScanBytes: playbackScanFloor,
+	}
+	if n, ok := got["scanBytes"]; ok {
+		k.ScanBytes = n
 	}
 	k.OffersDownloads, k.OffersScans = k.Downloads > 0, k.ScansPerDay > 0
 	return playbackEncode(k), nil
