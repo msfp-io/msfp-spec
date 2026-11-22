@@ -181,7 +181,7 @@ the last credits marker (some media servers mark a title watched there).
 
 `container`, video `codec` and audio `codec` take the values of the
 capabilities lists (section 6), plus those a viewer's server must know of
-to convert them (proposal 15 section 1: `avi`, `m2ts`, `mpegts`, `wmv`,
+to convert them (proposal 15 section 1: `avi`, `m2ts`, `wmv`,
 `flv`, `3gp`; `mpeg2video`, `mpeg4`, `vc1`, `wmv3`, `h263`, `theora`;
 `dts`, `truehd`, `mp2`, `wmav2`, `pcm_s24le`, `pcm_bluray`); anything
 else is `other`, which a viewer's server reads as "convert it".
