@@ -159,7 +159,7 @@ Art Archive" (music 4), not "from the Cover Art Archive".
 Amended 2026-11-23. The first version took ffmpeg's names; ffmpeg is a
 product, and ffprobe doesn't even give the muxer name it asked for (its
 demuxer names are lists: `mov,mp4,m4a,3gp,3g2,mj2`, `matroska,webm`).
-Research: the owner's notes, `msfp-format-names-research`.
+Research: [format names](0017-format-names-research.md).
 
 - **Container.** `container` gives way to **`mediaType`**, the file's
   media type (section 1): `video/mp4`, `video/quicktime`,
