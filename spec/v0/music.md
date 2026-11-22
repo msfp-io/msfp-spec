@@ -234,14 +234,13 @@ title by title:
   repeated entry is skipped alone; at most 8 kept, the first; empty once
   skipped counts as absent.
 - `date`, `originalDate` (on albums and tracks): in one of the three
-  forms, with a year from
-  1000 to 9999, a month from `01` to `12` and a day that exists in that
-  month (29 February in leap years only); any other counts as absent. An
-  `originalDate` whose year is after `date`'s counts as absent.
+  forms, with a year from 1000 to 9999, a month from `01` to `12` and a
+  day that exists in that month (29 February in leap years only); any
+  other counts as absent. An `originalDate` whose year is after `date`'s
+  counts as absent.
 - `genres` (on albums and tracks): each entry cleaned as above, 1 to 64
-  characters once
-  cleaned; an empty, over-long or repeated entry (compared without case)
-  is skipped alone; at most 8 kept, the first.
+  characters once cleaned; an empty, over-long or repeated entry
+  (compared without case) is skipped alone; at most 8 kept, the first.
 - `album`: a valid album key; any other counts as absent. A `track/mb`
   track whose `album` isn't an `album/mb` key is skipped.
 - `disc`, `number`: integers from 1 to 999; any other counts as absent.
