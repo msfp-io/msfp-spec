@@ -238,18 +238,18 @@ type musicTitle struct {
 
 // musicCopy is what a caller keeps of a track's copy (music section 3.3).
 type musicCopy struct {
-	ID          string           `json:"id"`
-	DurationMs  int64            `json:"durationMs"`
-	MediaType   string           `json:"mediaType"`
-	Codec       string           `json:"codec"`
-	Codecs      string           `json:"codecs,omitempty"`
-	Size        int64            `json:"size"`
-	Etag        string           `json:"etag"`
-	SampleRate  *int64           `json:"sampleRate,omitempty"`
-	BitDepth    *int64           `json:"bitDepth,omitempty"`
-	Channels    *int64           `json:"channels,omitempty"`
-	ReplayGain  *musicReplayGain `json:"replayGain,omitempty"`
-	Lyrics      string           `json:"lyrics,omitempty"`
+	ID         string           `json:"id"`
+	DurationMs int64            `json:"durationMs"`
+	MediaType  string           `json:"mediaType"`
+	Codec      string           `json:"codec"`
+	Codecs     string           `json:"codecs,omitempty"`
+	Size       int64            `json:"size"`
+	Etag       string           `json:"etag"`
+	SampleRate *int64           `json:"sampleRate,omitempty"`
+	BitDepth   *int64           `json:"bitDepth,omitempty"`
+	Channels   *int64           `json:"channels,omitempty"`
+	ReplayGain *musicReplayGain `json:"replayGain,omitempty"`
+	Lyrics     string           `json:"lyrics,omitempty"`
 }
 
 type musicReplayGain struct {

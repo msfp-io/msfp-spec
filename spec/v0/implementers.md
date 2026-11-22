@@ -420,18 +420,96 @@ sections. Nothing here is a rule.
 
 **Filling `copies`** ([video section 3.2](video.md#32-copies)). Overfin,
 as an owning server, fills `copies` from its index, which keeps each
-version's streams, length and size as its media server reports them, and
-lists a title's versions in the recommended order of
-[video section 3.7](video.md#37-the-order-of-copies). A media server
-that names containers and codecs otherwise is mapped to ffmpeg's names
-([video section 3.5](video.md#35-names)) by the owning server.
+version's streams, length and size as its media server reports them. A
+media server's container and codec names are mapped by the owning server
+to media types and the [registry](../registry.md)'s tokens
+([video section 3.5](video.md#35-names)); a producer reading ffprobe
+gets the codec and subtitle tokens as they are, from `codec_name`.
+
+**The order of copies** ([video section 3.7](video.md#37-the-order-of-copies)).
+A reasonable order, for an owning server, and for a viewer's server
+choosing without a better reason: the copy of the greatest height first
+(for a picture wider than 16:9, the height of a 16:9 picture as wide: a
+3840 × 1600 film counts as 2160), then one with a high dynamic range
+before one without (a `colour.transfer` of 16 or 18, or a non-empty
+`hdr`), then the one with more `hdr` entries; a copy without `video`
+after those with one.
+
+**Building `codecs`** ([video section 3.5](video.md#35-names)). ffprobe
+prints no RFC 6381 string: a producer builds it from the stream's
+fields, or from the file's own records (`avcC`, `hvcC`, `av1C`, `vpcC`,
+`esds`, `ddts`; in Matroska, the same records in `CodecPrivate`), which
+are exact.
+
+- H.264: `avc1.PPCCLL` (`avc3` when the file's sample entry is
+  `avc3`): `profile_idc`, the constraint flags (zero when unknown) and
+  `level_idc`, in hexadecimal. ffprobe's `level` 41 is `29`; High is
+  `64`, High 10 `6E`, High 4:2:2 `7A`, High 4:4:4 `F4`, Main `4D`,
+  Constrained Baseline `42E0`.
+- HEVC: `hvc1` or `hev1`, as the sample entry (ffprobe's
+  `codec_tag_string`) says, then `general_profile_idc`, the
+  compatibility flags in reverse bit order (only the profile's own bit
+  when unknown: Main `2`, Main 10 `4`), the tier and `general_level_idc`
+  (`L153` for level 5.1, Main tier), and the constraint bytes (`B0` for
+  most progressive streams), required for range extensions (profile 4
+  and above), where they carry the chroma format.
+- AV1: `av01.P.LLT.DD`: the profile, `seq_level_idx` on two digits, the
+  tier (`M` or `H`) and the bit depth on two digits; for a stream that
+  isn't 4:2:0, the long form with its mono flag and chroma subsampling.
+- VP9: `vp09.PP.LL.DD`, and the long form for profiles 1 and 3 (4:2:2,
+  4:4:4). ffprobe gives no VP9 level: a guess from the picture's size and
+  frame rate is enough, since consumers ignore it.
+- AAC: `mp4a.40.<object type>`: LC `2`, HE-AAC `5`, HE-AAC v2 `29`, LD
+  `23`, ELD `39`, xHE-AAC `42`. Media servers often report HE-AAC v2 as
+  HE-AAC: the record tells.
+- DTS: `dtsc` for core, ES and 96/24, `dtsh` for DTS-HD (High Resolution,
+  or Master Audio with a core), `dtsl` for Master Audio without a core,
+  `dtse` for Express.
+
+**Colour from ffmpeg's names** ([video section 3.6](video.md#36-colour-and-dynamic-range)).
+ffprobe prints H.273's values by name. `color_primaries`: `bt709` 1,
+`bt470m` 4, `bt470bg` 5, `smpte170m` 6, `smpte240m` 7, `film` 8, `bt2020`
+9, `smpte428` 10, `smpte431` 11, `smpte432` 12, `jedec-p22` 22.
+`color_transfer`: `bt709` 1, `gamma22` 4, `gamma28` 5, `smpte170m` 6,
+`smpte240m` 7, `linear` 8, `log100` 9, `log316` 10, `iec61966-2-4` 11,
+`bt1361e` 12, `iec61966-2-1` 13, `bt2020-10` 14, `bt2020-12` 15,
+`smpte2084` 16, `smpte428` 17, `arib-std-b67` 18. `color_space` (the
+matrix): `gbr` 0, `bt709` 1, `fcc` 4, `bt470bg` 5, `smpte170m` 6,
+`smpte240m` 7, `ycgco` 8, `bt2020nc` 9, `bt2020c` 10, `smpte2085` 11,
+`chroma-derived-nc` 12, `chroma-derived-c` 13, `ictcp` 14. `unknown`
+(2) isn't sent. `color_range` `tv` is `fullRange` false, `pc` true.
+ffprobe reports the VUI's transfer: for broadcast HLG, read the
+alternative transfer characteristics SEI too (its side data), which
+holds 18 where the VUI holds 14.
+
+**Object audio** ([video section 3.3](video.md#33-streams-and-tracks)).
+Where each codec stores it: Dolby Atmos in E-AC-3 is the JOC flag
+(`flag_ec3_extension_type_a` in `addbsi`, and the same flag in MP4's
+`dec3`); in TrueHD, four substreams and the top bit of `substream_info`
+in the major sync. DTS:X in DTS-HD Master Audio is an extension
+substream payload with the sync word `0x02000850` (`0xF14000D0` for IMAX
+Enhanced). Media servers often show these in a profile string ("Dolby
+TrueHD + Dolby Atmos", "DTS-HD MA + DTS:X"). Some players want `ec+3`
+rather than `ec-3` for E-AC-3 with Atmos: a viewer's server writes it
+from `ec-3` and `objects` `dolby-atmos` for them.
+
+**Track titles** ([video section 3.3](video.md#33-streams-and-tracks)).
+Tracks carry no title. An owning server maps what a good title says to
+the facts: "Commentary" to `role` `commentary`, "Audio description" to
+`description`, "SDH" or "CC" to `hearingImpaired`, "Forced" to `forced`
+when the file doesn't flag it. A title that is only the language's name,
+or a release group's, says nothing to map.
+
+**A stream's bitrate.** No stream carries its own: the copy's overall
+rate (`size` × 8 / `durationMs`) bounds every stream's. On music it is
+inflated by cover art.
 
 **Skip markers from other media servers**
 ([video section 3.4](video.md#34-chapters-and-skip-markers)). Credits
 map to `outro`. A marker whose end the owning server doesn't know
 (credits that run to the end) can end at the copy's `durationMs`. Some
 media servers count a title as watched at the start of its last credits:
-that is the marker to send `final` on.
+a viewer's server finds them as the last `outro`.
 
 **Theme songs and theme videos**
 ([video section 3.9](video.md#39-extras)). Some media servers play them
@@ -447,10 +525,19 @@ episode's TMDB numbers from its IMDb or TheTVDB ID: TMDB's lookup by
 external ID gives the series, the season number and the episode number.
 Once per episode, kept.
 
+**Choosing the subtitles** ([video section 5.4](video.md#54-choosing-the-subtitles)).
+A reasonable default for a viewer's server: a track the viewer chose
+wins, and "off" shows none; otherwise, a regular track in the viewer's
+subtitle language when there is one, else none; whatever is chosen, the
+forced track in the language of the audio played, when the copy has one.
+When the viewer's language matches both a regular track and a forced
+one, the regular one is shown.
+
 **Seek-bar previews** ([video section 5.5](video.md#55-seek-bar-previews)).
 A media server that keeps one image per interval (BIF files) has them
 tiled into sheets by the owning server. A set near 320 pixels wide is a
-good choice.
+good choice: some 30 to 300 KB an episode. An owning server that keeps
+its re-encoded sheets doesn't encode them again for each peer.
 
 **Subtitles** ([video sections 6.3 to 6.5](video.md#63-webvtt)). The
 WebVTT, ASS and PGS rules are Overfin's, as both owning and viewer's

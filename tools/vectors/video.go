@@ -5,9 +5,10 @@ package main
 // title keys of the tmdb, tvdb and local schemes and extras' keys
 // (section 4), what a caller keeps of a video title (section 3.1), of
 // its copies (sections 3.2 to 3.8), of an extra (section 3.9) and of a
-// local title's description (section 3.10), and the data checks of the
-// previews call (sections 5.5 and 5.6), and the fonts of a copy
-// (sections 5.3 and 6.6).
+// local title's description (section 3.10), what a viewer's server reads
+// from a codecs string (section 3.5), the video members of play's answer
+// and the URLs built from its ticket (sections 5.3 and 6.1), the previews
+// call (section 5.6), and the fonts of a copy (section 6.6).
 //
 // Every helper here has a video prefix (or is a method of a video type),
 // so that this file depends on no other part's file.
@@ -17,37 +18,28 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 	"unicode"
 )
 
 var (
-	videoIDForm      = regexp.MustCompile(`^[1-9][0-9]{0,9}$`)        // a TMDB or TheTVDB ID, a TMDB episode ID
-	videoOpaqueForm  = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)    // local identifiers, extras, copy IDs, etags, tickets
-	videoSeasonForm  = regexp.MustCompile(`^s(0|[1-9][0-9]{0,3})$`)   // s<season>
-	videoEpisodeForm = regexp.MustCompile(`^e(0|[1-9][0-9]{0,4})$`)   // e<episode>
-	videoAbsForm     = regexp.MustCompile(`^a(0|[1-9][0-9]{0,4})$`)   // a<number>
-	videoEpIDForm    = regexp.MustCompile(`^e[1-9][0-9]{0,9}$`)       // e<episode id>
-	videoAudioID     = regexp.MustCompile(`^a(0|[1-9][0-9]{0,2})$`)   // a<n>, n 0 to 999
-	videoSubtitleID  = regexp.MustCompile(`^s(0|[1-9][0-9]{0,2})$`)   // s<n>, n 0 to 999
-	videoIMDbForm    = regexp.MustCompile(`^tt[0-9]{7,10}$`)          // ids.imdb
-	videoCodecTag    = regexp.MustCompile(`^[A-Za-z0-9]{1,8}$`)       // video codecTag
-	videoLayoutForm  = regexp.MustCompile(`^[A-Za-z0-9()._-]{1,32}$`) // audio layout
-	videoCodecsForm  = regexp.MustCompile(`^[A-Za-z0-9.-]{1,64}$`)    // an RFC 6381 codecs string
+	videoIDForm      = regexp.MustCompile(`^[1-9][0-9]{0,9}$`)      // a TMDB or TheTVDB ID, a TMDB episode ID
+	videoOpaqueForm  = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)  // local identifiers, extras, copy IDs, etags, tickets
+	videoSeasonForm  = regexp.MustCompile(`^s(0|[1-9][0-9]{0,3})$`) // s<season>
+	videoEpisodeForm = regexp.MustCompile(`^e(0|[1-9][0-9]{0,4})$`) // e<episode>
+	videoAbsForm     = regexp.MustCompile(`^a(0|[1-9][0-9]{0,4})$`) // a<number>
+	videoEpIDForm    = regexp.MustCompile(`^e[1-9][0-9]{0,9}$`)     // e<episode id>
+	videoAudioID     = regexp.MustCompile(`^a(0|[1-9][0-9]{0,2})$`) // a<n>, n 0 to 999
+	videoSubtitleID  = regexp.MustCompile(`^s(0|[1-9][0-9]{0,2})$`) // s<n>, n 0 to 999
+	videoIMDbForm    = regexp.MustCompile(`^tt[0-9]{7,10}$`)        // ids.imdb
+	videoCodecsForm  = regexp.MustCompile(`^[A-Za-z0-9.-]{1,64}$`)  // an RFC 6381 codecs string
 	videoFPSForm     = regexp.MustCompile(`^([1-9][0-9]{0,6})/([1-9][0-9]{0,6})$`)
 	videoAspectForm  = regexp.MustCompile(`^([1-9][0-9]{0,4}):([1-9][0-9]{0,4})$`)
 	videoIntegerForm = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
-	videoDateForm    = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 )
-
-// The one closed list left (section 3.2). Every other list of sections
-// 3.2 to 3.9 is open: its values are tokens (openTokenValue).
-var videoThreeD = []string{"sbs", "tab", "mvc"}
 
 func videoIn(s string, list []string) bool {
 	for _, v := range list {
@@ -56,6 +48,24 @@ func videoIn(s string, list []string) bool {
 		}
 	}
 	return false
+}
+
+// videoMediaType tells a media type (core section 8.5): lowercase,
+// exactly one /, no parameters, each half starting with a letter or a
+// digit, at most 127 characters of a-z 0-9 . + - _ /. It is to be
+// unified with the core's openMediaType.
+func videoMediaType(s string) bool {
+	if len(s) > 127 || strings.Count(s, "/") != 1 {
+		return false
+	}
+	for _, c := range []byte(s) {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '+' || c == '-' || c == '_' || c == '/') {
+			return false
+		}
+	}
+	top, sub, _ := strings.Cut(s, "/")
+	alnum := func(h string) bool { return h != "" && (h[0] >= 'a' && h[0] <= 'z' || h[0] >= '0' && h[0] <= '9') }
+	return alnum(top) && alnum(sub)
 }
 
 // videoKeyInfo is what a video title key says (section 4).
@@ -205,21 +215,6 @@ func videoTag(v any) string {
 	return ""
 }
 
-// videoText is a fact given as plain text (a profile, section 3.3):
-// made plain, and "" when empty or longer than max code points, never
-// cut.
-func videoText(v any, max int) string {
-	s, ok := v.(string)
-	if !ok {
-		return ""
-	}
-	t := videoPlain(s, max+1)
-	if len([]rune(t)) > max {
-		return ""
-	}
-	return t
-}
-
 // videoFPS is a frame rate in its rational form "<num>/<den>", each 1 to
 // 1,000,000 and the fraction reduced, else "".
 func videoFPS(v any) string {
@@ -266,43 +261,25 @@ func videoForm(v any, re *regexp.Regexp) string {
 	return ""
 }
 
-// videoOneOf is v when it is a string of list, else "".
-func videoOneOf(v any, list []string) string {
-	if s, ok := v.(string); ok && videoIn(s, list) {
-		return s
-	}
-	return ""
-}
-
 // What the caller keeps, in the order the vectors write it.
-
-type videoPart struct {
-	Size       int64 `json:"size"`
-	DurationMs int64 `json:"durationMs"`
-}
 
 type videoDV struct {
 	Profile       int64 `json:"profile"`
 	Level         int64 `json:"level"`
 	Compatibility int64 `json:"compatibility"`
 	EL            *bool `json:"el,omitempty"`
-	BL            *bool `json:"bl,omitempty"`
-	RPU           *bool `json:"rpu,omitempty"`
 }
 
 type videoColour struct {
-	Primaries string `json:"primaries,omitempty"`
-	Transfer  string `json:"transfer,omitempty"`
-	Matrix    string `json:"matrix,omitempty"`
-	Range     string `json:"range,omitempty"`
+	Primaries *int64 `json:"primaries,omitempty"`
+	Transfer  *int64 `json:"transfer,omitempty"`
+	Matrix    *int64 `json:"matrix,omitempty"`
+	FullRange *bool  `json:"fullRange,omitempty"`
 }
 
 type videoStream struct {
 	Codec        string       `json:"codec"`
-	CodecTag     string       `json:"codecTag,omitempty"`
 	Codecs       string       `json:"codecs,omitempty"`
-	Profile      string       `json:"profile,omitempty"`
-	Level        json.Number  `json:"level,omitempty"`
 	Width        int64        `json:"width"`
 	Height       int64        `json:"height"`
 	SampleAspect string       `json:"sampleAspect,omitempty"`
@@ -312,6 +289,7 @@ type videoStream struct {
 	HDR          []string     `json:"hdr,omitempty"`
 	DV           *videoDV     `json:"dv,omitempty"`
 	FPS          string       `json:"fps,omitempty"`
+	RefFrames    *int64       `json:"refFrames,omitempty"`
 	Interlaced   *bool        `json:"interlaced,omitempty"`
 }
 
@@ -322,27 +300,23 @@ type videoAudio struct {
 	Role       string `json:"role,omitempty"`
 	Default    *bool  `json:"default,omitempty"`
 	Forced     *bool  `json:"forced,omitempty"`
-	FileIndex  *int64 `json:"fileIndex,omitempty"`
 	Codec      string `json:"codec"`
 	Codecs     string `json:"codecs,omitempty"`
-	Profile    string `json:"profile,omitempty"`
-	Layout     string `json:"layout,omitempty"`
+	Objects    string `json:"objects,omitempty"`
 	SampleRate *int64 `json:"sampleRate,omitempty"`
 	BitDepth   *int64 `json:"bitDepth,omitempty"`
-	Title      string `json:"title,omitempty"`
 	Original   *bool  `json:"original,omitempty"`
 }
 
 type videoSubtitle struct {
 	ID              string `json:"id"`
 	Language        string `json:"language,omitempty"`
+	Role            string `json:"role,omitempty"`
 	Default         *bool  `json:"default,omitempty"`
 	Forced          *bool  `json:"forced,omitempty"`
 	HearingImpaired *bool  `json:"hearingImpaired,omitempty"`
 	Format          string `json:"format,omitempty"`
 	External        *bool  `json:"external,omitempty"`
-	FileIndex       *int64 `json:"fileIndex,omitempty"`
-	Title           string `json:"title,omitempty"`
 }
 
 type videoChapter struct {
@@ -354,27 +328,40 @@ type videoSegment struct {
 	Kind    string `json:"kind"`
 	StartMs int64  `json:"startMs"`
 	EndMs   int64  `json:"endMs"`
-	Final   *bool  `json:"final,omitempty"`
+}
+
+// videoLayout is a copy's previewLayout (section 5.5).
+type videoLayout struct {
+	TileWidth  int64 `json:"tileWidth"`
+	TileHeight int64 `json:"tileHeight"`
+	Columns    int64 `json:"columns"`
+	Rows       int64 `json:"rows"`
+	IntervalMs int64 `json:"intervalMs"`
+	TileCount  int64 `json:"tileCount"`
+}
+
+// sheets is the number of sheets the layout gives.
+func (l videoLayout) sheets() int64 {
+	per := l.Columns * l.Rows
+	return (l.TileCount + per - 1) / per
 }
 
 type videoCopy struct {
 	ID             string          `json:"id"`
-	Name           string          `json:"name,omitempty"`
 	Edition        string          `json:"edition,omitempty"`
 	DurationMs     int64           `json:"durationMs"`
 	StartMs        *int64          `json:"startMs,omitempty"`
-	Container      string          `json:"container"`
+	EndMs          *int64          `json:"endMs,omitempty"`
+	MediaType      string          `json:"mediaType"`
 	Size           int64           `json:"size"`
 	ETag           string          `json:"etag"`
-	Parts          []videoPart     `json:"parts,omitempty"`
-	BitrateKbps    *int64          `json:"bitrateKbps,omitempty"`
+	Parts          *int64          `json:"parts,omitempty"`
 	Video          *videoStream    `json:"video,omitempty"`
 	AudioTracks    []videoAudio    `json:"audioTracks"`
 	SubtitleTracks []videoSubtitle `json:"subtitleTracks,omitempty"`
 	Chapters       []videoChapter  `json:"chapters,omitempty"`
 	Segments       []videoSegment  `json:"segments,omitempty"`
-	Previews       *bool           `json:"previews,omitempty"`
-	Added          string          `json:"added,omitempty"`
+	PreviewLayout  *videoLayout    `json:"previewLayout,omitempty"`
 	ThreeD         string          `json:"threeD,omitempty"`
 }
 
@@ -383,9 +370,9 @@ type videoPlace struct {
 	Episode int64 `json:"episode"`
 }
 
+// videoTitle is a kept title. It has no kind: the key names it.
 type videoTitle struct {
 	Key       string            `json:"key"`
-	Kind      string            `json:"kind"`
 	Library   string            `json:"library"`
 	ExtraType string            `json:"extraType,omitempty"`
 	Name      string            `json:"name,omitempty"`
@@ -407,6 +394,147 @@ const (
 	videoMaxFont     = 10 << 20 // 10 MiB
 	videoMaxFontSet  = 64 << 20 // 64 MiB, a copy's fonts in all
 )
+
+// videoH273 is an H.273 code point, 0 to 255, 2 ("unspecified") counting
+// as absent (section 3.6).
+func videoH273(v any) *int64 {
+	if n := videoInt(v, 0, 255); n != nil && *n != 2 {
+		return n
+	}
+	return nil
+}
+
+// keepVideoLayout is section 5.5's reading of a previewLayout: nil when it
+// is dropped (not an object, a member missing, of another type or out of
+// bounds).
+func keepVideoLayout(v any) *videoLayout {
+	o, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	w, h := videoInt(o["tileWidth"], 1, 2048), videoInt(o["tileHeight"], 1, 2048)
+	c, r := videoInt(o["columns"], 1, 100), videoInt(o["rows"], 1, 100)
+	iv := videoInt(o["intervalMs"], 100, 3_600_000)
+	if w == nil || h == nil || c == nil || r == nil || iv == nil || *c**w > 4096 || *r**h > 4096 {
+		return nil
+	}
+	n := videoInt(o["tileCount"], 1, 1000**c**r)
+	if n == nil {
+		return nil
+	}
+	return &videoLayout{*w, *h, *c, *r, *iv, *n}
+}
+
+// keepVideoStream is section 3.8's reading of a copy's video: nil when
+// it counts as absent.
+func keepVideoStream(v any) *videoStream {
+	o, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	codec := openTokenValue(o["codec"])
+	w, h := videoInt(o["width"], 1, 100_000), videoInt(o["height"], 1, 100_000)
+	if codec == "" || w == nil || h == nil {
+		return nil
+	}
+	s := &videoStream{Codec: codec, Width: *w, Height: *h}
+	s.Codecs = videoForm(o["codecs"], videoCodecsForm)
+	s.SampleAspect = videoAspect(o["sampleAspect"])
+	if r := videoInt(o["rotation"], 0, 270); r != nil && *r%90 == 0 {
+		s.Rotation = r
+	}
+	s.BitDepth = videoInt(o["bitDepth"], 1, 16)
+	if c, ok := o["colour"].(map[string]any); ok {
+		col := videoColour{videoH273(c["primaries"]), videoH273(c["transfer"]), videoH273(c["matrix"]), videoBool(c["fullRange"])}
+		if col != (videoColour{}) {
+			s.Colour = &col
+		}
+	}
+	if list, ok := o["hdr"].([]any); ok {
+		var hdr []string
+		for _, e := range list {
+			if t := openTokenValue(e); t != "" && !videoIn(t, hdr) {
+				hdr = append(hdr, t)
+			}
+		}
+		sort.Strings(hdr)
+		if len(hdr) > videoMaxHDR {
+			hdr = hdr[:videoMaxHDR]
+		}
+		s.HDR = hdr
+	}
+	if dv, ok := o["dv"].(map[string]any); ok {
+		p, l, c := videoInt(dv["profile"], 0, 127), videoInt(dv["level"], 0, 63), videoInt(dv["compatibility"], 0, 15)
+		if p != nil && l != nil && c != nil {
+			s.DV = &videoDV{*p, *l, *c, videoBool(dv["el"])}
+		}
+	}
+	s.FPS = videoFPS(o["fps"])
+	if codec == "h264" {
+		s.RefFrames = videoInt(o["refFrames"], 1, 16)
+	}
+	s.Interlaced = videoBool(o["interlaced"])
+	return s
+}
+
+func keepVideoAudio(list []any) []videoAudio {
+	out := []videoAudio{}
+	seen := map[string]bool{}
+	for _, e := range list {
+		o, ok := e.(map[string]any)
+		if !ok || len(out) == 32 {
+			continue
+		}
+		id := videoForm(o["id"], videoAudioID)
+		codec := openTokenValue(o["codec"])
+		if id == "" || seen[id] || codec == "" {
+			continue
+		}
+		seen[id] = true
+		out = append(out, videoAudio{
+			ID:         id,
+			Language:   videoTag(o["language"]),
+			Channels:   videoInt(o["channels"], 1, 64),
+			Role:       openTokenValue(o["role"]),
+			Default:    videoBool(o["default"]),
+			Forced:     videoBool(o["forced"]),
+			Codec:      codec,
+			Codecs:     videoForm(o["codecs"], videoCodecsForm),
+			Objects:    openTokenValue(o["objects"]),
+			SampleRate: videoInt(o["sampleRate"], 8_000, 768_000),
+			BitDepth:   videoInt(o["bitDepth"], 8, 32),
+			Original:   videoBool(o["original"]),
+		})
+	}
+	return out
+}
+
+func keepVideoSubtitles(list []any) []videoSubtitle {
+	var out []videoSubtitle
+	seen := map[string]bool{}
+	for _, e := range list {
+		o, ok := e.(map[string]any)
+		if !ok || len(out) == 64 {
+			continue
+		}
+		id := videoForm(o["id"], videoSubtitleID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, videoSubtitle{
+			ID:              id,
+			Language:        videoTag(o["language"]),
+			Role:            openTokenValue(o["role"]),
+			Default:         videoBool(o["default"]),
+			Forced:          videoBool(o["forced"]),
+			HearingImpaired: videoBool(o["hearingImpaired"]),
+			Format:          openTokenValue(o["format"]),
+			External:        videoBool(o["external"]),
+		})
+	}
+	return out
+}
 
 // videoDecode reads one JSON value, numbers kept as their text.
 func videoDecode(raw []byte) (any, error) {
@@ -431,168 +559,6 @@ func videoEncode(v any) ([]byte, error) {
 		return nil, err
 	}
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
-}
-
-// videoNumber reads a JSON number of any form as a float.
-func videoNumber(v any) (float64, bool) {
-	n, ok := v.(json.Number)
-	if !ok {
-		return 0, false
-	}
-	f, err := strconv.ParseFloat(n.String(), 64)
-	return f, err == nil
-}
-
-func videoNumText(f float64) json.Number {
-	return json.Number(strconv.FormatFloat(f, 'f', -1, 64))
-}
-
-// keepVideoStream is section 3.8's reading of a copy's video: nil when
-// it counts as absent.
-func keepVideoStream(v any) *videoStream {
-	o, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	codec := openTokenValue(o["codec"])
-	w, h := videoInt(o["width"], 1, 100_000), videoInt(o["height"], 1, 100_000)
-	if codec == "" || w == nil || h == nil {
-		return nil
-	}
-	s := &videoStream{Codec: codec, Width: *w, Height: *h}
-	s.CodecTag = videoForm(o["codecTag"], videoCodecTag)
-	s.Codecs = videoForm(o["codecs"], videoCodecsForm)
-	s.Profile = videoText(o["profile"], 64)
-	if f, ok := videoNumber(o["level"]); ok && f >= 0 && f <= 1000 {
-		s.Level = videoNumText(f)
-	}
-	s.SampleAspect = videoAspect(o["sampleAspect"])
-	if r := videoInt(o["rotation"], 0, 270); r != nil && *r%90 == 0 {
-		s.Rotation = r
-	}
-	s.BitDepth = videoInt(o["bitDepth"], 1, 16)
-	if c, ok := o["colour"].(map[string]any); ok {
-		col := videoColour{
-			Primaries: openTokenValue(c["primaries"]),
-			Transfer:  openTokenValue(c["transfer"]),
-			Matrix:    openTokenValue(c["matrix"]),
-			Range:     openTokenValue(c["range"]),
-		}
-		if col != (videoColour{}) {
-			s.Colour = &col
-		}
-	}
-	if list, ok := o["hdr"].([]any); ok {
-		var hdr []string
-		for _, e := range list {
-			if t := openTokenValue(e); t != "" && !videoIn(t, hdr) {
-				hdr = append(hdr, t)
-			}
-		}
-		sort.Strings(hdr)
-		if len(hdr) > videoMaxHDR {
-			hdr = hdr[:videoMaxHDR]
-		}
-		s.HDR = hdr
-	}
-	if dv, ok := o["dv"].(map[string]any); ok && videoIn("dv", s.HDR) {
-		p, l, c := videoInt(dv["profile"], 0, 127), videoInt(dv["level"], 0, 63), videoInt(dv["compatibility"], 0, 15)
-		if p != nil && l != nil && c != nil {
-			s.DV = &videoDV{*p, *l, *c, videoBool(dv["el"]), videoBool(dv["bl"]), videoBool(dv["rpu"])}
-		}
-	}
-	s.FPS = videoFPS(o["fps"])
-	s.Interlaced = videoBool(o["interlaced"])
-	return s
-}
-
-// keepVideoParts: nil unless every part checks out and the sizes add up.
-func keepVideoParts(v any, size int64) []videoPart {
-	list, ok := v.([]any)
-	if !ok || len(list) == 0 || len(list) > 16 {
-		return nil
-	}
-	var out []videoPart
-	var sum int64
-	for _, e := range list {
-		o, ok := e.(map[string]any)
-		if !ok {
-			return nil
-		}
-		s, d := videoInt(o["size"], 1, videoMaxSize), videoInt(o["durationMs"], 0, videoMaxDuration)
-		if s == nil || d == nil {
-			return nil
-		}
-		sum += *s
-		out = append(out, videoPart{*s, *d})
-	}
-	if sum != size {
-		return nil
-	}
-	return out
-}
-
-func keepVideoAudio(list []any) []videoAudio {
-	out := []videoAudio{}
-	seen := map[string]bool{}
-	for _, e := range list {
-		o, ok := e.(map[string]any)
-		if !ok || len(out) == 32 {
-			continue
-		}
-		id := videoForm(o["id"], videoAudioID)
-		codec := openTokenValue(o["codec"])
-		if id == "" || seen[id] || codec == "" {
-			continue
-		}
-		seen[id] = true
-		out = append(out, videoAudio{
-			ID:         id,
-			Language:   videoTag(o["language"]),
-			Channels:   videoInt(o["channels"], 1, 64),
-			Role:       openTokenValue(o["role"]),
-			Default:    videoBool(o["default"]),
-			Forced:     videoBool(o["forced"]),
-			FileIndex:  videoInt(o["fileIndex"], 0, 999),
-			Codec:      codec,
-			Codecs:     videoForm(o["codecs"], videoCodecsForm),
-			Profile:    videoText(o["profile"], 64),
-			Layout:     videoForm(o["layout"], videoLayoutForm),
-			SampleRate: videoInt(o["sampleRate"], 8_000, 768_000),
-			BitDepth:   videoInt(o["bitDepth"], 8, 32),
-			Title:      videoPlain(o["title"], 64),
-			Original:   videoBool(o["original"]),
-		})
-	}
-	return out
-}
-
-func keepVideoSubtitles(list []any) []videoSubtitle {
-	var out []videoSubtitle
-	seen := map[string]bool{}
-	for _, e := range list {
-		o, ok := e.(map[string]any)
-		if !ok || len(out) == 64 {
-			continue
-		}
-		id := videoForm(o["id"], videoSubtitleID)
-		if id == "" || seen[id] {
-			continue
-		}
-		seen[id] = true
-		out = append(out, videoSubtitle{
-			ID:              id,
-			Language:        videoTag(o["language"]),
-			Default:         videoBool(o["default"]),
-			Forced:          videoBool(o["forced"]),
-			HearingImpaired: videoBool(o["hearingImpaired"]),
-			Format:          openTokenValue(o["format"]),
-			External:        videoBool(o["external"]),
-			FileIndex:       videoInt(o["fileIndex"], 0, 999),
-			Title:           videoPlain(o["title"], 64),
-		})
-	}
-	return out
 }
 
 func keepVideoChapters(v any, duration int64) []videoChapter {
@@ -625,7 +591,7 @@ func keepVideoSegments(v any, duration int64) []videoSegment {
 		if kind == "" || s == nil || t == nil || *s >= *t {
 			continue
 		}
-		out = append(out, videoSegment{kind, *s, *t, videoBool(o["final"])})
+		out = append(out, videoSegment{kind, *s, *t})
 	}
 	return out
 }
@@ -645,9 +611,9 @@ func keepCopy(v any) (*videoCopy, error) {
 	if d == nil {
 		return nil, errors.New("durationMs isn't an integer from 0 to 8,640,000,000")
 	}
-	container := openTokenValue(o["container"])
-	if container == "" {
-		return nil, errors.New("container isn't a token")
+	mt, _ := o["mediaType"].(string)
+	if !videoMediaType(mt) {
+		return nil, errors.New("mediaType missing or not a media type")
 	}
 	size := videoInt(o["size"], 1, videoMaxSize)
 	if size == nil {
@@ -661,12 +627,15 @@ func keepCopy(v any) (*videoCopy, error) {
 	if !ok {
 		return nil, errors.New("audioTracks isn't an array")
 	}
-	c := &videoCopy{ID: id, DurationMs: *d, Container: container, Size: *size, ETag: etag}
-	c.Name = videoPlain(o["name"], 64)
+	c := &videoCopy{ID: id, DurationMs: *d, MediaType: mt, Size: *size, ETag: etag}
 	c.Edition = openTokenValue(o["edition"])
 	c.StartMs = videoInt(o["startMs"], 0, *d)
-	c.Parts = keepVideoParts(o["parts"], *size)
-	c.BitrateKbps = videoInt(o["bitrateKbps"], 1, 10_000_000)
+	from := int64(0)
+	if c.StartMs != nil {
+		from = *c.StartMs
+	}
+	c.EndMs = videoInt(o["endMs"], from+1, *d)
+	c.Parts = videoInt(o["parts"], 2, 16)
 	c.Video = keepVideoStream(o["video"])
 	c.AudioTracks = keepVideoAudio(audio)
 	if subs, ok := o["subtitleTracks"].([]any); ok {
@@ -674,13 +643,8 @@ func keepCopy(v any) (*videoCopy, error) {
 	}
 	c.Chapters = keepVideoChapters(o["chapters"], *d)
 	c.Segments = keepVideoSegments(o["segments"], *d)
-	c.Previews = videoBool(o["previews"])
-	if s, ok := o["added"].(string); ok && videoDateForm.MatchString(s) {
-		if _, err := time.Parse("2006-01-02", s); err == nil {
-			c.Added = s
-		}
-	}
-	c.ThreeD = videoOneOf(o["threeD"], videoThreeD)
+	c.PreviewLayout = keepVideoLayout(o["previewLayout"])
+	c.ThreeD = openTokenValue(o["threeD"])
 	return c, nil
 }
 
@@ -700,7 +664,8 @@ func keepVideoCopy(raw []byte) ([]byte, error) {
 // keepVideoTitle applies catalog section 3.3 and video sections 3.1,
 // 3.8, 3.9 and 3.10 to one entry of titles, given the libraries the
 // caller asked for. It returns what the caller keeps, written as JSON,
-// or why the title is skipped.
+// or why the title is skipped. A kind member is ignored: the key names
+// the kind.
 func keepVideoTitle(raw []byte, libraries []string) ([]byte, error) {
 	v, err := videoDecode(raw)
 	if err != nil {
@@ -713,8 +678,8 @@ func keepVideoTitle(raw []byte, libraries []string) ([]byte, error) {
 	// A title carries no kind (catalog section 3): the key names it, and
 	// a kind member is unknown, ignored.
 	key, ok1 := o["key"].(string)
-	lib, ok3 := o["library"].(string)
-	if !ok1 || !ok3 {
+	lib, ok2 := o["library"].(string)
+	if !ok1 || !ok2 {
 		return nil, errors.New("key or library isn't a string")
 	}
 	k, err := parseVideoKey(key)
@@ -725,14 +690,13 @@ func keepVideoTitle(raw []byte, libraries []string) ([]byte, error) {
 	if !videoIn(lib, libraries) {
 		return nil, fmt.Errorf("library %q wasn't asked for", lib)
 	}
-	t := videoTitle{Key: key, Kind: kind, Library: lib}
+	t := videoTitle{Key: key, Library: lib}
 
-	// Extras (section 3.9).
+	// Extras (section 3.9): no name.
 	if kind == "extra" {
 		if t.ExtraType = openTokenValue(o["extraType"]); t.ExtraType == "" {
 			return nil, errors.New("an extra whose extraType is missing or isn't a token")
 		}
-		t.Name = videoPlain(o["name"], 64)
 	}
 	// The description of a local film or series (section 3.10).
 	if k.Scheme == "local" && (kind == "movie" || kind == "series") {
@@ -768,11 +732,14 @@ func keepVideoTitle(raw []byte, libraries []string) ([]byte, error) {
 			}
 		}
 	}
-	// ids (section 4.3).
-	if ids, ok := o["ids"].(map[string]any); ok && k.Scheme != "local" && (kind == "movie" || kind == "series" || kind == "episode") {
+	// ids (section 4.3): episodes of tmdb and tvdb, series of tvdb.
+	episode := kind == "episode" && k.Scheme != "local"
+	tvdbSeries := kind == "series" && k.Scheme == "tvdb"
+	if ids, ok := o["ids"].(map[string]any); ok && (episode || tvdbSeries) {
 		for scheme, val := range ids {
 			s, ok := val.(string)
-			if !ok || !(scheme == "imdb" && videoIMDbForm.MatchString(s) || scheme == "tvdb" && videoIDForm.MatchString(s) ||
+			if !ok || !(scheme == "imdb" && videoIMDbForm.MatchString(s) ||
+				scheme == "tvdb" && episode && videoIDForm.MatchString(s) ||
 				scheme == "tmdb" && k.Scheme == "tvdb" && videoIDForm.MatchString(s)) {
 				continue
 			}
@@ -812,6 +779,248 @@ func keepVideoTitle(raw []byte, libraries []string) ([]byte, error) {
 	return videoEncode(t)
 }
 
+// What a viewer's server reads from a codecs string (section 3.5).
+
+// videoCodecsFacts is what a viewer's server decides by: the parts of
+// codecs it reads, the parts it ignores left out, bitDepth taken from
+// the stream's own field when it has one. dolbyVision is the Dolby
+// Vision string rebuilt from the base 4CC and dv.
+type videoCodecsFacts struct {
+	Codec       string `json:"codec"`
+	Codecs      string `json:"codecs,omitempty"`
+	Profile     *int64 `json:"profile,omitempty"`
+	Tier        string `json:"tier,omitempty"`
+	Level       *int64 `json:"level,omitempty"`
+	BitDepth    *int64 `json:"bitDepth,omitempty"`
+	Chroma      string `json:"chroma,omitempty"`
+	Constraints string `json:"constraints,omitempty"`
+	MP4A        string `json:"mp4a,omitempty"`
+	DolbyVision string `json:"dolbyVision,omitempty"`
+}
+
+var (
+	videoAVCForm   = regexp.MustCompile(`^(avc1|avc3)\.([0-9A-Fa-f]{2})[0-9A-Fa-f]{2}([0-9A-Fa-f]{2})$`)
+	videoHEVCForm  = regexp.MustCompile(`^(hvc1|hev1)\.[ABC]?([0-9]{1,2})\.[0-9A-Fa-f]{1,8}\.([LH])([0-9]{1,3})((?:\.[0-9A-Fa-f]{1,2}){0,6})$`)
+	videoAV1Form   = regexp.MustCompile(`^(av01)\.([0-7])\.([0-9]{2})([MH])\.([0-9]{2})(?:\.([01])\.([01][01][0-3])\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[01])?$`)
+	videoVP9Form   = regexp.MustCompile(`^(vp09)\.([0-9]{2})\.[0-9]{2}\.([0-9]{2})(?:\.([0-9]{2})(?:\.[0-9]{2}){0,4})?$`)
+	videoAACForm   = regexp.MustCompile(`^mp4a\.(40\.[1-9][0-9]?|66|67|68)$`)
+	videoDTSForm   = regexp.MustCompile(`^(dtsc|dtsh|dtsl|dtse)$`)
+	videoDVEntry   = map[string]string{"hvc1": "dvh1", "hev1": "dvhe", "av01": "dav1", "avc1": "dva1", "avc3": "dvav"}
+	videoDVEntries = map[string]bool{"dvh1": true, "dvhe": true, "dav1": true, "dva1": true, "dvav": true}
+)
+
+// videoRequiresCodecs: the six codecs for which codecs is required.
+var videoRequiresCodecs = []string{"h264", "hevc", "av1", "vp9", "aac", "dts"}
+
+func videoNum(s string, base int) *int64 {
+	n, err := strconv.ParseInt(s, base, 64)
+	if err != nil {
+		return nil
+	}
+	return &n
+}
+
+// readVideoCodecs is section 3.5's reading of a stream's or a track's
+// codecs, given the stream as kept (codec, codecs, bitDepth, dv): the
+// facts the viewer's server decides by, or why it treats the copy as one
+// it can't play as it is.
+func readVideoCodecs(raw []byte) ([]byte, error) {
+	v, err := videoDecode(raw)
+	if err != nil {
+		return nil, err
+	}
+	o, ok := v.(map[string]any)
+	if !ok {
+		return nil, errors.New("not an object")
+	}
+	f := videoCodecsFacts{Codec: openTokenValue(o["codec"])}
+	if f.Codec == "" {
+		return nil, errors.New("codec missing or not a token")
+	}
+	f.Codecs = videoForm(o["codecs"], videoCodecsForm)
+	required := videoIn(f.Codec, videoRequiresCodecs)
+	if f.Codecs == "" {
+		if required {
+			return nil, fmt.Errorf("codecs missing or malformed, required for %s: can't play as it is", f.Codec)
+		}
+		return videoEncode(f)
+	}
+	own := videoInt(o["bitDepth"], 1, 32) // the authoritative bit depth
+	for dv := range videoDVEntries {
+		if strings.HasPrefix(f.Codecs, dv+".") || f.Codecs == dv {
+			return nil, fmt.Errorf("a Dolby Vision 4CC (%s): codecs carries the base codec's; can't play as it is", dv)
+		}
+	}
+	var fourCC string
+	switch f.Codec {
+	case "h264":
+		m := videoAVCForm.FindStringSubmatch(f.Codecs)
+		if m == nil {
+			return nil, errors.New("codecs isn't avc1 or avc3 and three bytes: can't play as it is")
+		}
+		fourCC, f.Profile, f.Level = m[1], videoNum(m[2], 16), videoNum(m[3], 16)
+	case "hevc":
+		m := videoHEVCForm.FindStringSubmatch(f.Codecs)
+		if m == nil {
+			return nil, errors.New("codecs isn't an HEVC string of hvc1 or hev1: can't play as it is")
+		}
+		fourCC, f.Profile, f.Tier, f.Level = m[1], videoNum(m[2], 10), m[3], videoNum(m[4], 10)
+		f.Constraints = strings.TrimPrefix(m[5], ".")
+		if *f.Profile >= 4 && f.Constraints == "" {
+			return nil, errors.New("an HEVC profile of 4 or more without its constraint bytes: can't play as it is")
+		}
+	case "av1":
+		m := videoAV1Form.FindStringSubmatch(f.Codecs)
+		if m == nil {
+			return nil, errors.New("codecs isn't an AV1 string of av01: can't play as it is")
+		}
+		fourCC, f.Profile, f.Level, f.Tier, f.BitDepth = m[1], videoNum(m[2], 10), videoNum(m[3], 10), m[4], videoNum(m[5], 10)
+		switch {
+		case m[6] == "1":
+			f.Chroma = "4:0:0"
+		case m[7] != "":
+			f.Chroma = map[string]string{"110": "4:2:0", "111": "4:2:0", "112": "4:2:0", "113": "4:2:0", "100": "4:2:2", "000": "4:4:4"}[m[7]]
+		case *f.Profile == 0:
+			f.Chroma = "4:2:0"
+		case *f.Profile == 1:
+			return nil, errors.New("AV1 profile 1 (4:4:4) without the long form: can't play as it is")
+		}
+	case "vp9":
+		m := videoVP9Form.FindStringSubmatch(f.Codecs)
+		if m == nil {
+			return nil, errors.New("codecs isn't a VP9 string of vp09: can't play as it is")
+		}
+		fourCC, f.Profile, f.BitDepth = m[1], videoNum(m[2], 10), videoNum(m[3], 10)
+		switch m[4] {
+		case "00", "01":
+			f.Chroma = "4:2:0"
+		case "02":
+			f.Chroma = "4:2:2"
+		case "03":
+			f.Chroma = "4:4:4"
+		case "":
+			if *f.Profile == 1 || *f.Profile == 3 {
+				return nil, errors.New("VP9 profile 1 or 3 (not 4:2:0) without the long form: can't play as it is")
+			}
+			f.Chroma = "4:2:0"
+		default:
+			return nil, errors.New("a VP9 chroma subsampling other than 00 to 03: can't play as it is")
+		}
+	case "aac":
+		m := videoAACForm.FindStringSubmatch(f.Codecs)
+		if m == nil {
+			return nil, errors.New("codecs isn't mp4a.40.<n> or an MPEG-2 AAC mp4a: can't play as it is")
+		}
+		f.MP4A = m[1]
+	case "dts":
+		if !videoDTSForm.MatchString(f.Codecs) {
+			return nil, errors.New("codecs isn't dtsc, dtsh, dtsl or dtse: can't play as it is")
+		}
+	}
+	if own != nil {
+		f.BitDepth = own
+	}
+	if dv, ok := o["dv"].(map[string]any); ok && fourCC != "" {
+		p, l := videoInt(dv["profile"], 0, 127), videoInt(dv["level"], 0, 63)
+		if p != nil && l != nil {
+			f.DolbyVision = fmt.Sprintf("%s.%02d.%02d", videoDVEntry[fourCC], *p, *l)
+		}
+	}
+	return videoEncode(f)
+}
+
+// The video members of play's answer (sections 5.3 and 6.1).
+
+// videoServedForm is section 5.4's table: the form and ass a track of a
+// listed format is served in.
+var videoServedForm = map[string][2]string{
+	"subrip": {"text", ""}, "webvtt": {"text", ""}, "mov_text": {"text", ""}, "ttml": {"text", ""},
+	"ass": {"text", "ass"}, "ssa": {"text", "ass"},
+	"hdmv_pgs_subtitle": {"picture", ""}, "dvd_subtitle": {"picture", ""}, "dvb_subtitle": {"picture", ""},
+}
+
+type videoServed struct {
+	ID   string `json:"id"`
+	Form string `json:"form"`
+	ASS  *bool  `json:"ass,omitempty"`
+}
+
+type videoAnswer struct {
+	Subtitles []videoServed `json:"subtitles,omitempty"`
+	FontCount int64         `json:"fontCount"`
+	URLs      []string      `json:"urls"`
+}
+
+// keepVideoAnswer reads the video members of play's answer for a copy
+// of the catalog, and builds the URLs of its files from the stream root
+// and the answer's ticket: an error refuses the answer (a ticket out of
+// its form).
+func keepVideoAnswer(raw []byte, cp *videoCopy, root string) ([]byte, error) {
+	v, err := videoDecode(raw)
+	if err != nil {
+		return nil, err
+	}
+	o, ok := v.(map[string]any)
+	if !ok {
+		return nil, errors.New("not an object")
+	}
+	ticket := videoForm(o["ticket"], videoOpaqueForm)
+	if ticket == "" {
+		return nil, errors.New("ticket missing or not 1 to 64 characters of A-Z a-z 0-9 _ -")
+	}
+	formats := map[string]string{}
+	for _, s := range cp.SubtitleTracks {
+		formats[s.ID] = s.Format
+	}
+	a := videoAnswer{URLs: []string{}}
+	base := root + ticket + "/"
+	list, _ := o["subtitles"].([]any)
+	for _, e := range list {
+		m, ok := e.(map[string]any)
+		if !ok || len(a.Subtitles) == 64 {
+			continue
+		}
+		id, _ := m["id"].(string)
+		form, _ := m["form"].(string)
+		format, inCopy := formats[id]
+		dup := false
+		for _, s := range a.Subtitles {
+			dup = dup || s.ID == id
+		}
+		if !inCopy || dup || form != "text" && form != "picture" {
+			continue
+		}
+		ass := videoBool(m["ass"])
+		if form != "text" || ass != nil && !*ass {
+			ass = nil
+		}
+		if want, listed := videoServedForm[format]; listed && (want[0] != form || (want[1] == "ass") != (ass != nil)) {
+			continue
+		}
+		a.Subtitles = append(a.Subtitles, videoServed{id, form, ass})
+		if form == "text" {
+			a.URLs = append(a.URLs, base+"subtitles/"+id)
+		} else {
+			a.URLs = append(a.URLs, base+"pictures/"+id)
+		}
+		if ass != nil {
+			a.URLs = append(a.URLs, base+"ass/"+id)
+		}
+	}
+	if n := videoInt(o["fontCount"], 0, videoMaxFonts); n != nil {
+		a.FontCount = *n
+	}
+	for i := int64(0); i < a.FontCount; i++ {
+		a.URLs = append(a.URLs, base+"fonts/"+strconv.FormatInt(i, 10))
+	}
+	if l := cp.PreviewLayout; l != nil {
+		for i := int64(0); i < l.sheets(); i++ {
+			a.URLs = append(a.URLs, base+"trickplay/"+strconv.FormatInt(i, 10))
+		}
+	}
+	return videoEncode(a)
+}
+
 // The previews call (section 5.6).
 
 // checkVideoPreviewsRequest: a JSON object whose title is the key of a
@@ -847,88 +1056,14 @@ func checkVideoPreviewsRequest(raw []byte) error {
 	return nil
 }
 
-// videoTrickplay is a kept trickplay object (section 5.5).
-type videoTrickplay struct {
-	TileWidth  int64    `json:"tileWidth"`
-	TileHeight int64    `json:"tileHeight"`
-	Columns    int64    `json:"columns"`
-	Rows       int64    `json:"rows"`
-	IntervalMs int64    `json:"intervalMs"`
-	TileCount  int64    `json:"tileCount"`
-	Sheets     []string `json:"sheets"`
-}
-
 type videoPreviewsAnswer struct {
-	Trickplay *videoTrickplay `json:"trickplay,omitempty"`
-}
-
-var videoTrickplayFields = []string{"tileWidth", "tileHeight", "columns", "rows", "intervalMs", "tileCount"}
-
-// keepVideoTrickplay is section 5.5's reading of a trickplay object,
-// given the owning server's stream root: an error refuses the whole
-// answer (a field of another JSON type, a sheet URL that isn't the one
-// section 6.1 gives); nil, nil drops the previews (a number missing or
-// out of bounds, another number of sheets).
-func keepVideoTrickplay(v any, root string) (*videoTrickplay, error) {
-	o, ok := v.(map[string]any)
-	if !ok {
-		return nil, errors.New("trickplay isn't an object")
-	}
-	n := map[string]int64{}
-	for _, f := range videoTrickplayFields {
-		raw, present := o[f]
-		if !present {
-			continue
-		}
-		i := videoInt(raw, math.MinInt64, math.MaxInt64)
-		if i == nil {
-			return nil, fmt.Errorf("%s isn't an integer", f)
-		}
-		n[f] = *i
-	}
-	var sheets []string
-	if raw, present := o["sheets"]; present {
-		list, ok := raw.([]any)
-		if !ok {
-			return nil, errors.New("sheets isn't an array")
-		}
-		ticket := ""
-		for i, e := range list {
-			s, ok := e.(string)
-			if !ok {
-				return nil, fmt.Errorf("sheets[%d] isn't a string", i)
-			}
-			rest, ok := strings.CutPrefix(s, root)
-			tk, tail, cut := strings.Cut(rest, "/")
-			if !ok || !cut || !videoOpaqueForm.MatchString(tk) || tail != "trickplay/"+strconv.Itoa(i) {
-				return nil, fmt.Errorf("sheets[%d] isn't <stream root><ticket>/trickplay/%d", i, i)
-			}
-			if ticket != "" && tk != ticket {
-				return nil, fmt.Errorf("sheets[%d] names another ticket", i)
-			}
-			ticket = tk
-			sheets = append(sheets, s)
-		}
-	}
-	in := func(f string, lo, hi int64) bool { x, ok := n[f]; return ok && x >= lo && x <= hi }
-	if !in("tileWidth", 1, 2048) || !in("tileHeight", 1, 2048) || !in("columns", 1, 100) || !in("rows", 1, 100) ||
-		!in("intervalMs", 100, 3_600_000) || !in("tileCount", 1, math.MaxInt64) || sheets == nil {
-		return nil, nil
-	}
-	if n["columns"]*n["tileWidth"] > 4096 || n["rows"]*n["tileHeight"] > 4096 {
-		return nil, nil
-	}
-	per := n["columns"] * n["rows"]
-	if want := (n["tileCount"] + per - 1) / per; want > 1000 || int64(len(sheets)) != want {
-		return nil, nil
-	}
-	return &videoTrickplay{n["tileWidth"], n["tileHeight"], n["columns"], n["rows"], n["intervalMs"], n["tileCount"], sheets}, nil
+	Ticket string `json:"ticket"`
+	ETag   string `json:"etag"`
 }
 
 // keepVideoPreviewsAnswer applies section 5.6 to a previews answer: an
-// error refuses it; otherwise what the viewer's server keeps, {} when
-// it drops the previews.
-func keepVideoPreviewsAnswer(raw []byte, root string) ([]byte, error) {
+// error refuses it (no sheets); otherwise the ticket and etag kept.
+func keepVideoPreviewsAnswer(raw []byte) ([]byte, error) {
 	v, err := videoDecode(raw)
 	if err != nil {
 		return nil, err
@@ -937,53 +1072,17 @@ func keepVideoPreviewsAnswer(raw []byte, root string) ([]byte, error) {
 	if !ok {
 		return nil, errors.New("not an object")
 	}
-	var a videoPreviewsAnswer
-	if tp, present := o["trickplay"]; present {
-		if a.Trickplay, err = keepVideoTrickplay(tp, root); err != nil {
-			return nil, err
-		}
+	a := videoPreviewsAnswer{videoForm(o["ticket"], videoOpaqueForm), videoForm(o["etag"], videoOpaqueForm)}
+	if a.Ticket == "" {
+		return nil, errors.New("ticket missing or not 1 to 64 characters of A-Z a-z 0-9 _ -")
+	}
+	if a.ETag == "" {
+		return nil, errors.New("etag missing or not 1 to 64 characters of A-Z a-z 0-9 _ -")
 	}
 	return videoEncode(a)
 }
 
-// Fonts (sections 5.3 and 6.6).
-
-// keepVideoFonts is section 5.3's reading of the fonts member of play's
-// answer, given the owning server's stream root: the URLs kept, or why
-// the member is dropped. Each entry must be exactly the URL section 6.1
-// gives for its index, all under one ticket, at most 64.
-func keepVideoFonts(raw []byte, root string) ([]byte, error) {
-	v, err := videoDecode(raw)
-	if err != nil {
-		return nil, err
-	}
-	list, ok := v.([]any)
-	if !ok {
-		return nil, errors.New("fonts isn't an array")
-	}
-	if len(list) > videoMaxFonts {
-		return nil, fmt.Errorf("%d fonts, more than 64", len(list))
-	}
-	out := []string{}
-	ticket := ""
-	for i, e := range list {
-		s, ok := e.(string)
-		if !ok {
-			return nil, fmt.Errorf("fonts[%d] isn't a string", i)
-		}
-		rest, ok := strings.CutPrefix(s, root)
-		tk, tail, cut := strings.Cut(rest, "/")
-		if !ok || !cut || !videoOpaqueForm.MatchString(tk) || tail != "fonts/"+strconv.Itoa(i) {
-			return nil, fmt.Errorf("fonts[%d] isn't <stream root><ticket>/fonts/%d", i, i)
-		}
-		if ticket != "" && tk != ticket {
-			return nil, fmt.Errorf("fonts[%d] names another ticket", i)
-		}
-		ticket = tk
-		out = append(out, s)
-	}
-	return videoEncode(out)
-}
+// Fonts (section 6.6).
 
 // videoFontSet is what checkVideoFontSet finds in a set of fonts.
 type videoFontSet struct {
