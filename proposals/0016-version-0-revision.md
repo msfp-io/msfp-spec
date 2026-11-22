@@ -425,10 +425,10 @@ pair with each other.
    catalog.** A file address needs it before play, and anyone who plays
    the copy gets the exact file anyway. `bitrateKbps` stays rounded.
 2. ~~**Scan access's cap**~~ Decided 2026-11-22: **32 MB per copy**, kept.
-3. **Music queue size:** 5 next tracks under one playback.
+3. ~~**Music queue size**~~ Decided 2026-11-22: **5 next tracks**, kept.
 
 ## Recommendation
 
-Adopt sections 1 to 9 and settle the three open points, then write the
+Adopt sections 1 to 9 (open points settled on 2026-11-22), then write the
 revision into spec/v0 in one pass, with its vectors and conformance
 checks, before any implementation starts.
