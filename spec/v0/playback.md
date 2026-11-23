@@ -404,8 +404,12 @@ value.
   It has no bitrate ceiling of its own beyond step 6's caps.
 
 **Segments.** In `mp4` segments, of a remux or a transcode alike, HEVC
-is written with the `hvc1` sample entry, and Dolby Vision with `dvh1`
-(`dav1` on AV1), parameter sets out of band. The master playlist
+is written with the `hvc1` sample entry, parameter sets out of band.
+Dolby Vision with a compatible base layer (`dv.compatibility` not 0,
+such as profile 8) keeps the base's sample entry (`hvc1`, `av01`) and
+is announced by the master playlist's `SUPPLEMENTAL-CODECS`
+(`dvh1…/db1p`); Dolby Vision with no compatible base (profile 5) is
+written `dvh1` (`dav1` on AV1). The master playlist
 describes the stream served ([media section 3.1](media.md#31-hls-playlists)).
 
 **A playback may start on the first read.** A viewer's server may present

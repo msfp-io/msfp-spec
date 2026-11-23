@@ -344,8 +344,11 @@ after `#EXT-X-STREAM-INF` and `#EXTINF`:
   `RESOLUTION`; `VIDEO-RANGE` (`PQ` or `HLG`) when the picture served is
   PQ or HLG; and `SUPPLEMENTAL-CODECS` when Dolby Vision is kept.
 - **Segments.** In `mp4` segments, HEVC is written with the `hvc1`
-  sample entry, and Dolby Vision with `dvh1` (`dav1` on AV1), parameter
-  sets out of band, in a remux and a transcode alike
+  sample entry, parameter sets out of band, in a remux and a transcode
+  alike. Dolby Vision with a compatible base layer (profile 8) keeps the
+  base's sample entry and is announced by `SUPPLEMENTAL-CODECS`; Dolby
+  Vision with no compatible base (profile 5) is written `dvh1` (`dav1`
+  on AV1)
   ([playback section 2.7](playback.md#27-delivery)).
 - URIs are only in URI lines, in `#EXT-X-MAP`'s `URI` attribute, written
   `#EXT-X-MAP:URI="<name>"`, and in `#EXT-X-MEDIA`'s `URI` attribute.
