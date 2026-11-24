@@ -224,7 +224,7 @@ an authority, and the reason the window is long.
   automatic `backed`; the claim, signed when the successor's turn comes
   and the backing is there. A small change: no new call, no new message.
 - **Overfin and the Jellyfin plugin:** two notices in the group's
-  window (the owner is silent since a date; who took over), and the
+  window (the owner has been silent since a date; who took over), and the
   explanation of the heir, which now also takes over when the owner
   vanishes.
 
