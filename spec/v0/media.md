@@ -654,7 +654,7 @@ out of this part on 2026-11-17):
    fonts, sheets and images (section 2.4), and the rule that they are
    fetched without `Range` (section 2.1), are listed with the other
    bounds, though only the content parts use them.
-6. **URL checks stay here** (section 1): the `<track>` name that video's
+6. **URL checks stay here** (section 1): the `<id>` name that video's
    URLs add follows the same pattern as `<name>`.
 
 **Choices made when proposal 16 was written in** (2026-11-22, where the

@@ -57,6 +57,7 @@ be empty when the stored record says the server can't be called.
 | `Parts` | nil: all six | `catalog`, `playback`, `media`, `video`, `music`, `groups`. A part without those it needs is left out (`video` and `music` need the other three; `playback` needs `catalog` and `media`; `groups` needs none, but its store must keep groups: [host.md section 1.1](host.md#11-tx)). An empty list: the core alone |
 | `Catalog`, `Playback`, `Media` | absent | absent: nothing offered, every `play` answered `404` |
 | `MaxBitrateKbps` | 0 (none) | this server's cap on what peers play here |
+| `Encoders` | the baseline's: `h264` and `aac`, `sdr`, `wire.DefaultSegments` | what `Playback` makes ([playback 2.7](../spec/v0/playback.md#27-delivery)): the codecs it encodes (registry tokens), the ranges it makes (`sdr`, `keep`), and the codecs each HLS segment format (`mp2t`, `mp4`) carries. A peer's transcode to another codec or range, and a remux or a copied stream a segment format can't carry, are refused `409` `delivery-refused` |
 | `LongestPlayback` | 24 hours | a peer's playback longer than this ends |
 | `SyncEvery` | 30 minutes | how often peers' catalogs are read |
 
@@ -79,8 +80,8 @@ Spec: [core 6](../spec/v0/core.md#6-signing-requests-and-answers),
 
 | Handler | Mount at | Serves |
 |---------|----------|--------|
-| `FederationHandler()` | `<Prefix>/api/v1/federation/` | `pair`, `hello`, `rotate`, `revoke`, `libraries`, `titles`, `play`, `progress`, `stop`, `group-sync`, `group-push`, `group-pair`, `group-join`; anything else is `Config.NotFound` |
-| `StreamHandler(fallback)` | `<Prefix>/api/v1/stream/` | peers' tickets. A ticket the engine doesn't know (the host's own people's, or one ended) goes to `fallback`; nil: `Config.NotFound` |
+| `FederationHandler()` | `<Prefix>/api/v1/federation/` | `pair`, `hello`, `rotate`, `revoke`, `libraries`, `titles`, `image`, `play`, `progress`, `stop`, `previews`, `lyrics`, `group-sync`, `group-push`, `group-pair`, `group-join`; anything else is `Config.NotFound` |
+| `StreamHandler(fallback)` | `<Prefix>/api/v1/stream/` | peers' tickets. A `GET` with a ticket the engine doesn't know (the host's own people's, or one ended) goes to `fallback`; nil: `Config.NotFound`. `HEAD` and other methods get `405` on every media URL form, whatever the ticket |
 | `DiscoveryHandler()` | `/.well-known/msfp` at the root, whatever the prefix | `GET` and `HEAD` while on; otherwise `Config.NotFound` |
 
 The handlers do everything: limits by address before the signature, the
@@ -140,6 +141,7 @@ Each change is sent in a `hello` at once and told with `RelationsChanged`.
 | `SetOffers(peer, hostLibraries)` | what the individual relation offers, counted only while it holds; unknown IDs left out; the peer's next reading is whole; playbacks from libraries no longer offered end | `NotFound`, `NotPaired` |
 | `TheirLibraries(peer)` | `[]WantedLibrary`: a `libraries` call now, kept | `NotFound`, `NotPaired`, `Uncallable`, `Suspended`, `NotSupported`, `Unreachable`, `BackingOff` |
 | `SetWants(peer, publicIDs)` | what is read of the peer individually, counted only while the individual relation holds (for a server known only through groups, `SetGroupShows` counts); IDs it doesn't offer left out (an unseen one asks `TheirLibraries` first); a reading follows | `NotFound`, `NotPaired`, those of `TheirLibraries` |
+| `SetLocal(peer, on)` | whether the individual relation shares the host's local titles too, in the libraries offered ([catalog 5](../spec/v0/catalog.md#5-what-is-shared)); off by default; the peer's next reading is whole | `NotFound`, `NotPaired` |
 | `SetLimits(peer, Limits)` | from its next `play` on | `NotFound`, `InvalidLimits` |
 | `ReadNow(peer)` | a reading now, waited for: titles kept | `NotFound`, `NotPaired`, `Uncallable`, `Suspended`, `NotSupported`, `Unreachable`, `BackingOff`, the peer's refusals |
 
@@ -184,9 +186,10 @@ base64url, as the views give them). Each one may also fail with
 | `LiftRefusal(id, member)` | | |
 | `RequestMember(id, member)` | sends this server's request to one member (a newcomer sends it to all by itself). Skipped, without error: a member already linked, or one whose request from us is still live | `NoWayIn` (this server has no pairing through the group, [groups 6](../spec/v0/groups.md#6-passing-the-list-on)), the sending's error |
 | `SetGroupOffers(id, hostLibraries)` | what every link through the group is offered, added to what each link offers by hand; playbacks from libraries no longer offered end ([groups 9](../spec/v0/groups.md#9-sharing-and-limits)) | |
+| `SetGroupLocal(id, on)` | whether this server shares its local titles with the group, in the libraries it offers it; off by default; a whole reading on every link through it | |
 | `GroupOffers(id)` | `[]Library`, the host's, those offered to the group marked `Offered` (as `Offers` for a peer) | |
 | `SetGroupShows(id, []HiddenLibrary)` | what the group shows here, one choice for the whole group: everything its members offer this server, but these (`{Member, Library}`: a member ID and its library's public ID); each member linked through it is read again soon | |
-| `GroupShows(id)` | `GroupShowsView{Members}`: each member (`GroupMemberShows{Member, Name, Peer, Libraries}`, `Peer` empty when not linked) with its libraries offered here (`ShownLibrary{ID, Name, Kind, Shown}`) | |
+| `GroupShows(id)` | `GroupShowsView{Members}`: each member (`GroupMemberShows{Member, Name, Peer, Libraries}`, `Peer` empty when not linked) with its libraries offered here (`ShownLibrary{ID, Name, Shown}`) | |
 | `GroupsCutBy(peer)` | `[]GroupRef{ID, Name}`: the groups that ending this pairing would leave with no way in, for the panel to say before it ends ([groups 6](../spec/v0/groups.md#6-passing-the-list-on)) | |
 | `SetGroupPool(id, Limits)` | the pool this server lends the group: streams, transcodes and a bitrate cap shared by all its members; a playback counts against the first pool with room (the link's own limits first) | `InvalidLimits` |
 
@@ -196,6 +199,7 @@ base64url, as the views give them). Each one may also fail with
 |--------|---------|--------|
 | `CatalogChanged()` | **sync**, a hint: titles changed | |
 | `LibraryRemoved(hostID)` | offered to nobody from now; playbacks from it end; its public ID kept | |
+| `OpaqueKeyPart(id)` | **sync**: an opaque part of a title key for one of the host's titles, a local title's or an extra's ([catalog 4.2](../spec/v0/catalog.md#42-opaque-parts-of-a-key)), made from the host's own ID of it under the IDs secret: 22 characters, stable, never computable by a peer | |
 | `StopPlayback(id, why)` | **sync**: the host ends a peer's playback here: `operator` (also for `""`), `expired`, `tooLong`, `notOffered`. Take `id` and the host's handle from `Playbacks()` | `NotFound`, `InvalidReason` (`stopped` and `pairingEnded` are the engine's) |
 
 ## 5. Queries
@@ -241,6 +245,8 @@ They read storage and never call a peer.
 | `OurKey`, `RotationAnswer` | what it knows us by (`""` current, `old`, `lost`: pair again); its last answer to our `rotate` |
 | `Limits`, `TheirLimits` | ours to it; its to us (nil until said) |
 | `Offers`, `Wants`, `WantsGone` | counts; `Offers` counts only those by hand |
+| `Local` | the individual relation shares local titles too (`SetLocal`) |
+| `Reading` | how the last reading of its titles went: `LastReading{At, Failure, Refusal}`, `Failure` one of a closed set of codes (`unreachable`, `timeout`, `certificate-refused`, `refused-unsigned`, `refused`, `not-paired`, `suspended`, `uncallable`, `no-common-version`, `catalog-off`, `older-draft`, `answer-not-understood`, `internal`; empty when it read), `Refusal` a signed refusal's problem type; nil before any |
 | `Groups` | its group relations: the groups the link was made or kept through |
 | `Individual`, `IndividualAsked`, `IndividualAsks` | the individual relation holds (both sides want it); this side asks and the peer hasn't accepted; the peer asks, waiting for `AskIndividual` or `RefuseIndividual` ([core 7.7](../spec/v0/core.md#77-relations)) |
 | `KeepChoice` | a dissolution left the link to this side's operator: keep (`AskIndividual`) or end (`RefuseIndividual`) |
@@ -261,7 +267,7 @@ address**.
 | `Members` | `GroupMemberView{ID, Name, Fingerprint, Role, InvitedBy, Joined, Peer, Refused, Asked}`; `Peer` is the link with it (empty: none); `Refused`: this server refused its requests (`LiftRefusal`); `Asked`: this server's request to it waits |
 | `Banned` | `GroupBanView{ID, Name, Fingerprint, Reason}`, the name and fingerprint as it was a member |
 | `Requests` | `GroupRequestView{Mail, From, Name, Fingerprint, Received, Waited}`, waiting for this server's operator; `Waited`: the requester is a member of the group |
-| `Accept`, `Offers`, `Pool` | this server's answer setting, host library IDs offered, pool lent |
+| `Accept`, `Offers`, `Local`, `Pool` | this server's answer setting, host library IDs offered, whether it shares local titles with the group, pool lent |
 | `Dissolved` | the owner dissolved it (kept until left) |
 | `Joining` | the list hasn't come from the inviter yet |
 | `Joins` | `GroupJoinView{Peer, Name, Fingerprint, Received}`: `paired` peers that used this server's code for the group, waiting for `AcceptJoin` or `RefuseJoin` |
@@ -281,15 +287,20 @@ everything it relays.
 
 Spec: [playback 2](../spec/v0/playback.md#2-play),
 [playback 3](../spec/v0/playback.md#3-progress),
-[video 5](../spec/v0/video.md#5-playing-a-film-or-an-episode).
+[video 5](../spec/v0/video.md#5-playing-a-film-an-episode-or-an-extra).
 
 ```
 Play(peer, req: PlayRequest) -> RemotePlayback
     errors: NotFound, NotPaired, Uncallable, Suspended, KeyLost,
             NotSupported, RefusedDestination, CertificateRefused,
-            StreamLimitReached, ServerBusy, BackingOff, NotPlayable
+            StreamLimitReached, ServerBusy, BackingOff, NotPlayable,
+            DeliveryRefused, InvalidRequest
 Progress(id, positionMs, paused)          sync
+PlayingTrack(id, title)                   sync; errors: NotFound, InvalidRequest
 Stop(id, positionMs)                      errors: NotFound
+Restart(old: RemotePlayback) -> RemotePlayback
+    errors: those of Play, CopyChanged, InvalidRequest
+ReportOffline(id, OfflineReport)          errors: NotFound, InvalidRequest, PlaybackStopped, the call's
 ```
 
 **`PlayRequest`**:
@@ -297,9 +308,12 @@ Stop(id, positionMs)                      errors: NotFound
 | Field | Content |
 |-------|---------|
 | `Title` | the key, as the peer listed it |
-| `Capabilities` | the viewer's device; the engine sends only MSFP's values, coarsened ([playback 2.1](../spec/v0/playback.md#21-the-request)) |
-| `StartMs`, `MaxBitrateKbps` | the bitrate rounded down to a whole 1,000 |
-| `AudioLanguage`, `AudioTrack`, `SubtitleLanguage`, `SubtitleTrack`, `VersionID` | the viewer's wishes; IDs from a former answer; `SubtitleTrack` may be `off` |
+| `Purpose` | `play` (also `""`), `download` (of delivery `file` or a sized transcode, when the peer's limits allow downloads) or `scan` (of delivery `file`, when they allow scans: for the host's media server to list a file, never to watch it) ([playback 7](../spec/v0/playback.md#7-downloads), [8](../spec/v0/playback.md#8-scan-access)) |
+| `Delivery`, `MediaType`, `Transcode` | `file`, `remux` (into `MediaType`: `video/mp2t` or `video/mp4`, `audio/…` for a copy with no video), `transcode` (to `Transcode`'s targets: registry tokens or `copy`, the range `sdr` or `keep`), or `""` for the baseline every viewer's server plays ([playback 2.7](../spec/v0/playback.md#27-delivery)). The host chooses from the copy's facts and its device: a copy whose media type, codec or `threeD` it doesn't know, or whose `codecs` it can't read (`wire.PlayableAsIs`, `wire.ReadCodecs`), it can't play as it is. On `DeliveryRefused`, ask again with another delivery, or none |
+| `AudioRenditions` | for `hls`, every audio track as a rendition, so that switching tracks needs no new playback; the peer may make none |
+| `StartMs`, `MaxBitrateKbps` | where to start; the viewer's cap (0: none) |
+| `VersionID`, `AudioTrack` | the copy (without it, the peer's first) and its audio (without it, the file's default), from the title's copies kept. Subtitles are the host's choice, among the copy's tracks and those served apart; one is named only to burn it in (`Transcode.BurnSubtitle`) |
+| `Queue` | for a track, at most 5 tracks to play after it, each with its own copy and delivery if it names them (`QueueEntry`, [music 5.2](../spec/v0/music.md#52-the-queue)) |
 | `Replaces` | a playback of the same viewer to stop first; its `stop` waited for up to 5 seconds |
 
 - The engine refuses before calling when the part is off, the peer
@@ -313,21 +327,48 @@ Stop(id, positionMs)                      errors: NotFound
 - An answer that breaks a "must": the engine sends `stop`, then fails
   with `NotPlayable`.
 - **`RemotePlayback`**: `ID` (the engine's, not the peer's), `Peer`,
-  `Title`, `Method`, `Protocol`, `MimeType`, `PositionMs`, `DurationMs`,
-  `MaxBitrateKbps`, `Versions`, `VersionID`, `AudioTracks`, `AudioTrack`,
-  `SubtitleTracks`, `SubtitleTrack`, `ForcedTracks`, `ForcedTrack`,
-  `SubtitleStretchSeconds`, `Segments`, `Info`, `Trickplay` (nil when
-  out of bounds). No URL: the host asks for each piece with `Fetch`.
+  `Title`, `Purpose`, `Delivery`, `Method`, `Protocol`, `MimeType` (for
+  a file, the copy's media type from the catalog), `Etag`, `Size` (when
+  the catalog's copy has that etag; -1 otherwise), `CopyChanged` (the
+  answer's etag isn't the catalog's: the title is read again),
+  `PositionMs`, `DurationMs` (the copy's, from the catalog),
+  `MaxBitrateKbps`, `ScanBytes` (a scan's cap), `VersionID`,
+  `AudioTrack`, `AudioRenditions`, `Subtitles` (the tracks served apart,
+  `wire.ServedSubtitle`, fetched in stretches of `wire.StretchSeconds` or
+  whole), `Fonts`, `Sheets` (how many preview sheets the ticket opens),
+  `Queue` (`RemoteEntry{Place, Title, VersionID, Method, Protocol,
+  MimeType, DurationMs}`, fetched with `MediaPath.Entry` their `Place` +
+  1). The copy's tracks are in the catalog. No URL: the host asks for
+  each piece with `Fetch`, and the engine builds every URL from the
+  peer's stream root and the ticket.
 - Kept as a leftover until stopped, so a restart still stops it.
 
 **`Progress`** returns at once. The peer is told at the first report,
 at once on a pause or resume, otherwise at most every 45 seconds while
 the host reports (`Run` sends the latest when no report falls on the
-time). A `410`, the pairing ending, or the peer suspended or uncallable
-ends the playback: `RemotePlaybackEnded`, then fetches fail.
+time). While a viewer is on a playback, paused too, call it at least
+every minute: the peer ends a playback it hears nothing of for 2
+minutes. A scan sends none. A `410`, the pairing ending, or the peer
+suspended or uncallable ends the playback: `RemotePlaybackEnded`, then
+fetches fail.
+
+**`PlayingTrack`** names the track of a playback's queue that plays now;
+`progress` and `stop` carry it, positions then in that track.
 
 **`Stop`** sends `stop` (again a few times without an answer) and
 forgets the playback. `positionMs` -1: not known.
+
+**`Restart`** starts a new playback of the copy a playback of delivery
+`file` was reading, once it ended (a long pause), so that the host reads
+on at the same byte: the same title, copy, purpose and delivery, only
+if the new answer's etag is the one being read; otherwise
+`CopyChanged`, and the title must be read again.
+
+**`ReportOffline`** sends a download's late report
+(`OfflineReport{PositionMs, At, Title, Stop}`) when the viewer's device
+syncs, for 30 days after its play
+([playback 7](../spec/v0/playback.md#7-downloads)), in the order of
+their `At`.
 
 ### 6.2 Relaying media
 
@@ -359,7 +400,7 @@ Fetch(id, path: MediaPath, rng: String, out: ResponseSink)
 - A fetch is cut when its playback ends.
 - `msfp.NewHTTPSink(ctx, w)` is a `ResponseSink` on an
   `http.ResponseWriter`: only `Content-Type`, `Content-Length`,
-  `Content-Range`, `Accept-Ranges`, no content coding.
+  `Content-Range`, `Accept-Ranges`, `ETag`, no content coding.
   `msfp.ParseRange(h)` reads a `Range` header by media 2.1.
 
 ### 6.3 Seeing what peers hold
@@ -376,6 +417,19 @@ Playable(peer, kind) -> Bool          errors: NotFound, the store's
 `playback`, `media` and the kind's part (`video`, or `music` for
 `artist`, `album`, `track`) are on with it. It reads storage: a store
 that fails gives its error, never a plain `false`.
+
+### 6.4 Previews, lyrics and images
+
+These ask a peer for what a title kept here says it has. Each may fail
+with `NotFound` (no such title or copy kept, none with it, or the peer's
+refusal), `NotPaired`, `Uncallable`, `Suspended`, `NotSupported`,
+`Unreachable` (an answer refused), `RateLimited` and `BackingOff`.
+
+| Method | Content | Spec |
+|--------|---------|------|
+| `PreviewSheet(peer, key, versionID, n) -> Bytes` | seek-bar preview sheet `n` of a copy, by the catalog's layout, re-encoded. Only for a copy someone opened, never for a whole library. During a live playback of the copy its ticket opens the sheets; otherwise one `previews` call per copy, its ticket shared by every viewer until it expires. Sheets are kept in memory (64 MiB) while the copy's etag and layout hold. Also `CopyChanged`, `ServerBusy` | [video 5.5](../spec/v0/video.md#55-seek-bar-previews), [5.6](../spec/v0/video.md#56-previews) |
+| `TrackLyrics(peer, key, versionID) -> []wire.Lyrics` | a track's copy's lyrics, cleaned; the host keeps them while the copy's etag holds | [music 6](../spec/v0/music.md#6-lyrics) |
+| `TitleImage(peer, key) -> (Bytes, format)` | a local title's image, checked and re-encoded (`wire.ImageJPEG` or `wire.ImagePNG`); the host keeps it, shown as the owner's, and asks again only when the title changes. One at a time per peer | [catalog 4.4](../spec/v0/catalog.md#44-the-image-of-a-local-title-image) |
 
 ## 7. Events
 
@@ -409,9 +463,9 @@ queries too, so a host that missed one loses nothing.
 | `PeerMoveFailing` | `Address`, `Since` | a peer's new address has failed for a day; once per move | core 13.2 |
 | `InboundChanged` | `Inbound` | a peer can't be called (`no`), can again (`confirming`: its address checked first), or its address answered (`yes`) | [core 7.5](../spec/v0/core.md#75-a-peer-that-cant-be-called) |
 | `CallsFailed` | | a peer's hello answer said our calls fail: suggest "this server can't be called" | core 7.5 |
-| `CatalogReadEnded` | `Titles`, `Changes`, `Err` | a reading ended: titles kept (new or changed, for changes), or why it failed (what was kept stays: a whole reading is kept only once read to its end) | [catalog 3.2](../spec/v0/catalog.md#32-whole-list-or-changes) |
+| `CatalogReadEnded` | `Titles`, `Changes`, `Err`, `Failure`, `Refusal` | a reading ended: titles kept (new or changed, for changes), or why it failed (what was kept stays: a whole reading is kept only once read to its end); `Failure` and `Refusal` as in `PeerView.Reading` | [catalog 3.2](../spec/v0/catalog.md#32-whole-list-or-changes) |
 | `WantsGone` | `Libraries` | wanted libraries no longer offered; their titles go at the next reading | [catalog 2.2](../spec/v0/catalog.md#22-what-the-caller-keeps) |
-| `PlaybackStarted` | `Playback`, `Title`, `Method` | a peer's playback here started | [playback 6.1](../spec/v0/playback.md#61-a-playbacks-states) |
+| `PlaybackStarted` | `Playback`, `Title`, `Method`, `Purpose` | a peer's playback here started | [playback 6.1](../spec/v0/playback.md#61-a-playbacks-states) |
 | `PlaybackEnded` | `Playback`, `Title`, `Reason` | it ended, and why | [playback 6.3](../spec/v0/playback.md#63-how-a-playback-ends) |
 | `RemotePlaybackEnded` | `Playback`, `Reason` | our playback on a peer ended without `Stop`: `410` (`expired`), the pairing ended, the peer suspended or uncallable (`pairingEnded`) | playback 6.3 |
 | `GroupRequestWaiting` | `Group`, `GroupName`, `Mail`, `Member`, `Name`, `Fingerprint` | a member's request waits for the operator: `AcceptRequest` or `RefuseRequest` with `Mail`. Not for one the server accepts itself | [groups 4.1](../spec/v0/groups.md#41-answering) |
@@ -461,8 +515,9 @@ a secret, never sent). Match with `errors.Is`.
 | `InvalidRequest` | `400` | a bug on our side |
 | `AlreadyPeer` | `409` to `pair` | we already are its peer |
 | `RotationRefused` | `409` `rotation-refused` | |
-| `StreamLimitReached` | `409`, another type than `not-playable` | busy now |
+| `StreamLimitReached` | `409`, another type than `not-playable` and `delivery-refused` | busy now |
 | `NotPlayable` | `409` `not-playable`, any other refusal of `play` | |
+| `DeliveryRefused` | `409` `delivery-refused` | the owning server won't serve that delivery of the copy: ask again with another, or none |
 | `PlaybackStopped` | `410` | the playback is over |
 | `RateLimited` | `429` | calls held until `retryAfter` |
 | `ServerBusy` | `503` | busy now |
@@ -479,7 +534,8 @@ a secret, never sent). Match with `errors.Is`.
 | `CodeInvalid`, `CodeExpired`, `OwnCode`, `CodeRefused`, `NoCodes` | pairing codes |
 | `NoNextKey`, `NotNextKey`, `NoPending`, `KeyTaken`, `RotationUnderWay` | keys |
 | `InvalidAddress`, `PlainHTTP`, `RefusedDestination`, `CertificateRefused`, `MoveFailed` | addresses and connections |
-| `InvalidLimits` | streams 0 to 50, transcodes 0 to streams, bitrate 0 to 1,000,000 |
+| `InvalidLimits` | limits out of range ([section 10](#10-data-objects)) |
+| `CopyChanged` | a restart's or previews' copy isn't the one kept any more (another etag): read the title again |
 | `CodeOptions` | a code's uses or lifetime out of range; a group's name empty or too long |
 | `NoGroups`, `NoRight`, `NotMember` | the store keeps no groups; this server's role doesn't allow it; not a member (or the group is gone) |
 | `NoWayIn` | this server has no pairing through the group, so a mail it sends can't leave |
@@ -492,7 +548,7 @@ a secret, never sent). Match with `errors.Is`.
 | `Internal` | anything else; logged, never shown to a peer |
 
 **The host's errors**, and what the peer gets: `NotPlayable` `409`
-`not-playable`; `StreamLimitReached` `409` `stream-limit-reached`;
+`not-playable`; `DeliveryRefused` `409` `delivery-refused`; `StreamLimitReached` `409` `stream-limit-reached`;
 `ServerBusy` `503`; `NotFound` `404`; from Media, `RangeNotSatisfiable`
 `416`; anything else a signed `500`, logged.
 
@@ -506,29 +562,23 @@ peer's title, the one public ID it was listed in).
 
 | Type | Fields |
 |------|--------|
-| `VideoTitle` | `Audio`, `Subtitles` (tags; the host's may be its media server's codes), `Pictures` (the host's, each copy's) or `Video` (a peer's: its best copy's, cleaned), `Place` (`Season`, `Episode`: TMDB's current numbers; required for an episode keyed by its TMDB episode ID, which isn't sent without it; a peer's is always set for those), `With` (episode keys), `IDs` (`imdb`, `tvdb`…) |
-| `MusicTitle` | `Name`, `Artists`, `ArtistNames`, `Album`, `Disc`, `Number`, `Year`, `DurationMs`, `IDs` (`mbrelease`, `mbtrack`, `isrc`) |
+| `VideoTitle` | `Copies` (`wire.Copy`; of a peer's title, each ID is its version ID), `Place` (`Season`, `Episode`: TMDB's current numbers; required for an episode keyed by its TMDB episode ID, which isn't sent without it; a peer's is always set for those), `With` (episode keys), `IDs` (`imdb`, `tvdb`…; sent only on episodes and on titles keyed under `tvdb`), `ExtraType` (an extra's), `Name`, `Year`, `Image` (a local film's or series' description). `BestCopy`, `AudioLanguages` and `SubtitleLanguages` work out from the copies what a title list shows |
+| `MusicTitle` | `Name`, `Artists`, `ArtistNames`, `PrimaryType`, `SecondaryTypes`, `Compilation`, `Date`, `OriginalDate`, `Genres`, `Album`, `Disc`, `Number`, `Copies` (`wire.MusicCopy`), `Image` (a local artist's or album's), `IDs`. A track's artists, names, dates and genres are sent only when they differ from its album's: of a peer's, an absent one is its album's |
 
-**`Limits`**: `Streams` (0 to 50), `Transcodes` (0 to streams),
-`BitrateKbps` (0: none), `Audio`, `AudioStreams`, `AudioTranscodes`.
-With `Audio`, tracks count apart, within the last two; without, in the
-first two ([music 5.1](../spec/v0/music.md#51-limits)). `Check()` gives
-`InvalidLimits`.
+**`Limits`**: `Streams` (0 to 1,000), `Transcodes` (0 to streams),
+`BitrateKbps` (0: none, up to 1,000,000), `Downloads` (at once, 0 to
+1,000; 0: none), `DownloadsPerDay` (0 to 10,000; 0: no cap besides
+`Downloads`), `DownloadKbps` (each download's speed cap; 0: none),
+`ScansPerDay` (0: no scan access), `ScanBytes` (the pool's own scan cap,
+4 MiB to 1 GiB; 0: 4 MiB; stated in each scan's answer, never in a
+limits object), `Audio`, `AudioStreams`, `AudioTranscodes`. With
+`Audio`, tracks count apart, within the last two; without, in
+`Streams` and `Transcodes` ([music 5.1](../spec/v0/music.md#51-limits)).
+`Check()` gives `InvalidLimits`.
 
-**`Track`**: `ID` (`a<n>`, `s<n>`), `Label` (the language's name in
-itself), `Language`, `Channels`, `Role` (`commentary`, `description`),
-`Default`, `Forced`, `HearingImpaired`, `Pictures` (PGS).
-
-**`Trickplay`**: `TileWidth`, `TileHeight`, `Columns`, `Rows`,
-`IntervalMs`, `TileCount`, `Sheets` (in a `RemotePlayback`).
-
-**`Capabilities`**: `Containers`, `AudioCodecs`, `VideoCodecs`, `HDR`,
-`Subtitles`, `MaxAudioChannels`, `MaxHeight`, `MaxBitrateKbps`; empty
-says nothing.
-
-**`Library`** `{ID, Name, Kind, Offered}`. **`WantedLibrary`** `{ID`
-(the peer's public ID)`, Name, Kind, Wanted, Gone}`. **`Version`**
-`{ID, Name}`. **`CodeView`** `{ID, Note, Created, Expires, Uses, Group}` (`Uses`: how many more servers may use it).
+**`Library`** `{ID, Name, Offered}`. **`WantedLibrary`** `{ID`
+(the peer's public ID)`, Name, Wanted, Gone}`. A library carries no
+kind: its titles' keys say what it holds. **`CodeView`** `{ID, Note, Created, Expires, Uses, Group}` (`Uses`: how many more servers may use it).
 **`CodePreview`** `{Address, Fingerprint, Expires, Group, GroupName}` (the group a group's code invites to: show its name before redeeming).
 
 **The toolkit** (package `wire`, `github.com/msfp-io/msfp-go/wire`) has the protocol's pieces: keys, codes,
@@ -572,9 +622,12 @@ A peer's playback here, step by step:
 
 1. Its `play` reaches `FederationHandler`: signature, pairing, part,
    body and limits checked.
-2. The engine asks `Catalog.Copies(key, offered libraries)`, picks the
-   copy, asks `Playback.Describe`, chooses the tracks.
-3. `Playback.Start`: the host decides `transcode`, calls
+2. The engine finds the title's copies in `Catalog.Titles` (within the
+   offered libraries), picks the copy and the audio the request names
+   (else the first copy and the file's default), decides what is served,
+   and asks `Playback.Describe`.
+3. `Playback.Start`: no delivery was asked and the copy is HEVC, so
+   the host serves the baseline by `transcode`, calls
    `Admit("transcode")`, checks its own budget, starts, returns
    `Started`.
 4. The engine makes the ID and the ticket, answers, tells

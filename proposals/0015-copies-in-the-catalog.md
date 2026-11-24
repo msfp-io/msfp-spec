@@ -74,7 +74,7 @@ Playing every title once to learn it is out of the question.
 
 A film or an episode in `titles` may carry `copies`, its copies, best
 first, in the order `play` would choose them
-([video section 3.2](../spec/v0/video.md#32-the-picture), "The best
+([video section 3.2](../spec/v0/video.md#32-copies), "The best
 copy"). An owning server should send it.
 
 | Field | Type | Content |
@@ -103,9 +103,9 @@ Video stream:
 |-------|------|---------|
 | `codec` | string | from the list below |
 | `profile` | string, optional | the codec's profile, as ffmpeg names it (`main`, `main 10`, `high`), at most 32 characters |
-| `width`, `height` | integer | in pixels, exact (not stepped: [video section 3.2](../spec/v0/video.md#32-the-picture) steps only the title's `video`) |
+| `width`, `height` | integer | in pixels, exact (not stepped: [video section 3.2](../spec/v0/video.md#32-copies) steps only the title's `video`) |
 | `bitDepth` | integer, optional | 8, 10 or 12 |
-| `hdr` | array of string, optional | as in [video section 3.2](../spec/v0/video.md#32-the-picture); absent for standard range |
+| `hdr` | array of string, optional | as in [video section 3.2](../spec/v0/video.md#32-copies); absent for standard range |
 | `fps` | number, optional | frames per second, two decimals at most |
 
 A track is the track of `play`'s answer

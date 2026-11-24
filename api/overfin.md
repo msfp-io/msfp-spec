@@ -12,8 +12,8 @@ plugs in as [host.md](host.md) says.
 | pairing, keys, addresses, limits, signed calls | all of it | the panel's pages, calling the actions |
 | relations and groups | the relations of each link, groups' events, rights and mail | the panel shows relations, not links (`internal/admin/federation.go`: `AskIndividual`, `EndIndividual`, `RefuseIndividual`, `BlockPeer`) and groups (`internal/admin/federation_groups.go`) |
 | storage | the records' meaning | `store.MSFP()`: the records in its SQLite database (`internal/store/msfp.go`), groups included (`GroupsTx`) |
-| its own catalog | paging, offers, public IDs, checks | `store.MSFPCatalog` (`internal/store/msfp_catalog.go`): libraries, titles, copies, with `ChangeLog` and `SeqBumper` on its `title_changes` log |
-| peers' playbacks here | checks, copy and tracks, the pairing's counts, tickets, expiry | `api.PeerHost` (`internal/api/peerhost.go`) as Playback and Media: Jellyfin plays the copy, within the server's transcodes less those kept for its own people; a remux Jellyfin turns out to re-encode, found at the first progress, goes into the pairing's transcodes (`Slot.Transcoding`), and is stopped when none is left; a copy of several files (Jellyfin's stacked parts, `PartCount`) is `not-playable`, since Jellyfin streams its parts apart |
+| its own catalog | paging, offers, public IDs, checks | `store.MSFPCatalog` (`internal/store/msfp_catalog.go`): libraries, titles with their copies (from its copy index), with `ChangeLog` and `SeqBumper` on its `title_changes` log |
+| peers' playbacks here | checks, copy and tracks, the pairing's counts, tickets, expiry | `api.PeerHost` (`internal/api/peerhost.go`) as Playback and Media: Jellyfin plays the copy, within the server's transcodes less those kept for its own people; a remux Jellyfin turns out to re-encode, found at the first progress, goes into the pairing's transcodes (`Slot.Transcoding`), and is stopped when none is left; a copy of several files (Jellyfin's stacked parts, `PartCount`) is left out of the catalog, and `not-playable` if asked, since Jellyfin streams its parts apart |
 | its viewers on peers | `Play`, `Progress`, `Stop`, `Fetch` | accounts, profiles, its browser route (`internal/api/peerplay.go`, `stream.go`) |
 | connections out | TLS, pins, no redirects | `internal/outbound` as the Dialer: direct, or through the gateway on the backend, addresses checked either way |
 | sealing | the contexts | its `seal.Box` (the store's `Sealer`) |
@@ -33,7 +33,7 @@ The wiring is `overfin/federation.go`.
 - **Pins**: the site's `certificates` setting when given; otherwise the
   engine reads them.
 - **Name**: the branding's name when on, else the site's host.
-- **Routes**: each of the thirteen calls registered as its own public route
+- **Routes**: each of the sixteen calls registered as its own public route
   (no catch-all), the client address from Overfin's trusted proxies
   (`WithClient`). The stream routes put `StreamHandler` in front of
   Overfin's own, which is the fallback. `/.well-known/msfp` is the
@@ -89,4 +89,4 @@ the record at each write.
   form is no longer accepted.
 - Overfin's own Jellyfin plugin, its companion, speaks no MSFP. The MSFP
   Jellyfin plugin (`jellyfin-plugin-msfp`) is another host, apart from
-  Overfin, on the C# engine (`Msfp.Engine` 0.7.1-preview).
+  Overfin, on the C# engine (`Msfp.Engine` 0.8.0-preview).

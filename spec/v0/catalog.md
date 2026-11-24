@@ -166,7 +166,8 @@ Title:
 | `library` | string | one of the requested libraries that holds it: when several do, the one whose ID comes first in byte order |
 
 A title carries, besides, the members its content part defines for the
-kind its key names: [video section 3](video.md#3-titles) for films, series and extras,
+kind its key names: [video section 3](video.md#3-titles) for films, series, seasons,
+episodes and extras,
 [music section 3](music.md#3-what-a-title-carries) for artists, albums
 and tracks.
 

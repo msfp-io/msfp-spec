@@ -177,7 +177,7 @@ Copy:
 
 The required core (`id`, `durationMs`, `mediaType`, `size`, `etag`,
 `audioTracks` with each track's language when known) is what every
-owning server knows of its files, so no copy says nothing. Everything
+owning server knows of its files, so every copy says at least that. Everything
 else is sent when the owning server's media server knows it. Values are
 exact, as the owning server knows them: none is rounded. A copy carries
 no bitrate: `size` × 8 / `durationMs` is its overall rate. It carries no
@@ -1496,14 +1496,14 @@ An object left open at the end of the part doesn't refuse it.
   line; more than *height* line ends refuses it;
 - `0x00` then a flag byte *F* is a run: its length is *F* & `0x3F`, or,
   when *F* has bit `0x40`, (*F* & `0x3F`) × 256 plus the next byte; when
-  *F* has bit `0x80`, a color byte follows;
+  *F* has bit `0x80`, a colour byte follows;
 - a run cut short by the end of the data refuses it;
 - after each pixel or run, more than *width* pixels on the line refuses
   it.
 
 Not checked: segments' times and order, that each display set ends with
 an end segment, IDs across segments, positions against the screen,
-palette entries and colors, lines shorter than *width* or fewer than
+palette entries and colours, lines shorter than *width* or fewer than
 *height*. A player must be robust to those itself.
 
 **Memory.** Nothing here makes a picture: the check keeps only the open

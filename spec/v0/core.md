@@ -751,8 +751,9 @@ received. An answer carries one `Content-Type` header or none: one sent
 more than once, or whose value doesn't read as `type/subtype` (with
 optional parameters), fails like a badly signed answer; an empty one
 counts as none (`-`). So two implementations never read different media
-types from the same answer. So a changed `Content-Type` makes the signature fail, and the
-caller can rely on the media type it reads. Other headers are not signed.
+types from the same answer, a changed `Content-Type` makes the signature
+fail, and the caller can rely on the media type it reads. Other headers
+are not signed.
 
 A caller refuses a signed `200` or `202` whose media type isn't
 `application/json`, like a badly signed one.
@@ -962,7 +963,7 @@ The parts' calls answer only peers in state `paired`; others get a signed
 
 Besides its state, a peer may be **suspended**: its key was revoked
 (section 12.6). A suspended peer's calls are refused, except `rotate` and
-`revoke`, and no call is made to it, but the scheduled `hello` of a
+`revoke`, and no call is made to it, except the scheduled `hello` of a
 server that can't be called (section 7.5).
 
 ### 7.4 Ending a pairing
@@ -1025,7 +1026,7 @@ requests and answers (section 9.2) carry an optional boolean `inbound`.
   other members. So is `inbound: false` with an address not of the form
   of section 5.2.
 - A server sends `inbound: false` in every `pair` and `hello` it sends
-  (but those that say `ended`), and in every `hello` answer it gives,
+  (except those that say `ended`), and in every `hello` answer it gives,
   while its operator says it can't be called. A server can't tell by
   itself that it can't be reached, so this is the operator's setting.
 - A `hello` answer may carry `callsFailed: true`: "my last calls to you
@@ -1198,11 +1199,12 @@ followed by `\n`. A receiver must not depend on these exact bytes: the
 signature covers whatever was sent, and only the status matters to the
 protocol, except where the `type` tells refusals apart: `not-supported`
 on `404` (section 10.4), and the `409`s of `rotate` and
-[playback](playback.md#2-play). The `type` values of version 0:
+[playback](playback.md#2-play).
 
-This is the reference for every status a federation call can answer, in
-every part of version 0. Media fetches are not federation calls; their
-statuses are in section 8.4.
+The table below gives the `type` values of version 0. It is the reference
+for every status a federation call can answer, in every part of
+version 0. Media fetches are not federation calls; their statuses are in
+section 8.4.
 
 | Status | `type` | `title` | Calls | Meaning | What the caller does |
 |--------|--------|---------|-------|---------|----------------------|
@@ -1525,14 +1527,6 @@ What the caller does with the answer:
   `rotation` (section 12.4). A `callsFailed` that is `true` is shown on the panel, and nothing else
   (section 7.5); any other value counts as absent. A `rotation` or
   `revocation` that isn't an object counts as absent.
-
-The one-way members are ignored where the table doesn't put them:
-`knownKey` in an answer, `revocation` and `callsFailed` in a request. A
-request's `rotation` other than `pending` or `refused` is ignored too. The
-main table's members are type-checked in every request; `knownKey` and
-`rotation` only in requests from a server that can't be called, where
-one of the wrong type is refused like any other member, and from any
-other caller they are ignored, whatever their value.
 - `200` with `paired`: as the receiver would do with `paired` above.
 - signed `404`: the peer doesn't know the caller, or has suspended its
   key. The caller marks it `gone`.
@@ -1541,6 +1535,14 @@ other caller they are ignored, whatever their value.
   nothing: the caller keeps nothing of it, and the peer's stored
   versions, pins, address and `inbound` stay as they were, as for a
   refused request.
+
+The one-way members are ignored where the table doesn't put them:
+`knownKey` in an answer, `revocation` and `callsFailed` in a request. A
+request's `rotation` other than `pending` or `refused` is ignored too. The
+main table's members are type-checked in every request; `knownKey` and
+`rotation` only in requests from a server that can't be called, where
+one of the wrong type is refused like any other member, and from any
+other caller they are ignored, whatever their value.
 
 Refusals: `404` (unsigned to unknown keys, signed to forgotten or
 suspended ones, signed with its own key to the server's own key, section
@@ -2276,6 +2278,9 @@ generator also checks them.
 | `strict.json`, `openTokens` | values of open fields, kept as tokens or dropped as malformed (section 8.5) |
 | `strict.json`, `openMediaTypes` | values of media-type fields, kept as media types or dropped as malformed (section 8.5) |
 | `strict.json`, `helloVersions` | `hello` bodies and the versions a receiver keeps of them, or a bad body: `"core":[0,2.5]` lists core 0, and an unknown member or part of `null` is ignored (sections 2.3 and 10.2) |
+| `strict.json`, `mediaNames` | file and track names in media URLs, with their verdicts ([media section 1](media.md#1-the-urls)) |
+| `strict.json`, `bases` | values of the discovery document's `base`, with their verdicts (section 11) |
+| `playback.json` | `play`, `progress` and `stop` requests and answers, with deliveries, restarts, downloads and scans ([playback](playback.md)) |
 | `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([media section 3](media.md#3-what-is-fetched), [video section 6](video.md#6-media)) |
 | `music.json` | music title keys and music titles, with their verdicts and what the caller keeps of each title ([music sections 2 and 3](music.md#2-title-keys)) |
 | `video.json` | video titles, with their verdicts and what the caller keeps of each, `video` included ([video section 3](video.md#3-titles)) |

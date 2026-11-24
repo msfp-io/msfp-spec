@@ -73,8 +73,8 @@ Three kinds of title, under two schemes:
 | album | `album/mb/<release mbid>` | `album/local/<opaque>` |
 | track | `track/mb/<release track mbid>` | `track/local/<opaque>` |
 
-A title's `kind` in `titles` is `artist`, `album` or `track`: the kind
-its key names. `play` takes only tracks, of either scheme.
+A title's kind is `artist`, `album` or `track`: the kind its key
+names. `play` takes only tracks, of either scheme.
 
 An owning server keys a title under `mb` whenever it has its MBID, under
 `local` otherwise. Each scheme gives one form for each title; a key in

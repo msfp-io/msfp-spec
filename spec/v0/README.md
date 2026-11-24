@@ -250,7 +250,9 @@ refuses to connect to (`destinations` in `strict.json`), and WebVTT,
 HLS and PGS cases with their verdicts (`media.json`, media section 3 and
 video section 6), music keys and titles with what a caller keeps
 (`music.json`, music sections 2 and 3), and video titles with what a
-caller keeps (`video.json`, video section 3), and a group's events and
+caller keeps (`video.json`, video section 3), `play`, `progress` and
+`stop` requests and answers with deliveries, restarts, downloads and
+scans (`playback.json`, playback sections 2 to 8), and a group's events and
 the state they give, a code with a group, `group-join`'s proof and a
 sealed request mail (`groups.json`, groups sections 2, 3, 5 and 8.4).
 They come from the

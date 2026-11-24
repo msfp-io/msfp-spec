@@ -8,10 +8,10 @@ server sends or accepts. Two servers interoperate if they follow
 
 | Piece | State |
 |-------|-------|
-| Go engine | **built**: [msfp-io/msfp-go](https://github.com/msfp-io/msfp-go) (module `github.com/msfp-io/msfp-go`, v0.7.1), package `msfp` at its root, with the toolkit `wire`, two stores (`store/memory`, `store/jsonfile`) and an example host (`examples/share-folder`) |
-| C# engine | **built**: [msfp-io/msfp-dotnet](https://github.com/msfp-io/msfp-dotnet), NuGet packages `Msfp.Protocol` (the toolkit) and `Msfp.Engine` (the engine, with `MemoryStore` and `JsonFileStore`), 0.7.1-preview, msfp-go v0.7.1 in .NET; an example host (`examples/ShareFolder`) |
+| Go engine | **built**: [msfp-io/msfp-go](https://github.com/msfp-io/msfp-go) (module `github.com/msfp-io/msfp-go`, v0.8.0), package `msfp` at its root, with the toolkit `wire`, `describe` (a media file to a copy's description, with ffprobe), two stores (`store/memory`, `store/jsonfile`) and an example host (`examples/share-folder`) |
+| C# engine | **built**: [msfp-io/msfp-dotnet](https://github.com/msfp-io/msfp-dotnet), NuGet packages `Msfp.Protocol` (the toolkit), `Msfp.Engine` (the engine, with `MemoryStore` and `JsonFileStore`) and `Msfp.Describe`, 0.8.0-preview, msfp-go v0.8.0 in .NET; an example host (`examples/ShareFolder`) |
 | Overfin on the Go engine | **built**: [overfin.md](overfin.md) |
-| The MSFP Jellyfin plugin on the C# engine | **built**: `Msfp.Engine` 0.7.1-preview |
+| The MSFP Jellyfin plugin on the C# engine | **built**: `Msfp.Engine` 0.8.0-preview |
 
 These documents describe the Go engine. The C# engine has the same
 methods in its own forms ([Go and C# forms](#go-and-c-forms)).
@@ -103,7 +103,7 @@ RedeemCode(text) -> PeerView
 |---------|------------|-------------|
 | Package | `github.com/msfp-io/msfp-go` (package `msfp`); toolkit `…/wire` | package `Msfp.Engine`, namespace `Msfp` (stores in `Msfp.Stores`); toolkit package and namespace `Msfp.Protocol` |
 | Engine | `*msfp.Engine`, `msfp.Open(ctx, Config)` | `Msfp.MsfpEngine`, `MsfpEngine.OpenAsync(MsfpConfig, ct)` |
-| Host interfaces | `Store`, `Catalog`, `Playback`, `Media`, `Sealer`, `Clock`, `Dialer`, `Notifier`, `SheetEncoder` | `IStore` (its transactions `IStoreTx`), `ICatalog`, … ; `TimeProvider` for the clock |
+| Host interfaces | `Store`, `Catalog`, `Playback`, `Media`, `Sealer`, `Clock`, `Dialer`, `Notifier`, `SheetEncoder`; optional `Images`, `Lyrics`, `ChangeLog` | `IStore` (its transactions `IStoreTx`), `ICatalog`, … ; `TimeProvider` for the clock |
 | Calls | `RedeemCode(ctx, text) (PeerView, error)` | `Task<PeerView> RedeemCodeAsync(string text, CancellationToken ct)` |
 | Host callbacks | plain methods taking `ctx` | `ValueTask<T>`, so synchronous data costs nothing |
 | Errors | `*msfp.Error{Code, Err}`, matched by `errors.Is(err, msfp.ErrNotFound)` | one `MsfpException` with `MsfpError Code` |

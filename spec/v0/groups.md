@@ -113,7 +113,7 @@ code's maker (section 6, "No way in") may use the group's code too: by
 `pair` when the two aren't paired, by `group-join` when they are paired
 some other way. Nobody signs `joined`: the server is a member already.
 Once the maker's operator accepts, their link gains the group as a
-source, and the list follows through it, as for a newcomer. The member
+relation, and the list follows through it, as for a newcomer. The member
 adds the group to the link when it is made (`pair`), or when the maker's
 first `group-push` arrives (`group-join`). A member that can't be called
 gets no push: it uses `pair`, ending the other pairing first. Through a
@@ -334,7 +334,7 @@ When C accepts N's request:
 group, and answers a request or an answer the receiver sent. Both servers
 have consented: one by sending the request, the other by accepting it.
 Both store each other as `paired` at once (core section 7.3), with the
-group as the link's source, and the caller sends `hello` (core section
+group as the link's relation, and the caller sends `hello` (core section
 9.2) for versions and pins, as after an operator's acceptance. A link
 that already exists isn't made twice: the group is added to its relations.
 
@@ -573,7 +573,7 @@ newcomer that used `pair`.
   purpose: the individual relation's own limits first, then its groups'
   pools; it is refused only when all are full, and counts against exactly
   one, its day's count included. The `limits` member of `libraries` gives
-  the most generous source's limits; since a pool is shared, a peer may
+  the most generous relation's limits; since a pool is shared, a peer may
   be refused (`409` `stream-limit-reached`) before reaching them. A
   server's own users are never refused for a peer.
 

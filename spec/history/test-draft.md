@@ -1,7 +1,7 @@
 # MSFP: Media Server Federation Protocol, version 0
 
 > **Version 0 was a test draft. It is superseded by
-> [version 1](v1/README.md), and is not to be implemented.** Version 1
+> [version 1](../v0/README.md), and is not to be implemented.** Version 1
 > doesn't work with it. This document stays as history; it was corrected
 > on 2026-11-16 and 2026-11-17 ([section 17](#17-changes)).
 
@@ -103,12 +103,12 @@ leaves an empty optional member out, or sends `[]` or `""` where the field
 says so. A receiver treats a member whose value is `null` as absent,
 because Overfin, before 2026-11-16, sent `null` for empty arrays. (Core
 version 1 refuses `null` from a peer that speaks version 1; see
-[spec/v1/core.md](v1/core.md#2-encodings-and-canonical-forms).)
+[spec/v1/core.md](../v0/core.md#2-encodings-and-canonical-forms).)
 
 **Version 0 notes.** Since 2026-11-16, Overfin reads base64url,
 `Overfin-Date`, the signature headers, public keys and signatures as
 section 2.1 says (the `base64url`, `dates`, `codes`, `keys` and
-`signatures` cases of [vectors/v0-strict.json](../vectors/v0-strict.json)).
+`signatures` cases of [vectors/v0-strict.json](../../vectors/history/test-draft-strict.json)).
 It checks each key once and keeps the result; a stored peer whose key
 fails is shown unusable in its panel. It reads federation bodies, requests
 and answers alike, as I-JSON with exact member names (the `json` and
@@ -212,7 +212,7 @@ is case-sensitive and has one case:
   conventional form.
 
 Addresses (section 5.2) and pairing codes (section 5.1) have their own
-rules. [vectors/v0-strict.json](../vectors/v0-strict.json) holds cases
+rules. [vectors/v0-strict.json](../../vectors/history/test-draft-strict.json) holds cases
 for all of these, valid and not (section 15).
 
 ## 3. Transport
@@ -429,7 +429,7 @@ network, so each connection made for a peer is checked first.
 - A refused address fails like an unreachable peer: nothing is sent.
 
 Core version 1 says the same, in more detail
-([core section 3.3](v1/core.md#33-connecting-to-peers)).
+([core section 3.3](../v0/core.md#33-connecting-to-peers)).
 
 **Version 0 notes.** Overfin refuses these ranges on every connection to
 a peer, and when it reads its own certificate at its own address
@@ -549,7 +549,7 @@ hosted under a path can't federate in version 0.
 
 **Version 0 notes.** Overfin's check follows this section since
 2026-11-16 (the addresses of
-[vectors/v0-strict.json](../vectors/v0-strict.json)). Pairings it stored
+[vectors/v0-strict.json](../../vectors/history/test-draft-strict.json)). Pairings it stored
 before keep their address as stored.
 
 **Stored pairings.** An implementation that adopts these rules after it
@@ -911,10 +911,10 @@ anyone can write those headers. An IPv6 address is best counted by its
 of this.
 
 Core version 1 says the same, with suggested numbers
-([core section 8.3](v1/core.md#83-limits-and-overload)).
+([core section 8.3](../v0/core.md#83-limits-and-overload)).
 
 **Version 0 notes.** Overfin's numbers are in
-[core section 8.3](v1/core.md#83-limits-and-overload) ("Overfin"). Behind
+[core section 8.3](../v0/core.md#83-limits-and-overload) ("Overfin"). Behind
 its gateway, the gateway also limits requests by network address (50 a
 second, bursts of 400) with an unsigned, plain-text `429` and
 `Retry-After: 5`. A single Overfin counts by the address its
@@ -1447,7 +1447,7 @@ ID, per peer (128 bits, base64url): stable, and opaque to the peer.
 Version 0's `play` takes no version, so nothing maps them back. A
 well-formed `audioTrack` or `subtitleTrack` that isn't a track of the
 copy chosen counts as absent, as
-[playback section 2.6](v1/playback.md#26-choosing-the-copy-and-the-tracks)
+[playback section 2.6](../v0/playback.md#26-choosing-the-copy-and-the-tracks)
 says; before 2026-11-16, Overfin passed the audio track to its media
 server unchecked.
 
@@ -1688,8 +1688,8 @@ server ignores, and uses new labels, headers and a new code prefix, so
 that a version 0 server refuses its messages instead of misreading them.
 A version 0 peer, which sends none of those members, is spoken to in
 version 0. How the two coexist is in
-[spec/v1/core.md](v1/core.md#16-coexisting-with-version-0); the
-versioning policy is in [spec/v1/README.md](v1/README.md#versioning).
+[spec/v1/core.md](../v0/core.md); the
+versioning policy is in [spec/v1/README.md](../v0/README.md#versioning).
 (Earlier drafts of this section recommended a single `protocol`
 integer; version 1 replaced it with a core version plus a version per
 part.)
@@ -1772,12 +1772,12 @@ part.)
   secret's hash or the proof, or a private key or its seed. HTTP clients'
   error messages often quote the URL: remove it first. Public keys,
   fingerprints, addresses, playback IDs, nonces and statuses may be
-  logged ([core section 14.1](v1/core.md#141-logging)).
+  logged ([core section 14.1](../v0/core.md#141-logging)).
 
 ## 15. Test vectors
 
 These values come from Overfin's own code. They are in
-[vectors/v0.json](../vectors/v0.json), for an implementation's tests to
+[vectors/v0.json](../../vectors/history/test-draft.json), for an implementation's tests to
 check against. Overfin's test `internal/federation/vectors_test.go`
 recomputes them from its copy of that file, so its code can't drift from
 them. The corrections of 2026-11-16 left every value in that file valid
@@ -1786,9 +1786,9 @@ and unchanged.
 The cases of section 2.1 and section 5, valid and invalid (an identity
 key, a non-canonical key, a torsion R, S + L, base64url with nonzero
 unused bits, duplicate JSON members, addresses and codes with their
-verdicts), are in [vectors/v0-strict.json](../vectors/v0-strict.json).
+verdicts), are in [vectors/v0-strict.json](../../vectors/history/test-draft-strict.json).
 That file comes from the generator in
-[tools/vectors/](../tools/vectors/), not from Overfin's code, which
+[tools/vectors/](../../tools/vectors/), not from Overfin's code, which
 doesn't follow section 2.1 yet. The generator also checks every value of
 v0.json.
 
@@ -1993,8 +1993,8 @@ proposal's own default, and the point is listed here.
 
 **2026-11-16: corrections (errata) to version 0.** They don't make a new
 version: an honest version 0 sender already writes what they require, and
-every value of [vectors/v0.json](../vectors/v0.json) stays valid. The
-proposals and clarifications are in [proposals/](../proposals/README.md).
+every value of [vectors/v0.json](../../vectors/history/test-draft.json) stays valid. The
+proposals and clarifications are in [proposals/](../../proposals/README.md).
 
 | Correction | What changed | Sections |
 |------------|--------------|----------|
@@ -2031,12 +2031,12 @@ proposals and clarifications are in [proposals/](../proposals/README.md).
 | Review round, 2026-11-16 | What is never logged | 14 |
 
 Test cases for proposal 1's rules are in
-[vectors/v0-strict.json](../vectors/v0-strict.json) (section 15).
+[vectors/v0-strict.json](../../vectors/history/test-draft-strict.json) (section 15).
 
 **2026-11-17: corrections from the first live interop**, between Overfin
 and an independent implementation (a Jellyfin plugin built from this
 text). Like those of 2026-11-16, they make no new version, and every
-value of [vectors/v0.json](../vectors/v0.json) stays valid.
+value of [vectors/v0.json](../../vectors/history/test-draft.json) stays valid.
 
 | Correction | What changed | Sections |
 |------------|--------------|----------|
@@ -2048,4 +2048,4 @@ value of [vectors/v0.json](../vectors/v0.json) stays valid.
 | NAT64 and 6to4 | `64:ff9b::/96` and `2002::/16` addresses are judged as the IPv4 address they carry; another NAT64 prefix in use should be too | 3.2 |
 
 Destination cases for NAT64 and 6to4 are in
-[vectors/v1/strict.json](../vectors/v1/strict.json) (`destinations`).
+[vectors/v1/strict.json](../../vectors/v0/strict.json) (`destinations`).
