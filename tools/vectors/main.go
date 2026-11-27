@@ -3,6 +3,10 @@
 //	go run .          checks every vector file against the specification's rules
 //	go run . -write   writes vectors/history/test-draft-strict.json and vectors/v0/*.json, then checks
 //
+// The vectors check that every array MSFP Media's text points to is in
+// them: -media names where that text is (by default a checkout of
+// msfp-media beside this repository).
+//
 // vectors/history/test-draft.json is never written: it came from Overfin's code, and
 // implementations keep copies of it. The check regenerates it and
 // insists on the same bytes.
@@ -16,10 +20,21 @@ import (
 	"path/filepath"
 )
 
+// mediaSpec is MSFP Media's spec folder (-media).
+var mediaSpec string
+
+// readMediaSpec reads a file of MSFP Media's spec folder, or nil.
+func readMediaSpec(rel string) []byte {
+	b, _ := os.ReadFile(filepath.Join(mediaSpec, rel))
+	return b
+}
+
 func main() {
 	write := flag.Bool("write", false, "write the generated vector files before checking")
 	dir := flag.String("dir", "../../vectors", "the vectors folder")
+	media := flag.String("media", "../../../msfp-media/spec", "MSFP Media's spec folder (a checkout of msfp-io/msfp-media beside this one): the text that points to the vectors")
 	flag.Parse()
+	mediaSpec = *media
 
 	generated := []struct {
 		path string

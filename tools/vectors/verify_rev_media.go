@@ -21,8 +21,8 @@ func verifyRevMedia(read func(string) []byte) []error {
 	if a, ok := f["about"].([]any); !ok || len(a) == 0 {
 		bad("no about")
 	}
-	// The arrays the specification names (video section 6.2: webvtt, ass,
-	// pgs, fonts) and those of media sections 2.1 to 4.2.
+	// The arrays the specification names (MSFP Media video section 6.2: webvtt, ass,
+	// pgs, fonts) and those of fetching sections 2.1 to 4.2.
 	list := func(name string) []obj {
 		a, ok := f[name].([]any)
 		if !ok || len(a) == 0 {

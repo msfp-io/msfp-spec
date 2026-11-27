@@ -3,7 +3,8 @@
 
 1. The suite's readers against the vectors: vectors/v0/*.json (keys,
    code, exchanges, rotation, revocation, strict, media, video, playback,
-   music, groups) and the
+   music, groups; with strict.json's titleRequests, the owning server's
+   reading of a titles request that the fake answers with) and the
    cases of vectors/history/test-draft-strict.json that core 0 section 17 says hold for
    core 0 (keys, signatures, base64url, dates, integers, JSON).
 2. The whole suite against an in-process fake version 0 server
@@ -48,45 +49,58 @@ VEC = os.path.join(HERE, "..", "vectors")
 FAULTS = {
     "nonce": ["N1", "N2"],          # replays accepted (core 6.5)
     "null": ["J1"],                 # null members in hello accepted (core 2.3)
-    "since": ["T4"],                # changes for a since above seq (catalog 3.2)
-    "with": ["T1"],                 # an episode's with naming another series (video 4.2)
+    "since": ["T4"],                # changes for a since above seq (MSFP Media listing 3.2)
+    "with": ["T1"],                 # an episode's with naming another series (MSFP Media video 4.2)
     "limits": ["PB10"],             # no stream limit (playback 6)
-    "progress": ["PB5"],            # progress of a playback that isn't live answered 200 (playback 6.1)
-    "query": ["M4"],                # media served with a query string (media 2)
-    "range": ["F2"],                # several ranges served as the first (media 2.1)
-    "vtt": ["M6"],                  # a WebVTT part served as it is, not rebuilt (video 6.3)
+    "progress": ["PB5"],            # progress of a playback that isn't live answered 200 (MSFP Media playing 5)
+    "query": ["M4"],                # media served with a query string (MSFP Media fetching 2)
+    "range": ["F2"],                # several ranges served as the first (MSFP Media fetching 2.1)
+    "vtt": ["M6"],                  # a WebVTT part served as it is, not rebuilt (MSFP Media video 6.3)
     "loopback": ["X1"],             # connects to a loopback address for a peer (core 3.3)
     "oldkey": ["O2"],               # still signs with the old key after the peer answered rotated (core 12.4)
-    "quietpause": ["VW2", "VW3"],   # no progress while its viewer pauses (playback 3, 6.3; expiry 20 s in that run)
-    "badstop": ["VW1"],             # a stop with a negative position (playback 4)
+    "quietpause": ["VW2", "VW3"],   # no progress while its viewer pauses (MSFP Media playing 3, 5; expiry 20 s in that run)
+    "badstop": ["VW1"],             # a stop with a negative position (MSFP Media playing 4)
     "groupforged": ["GR13"],        # a group event whose signature doesn't verify kept (groups 3.2)
     "mailforged": ["GM3"],          # a mail whose signature doesn't verify kept (groups 5)
-    "summary": ["T1"],              # a film with the title summary video 0 removed (video 3.2)
-    "etag": ["PB18"],               # a download's answer whose etag isn't the catalog's (playback 2.3)
-    "head": ["M4", "F4"],           # HEAD on media answered 404, not 405 (media 2.2)
-    "growing": ["M2"],              # a media playlist without EXT-X-ENDLIST (media 3.1)
+    "summary": ["T1"],              # a film with the title summary video 0 removed (MSFP Media video 3.2)
+    "etag": ["PB18"],               # a download's answer whose etag isn't the catalog's (MSFP Media playing 2.3)
+    "head": ["M4", "F4"],           # HEAD on media answered 404, not 405 (MSFP Media fetching 2.2)
+    "growing": ["M2"],              # a media playlist without EXT-X-ENDLIST (MSFP Media fetching 3.1)
     "scancap": ["PB22"],            # a scan's reads past the answer's scanBytes served (media 4.2)
     "scanfloor": ["PB22"],          # scans cut at the 4 MiB floor, not at the scanBytes their answer states (playback 8)
-    "tokens": ["PB24"],             # an unknown delivery token refused with 400, not 409 (core 8.5)
-    "remux": ["PB24"],              # a remux to video/matroska served, not refused (playback 2.7: mp2t or mp4)
-    "rangetoken": ["PB24"],         # an unknown range token refused with 400, not 409 (playback 2.7)
-    "baseline": ["PB4"],            # the file served without delivery (playback 2.7: the baseline is HLS)
-    "baselinecopy": ["PB4"],        # without delivery, a copy outside the baseline left unchanged (playback 2.7)
-    "renditions": ["PB17"],         # audioRenditions true in the answer, none in the playlist (playback 2.3)
-    "container": ["T1"],            # a copy with container matroska, no mediaType (video 3.2: skipped by a caller)
-    "nocodecs": ["T1"],             # an H.264 stream without codecs (video 3.5: required for the six)
-    "urls": ["PB3"],                # a URL in play's answer (playback 2.3: answers carry no URLs)
-    "pastcount": ["M10"],           # fonts/<fontCount> served (video 6.1: 404 past a count)
-    "burncopy": ["PB8"],            # burnSubtitle with video copy served, not refused (playback 2.7)
+    "tokens": ["PB24"],             # an unknown delivery token refused with 400, not 409 (MSFP Media base 3)
+    "remux": ["PB24"],              # a remux to video/matroska served, not refused (MSFP Media playing 2.7: mp2t or mp4)
+    "rangetoken": ["PB24"],         # an unknown range token refused with 400, not 409 (MSFP Media playing 2.7)
+    "baseline": ["PB4"],            # the file served without delivery (MSFP Media playing 2.7: the baseline is HLS)
+    "baselinecopy": ["PB4"],        # without delivery, a copy outside the baseline left unchanged (MSFP Media playing 2.7)
+    "renditions": ["PB17"],         # audioRenditions true in the answer, none in the playlist (MSFP Media playing 2.3)
+    "container": ["T1"],            # a copy with container matroska, no mediaType (MSFP Media video 3.2: skipped by a caller)
+    "nocodecs": ["T1"],             # an H.264 stream without codecs (MSFP Media video 3.5: required for the six)
+    "urls": ["PB3"],                # a URL in play's answer (MSFP Media playing 2.3: answers carry no URLs)
+    "pastcount": ["M10"],           # fonts/<fontCount> served (MSFP Media video 6.1: 404 past a count)
+    "burncopy": ["PB8"],            # burnSubtitle with video copy served, not refused (MSFP Media playing 2.7)
     "prefetch": ["Q4"],             # as a viewer, every copy's previews fetched while reading a catalog (video 5.5)
     "groupname": ["GM5", "GM6"],    # a name in the mail and in group-pair's answer (groups 5, 8.3)
+    "targettype": ["PB24", "PB8"],  # a target it doesn't make refused with delivery-refused, not target-refused (MSFP Media playing 2.2 step 7)
+    "capsignored": ["PB1"],         # a capability list ignored, not refused with 400 (playback 2)
+    "pausedtype": ["PB5"],          # a paused that isn't a boolean accepted (MSFP Media playing 3)
+    "replaces": ["PB26"],           # replaces ignored: the old playback stays, both counted (MSFP Media playing 2.3; playback 6)
+    "progressrange": ["PB25"],      # progressSeconds 30 in play's answer (MSFP Media playing 2.3: 45 to 120)
+    "nogone": ["PB27"],             # a title no longer held answered not-found, not gone (MSFP Media playing 2.2 step 3)
+    "nolibraries": ["T13"],         # titles without libraries refused (MSFP Media listing 3: absent, every library)
+    "kind": ["T14"],                # kind ignored (MSFP Media listing 3.6)
+    "under": ["T15"],               # under ignored (MSFP Media listing 3.6)
 }
-# Faults in the choice of copy and audio (playback 2.6), in a pass of their
-# own: playing another copy than the one the checks expect would hide the
-# faults of the first pass aimed at that copy's tracks and fonts.
+# Faults in a pass of their own: in the choice of copy and audio (MSFP
+# Media playing 2.6), since playing another copy than the one the checks
+# expect would hide the faults of the first pass aimed at that copy's
+# tracks and fonts; and in the viewer's reports, which quietpause would
+# hide.
 CHOICE = {
-    "lastcopy": ["PB9"],            # the last copy plays without versionId (playback 2.6: the first)
-    "defaultaudio": ["PB7"],        # without audioTrack, not the file's default audio (playback 2.6)
+    "chatty": ["VW5"],              # as a viewer, progress every 10 s while paused (MSFP Media playing 3: not more often than 45 s)
+    "nopaused": ["VW3"],            # as a viewer, the pause reported without paused true (MSFP Media playing 3)
+    "lastcopy": ["PB9"],            # the last copy plays without versionId (MSFP Media playing 2.6: the first)
+    "defaultaudio": ["PB7"],        # without audioTrack, not the file's default audio (MSFP Media playing 2.6)
 }
 
 
@@ -319,6 +333,8 @@ def vectors():
             out, ok = None, False
         expect("video fontSets", c["name"], (c["valid"], c.get("output")), (ok, out))
     bad += playback_vectors_ok(os.path.join(VEC, "v0", "playback.json"))
+    from msfpconf.listing import vectors_ok as listing_vectors_ok
+    bad += listing_vectors_ok(os.path.join(VEC, "v0", "strict.json"))
     bad += music_vectors_ok(os.path.join(VEC, "v0", "music.json"))
 
     # Groups: envelopes kept or not (section 3.2), the code's group, the

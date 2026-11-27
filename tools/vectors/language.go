@@ -6,10 +6,10 @@ import (
 )
 
 // The language codes a media server gives, as MSFP sends them
-// (spec/v0/catalog.md section 3, language tags): an ISO 639-2 code, /B
+// (MSFP Media base section 2.4): an ISO 639-2 code, /B
 // (fre) or /T (fra), of a language ISO 639-1 names is sent as its 639-1
 // code (fr), the rest of the tag kept; every tag in BCP 47's case
-// conventions (spec/v0/core.md section 2.5); und, mul, zxx and mis not
+// conventions (MSFP Media base section 2.3); und, mul, zxx and mis not
 // sent.
 
 // iso639 maps each ISO 639-2 code, /B and /T, of a language that has an
@@ -80,7 +80,7 @@ func sentTag(code string) (string, error) {
 	return strings.Join(subtags, "-"), nil
 }
 
-// validTag: a valid tag (catalog section 3, language tags) is one in the
+// validTag: a valid tag (MSFP Media base section 2.4) is one in the
 // form a server sends: one that sentTag leaves as it is. Every part checks
 // a tag it receives this way.
 func validTag(s string) bool {

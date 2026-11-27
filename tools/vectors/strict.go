@@ -426,7 +426,7 @@ func codeHead(key, secret []byte, expires uint64) []byte {
 }
 
 // checkMediaName applies the rule for a file or track name in a media URL
-// (spec/v0/media.md section 1): 1 to 64 characters of A-Z a-z 0-9 . _ -,
+// (MSFP Media fetching section 1): 1 to 64 characters of A-Z a-z 0-9 . _ -,
 // and never "." or "..", which a URL resolves as folders.
 func checkMediaName(s string) error {
 	if s == "." || s == ".." {
@@ -513,7 +513,7 @@ func checkUncallableAddress(addr string) error {
 // ---- The catalog part of the revision of version 0 (proposal 16) ----
 
 // catalogPageTitles and catalogPageBytes are a page's two bounds
-// (spec/v0/catalog.md section 3.1); catalogAnswerBytes is the core's
+// (MSFP Media listing section 3.1); catalogAnswerBytes is the core's
 // bound on any answer a caller reads (spec/v0/core.md section 3).
 const (
 	catalogPageTitles  = 5000
@@ -569,7 +569,7 @@ type catalogImageCase struct {
 }
 
 // catalogCheckPage applies the owning server's rules for a page
-// (catalog section 3.1): at most 5,000 titles (titles and gone together
+// (MSFP Media listing section 3.1): at most 5,000 titles (titles and gone together
 // in a changes answer), at most 3 MiB of JSON, and in a whole-list
 // answer a next that is the page's last key exactly when titles remain.
 func catalogCheckPage(p catalogPage) error {
@@ -628,7 +628,7 @@ func catalogCallerStep(p catalogPage) string {
 }
 
 // catalogCheckOpaque applies the rule for the opaque parts of keys
-// (catalog section 4.2): the form of a library ID, 1 to 64 characters
+// (MSFP Media listing section 4.2): the form of a library ID, 1 to 64 characters
 // of A-Z a-z 0-9 _ -.
 func catalogCheckOpaque(s string) error {
 	if len(s) < 1 || len(s) > 64 {
@@ -649,7 +649,7 @@ func catalogTicketByte(c byte) bool {
 }
 
 // catalogDesc is what a caller keeps of a local title's description
-// (catalog section 4.3).
+// (MSFP Media listing section 4.3).
 type catalogDesc struct {
 	Name  string `json:"name,omitempty"`
 	Year  *int64 `json:"year,omitempty"`
@@ -657,10 +657,10 @@ type catalogDesc struct {
 }
 
 // catalogDescription reads a local title's description from the title's
-// JSON object (catalog section 4.3). nameRequired is the content part's
+// JSON object (MSFP Media listing section 4.3). nameRequired is the content part's
 // say for the title's kind. name is cleaned as core section 9.1 cleans a
 // server's name, with 128 code points instead of 80; a name that isn't a
-// string counts as absent (core section 2.3). year that isn't an
+// string counts as absent (MSFP Media base section 2.2). year that isn't an
 // integer from 1800 to 9999, and image that isn't a boolean, count as
 // absent. An error means the title is skipped. The vectors of the
 // description are the content parts' (localTitles in video.json and
@@ -709,11 +709,11 @@ type catalogOffered struct {
 }
 
 // catalogImageKinds: the kinds that have an image call, and the content
-// part each belongs to (catalog section 4.4).
+// part each belongs to (MSFP Media listing section 4.4).
 var catalogImageKinds = map[string]string{"movie": "video", "series": "video", "artist": "music", "album": "music"}
 
 // catalogImageRequest is the owning server's answer to an image request
-// (catalog section 4.4): its status and problem type. parts are the
+// (MSFP Media listing section 4.4): its status and problem type. parts are the
 // content parts on between the two servers.
 func catalogImageRequest(parts []string, offered []catalogOffered, body []byte) (int, string) {
 	on := map[string]bool{}
@@ -749,7 +749,7 @@ func catalogImageRequest(parts []string, offered []catalogOffered, body []byte) 
 }
 
 // catalogImageAnswer applies the viewer's server's check of an image
-// answer (catalog section 4.4): {"ticket"}, the ticket as media section 1
+// answer (MSFP Media listing section 4.4): {"ticket"}, the ticket as fetching section 1
 // gives it. It returns the ticket, or an error when the answer is
 // refused. The URL is built from the stream root and the ticket
 // (catalogImageURL), never read from the answer.
@@ -778,11 +778,11 @@ func catalogImageAnswer(body []byte) (string, error) {
 }
 
 // catalogImageURL is the URL a viewer's server builds for an image's
-// ticket (catalog section 4.4, media section 1).
+// ticket (MSFP Media listing section 4.4, fetching section 1).
 func catalogImageURL(root, ticket string) string { return root + ticket + "/image" }
 
 // catalogImageBytes is the bound on a local title's image, and
-// catalogImageSide the bound on its width and height (catalog section 4.4).
+// catalogImageSide the bound on its width and height (MSFP Media listing section 4.4).
 const (
 	catalogImageBytes = 1 << 20
 	catalogImageSide  = 4096
@@ -791,7 +791,7 @@ const (
 var catalogPNGSignature = []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}
 
 // catalogCheckImage applies the viewer's server's checks of an image
-// before decoding it (catalog section 4.4, media section 3.4): its whole
+// before decoding it (MSFP Media listing section 4.4, fetching section 3.4): its whole
 // length within 1 MiB, a JPEG (FF D8 FF) or a PNG (the 8-byte signature)
 // by its content, and a width and a height from its header, 1 to 4,096.
 // head is the image's first bytes, size its whole length. It returns

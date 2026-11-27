@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 )
 
-// The key forms of video section 4, written a second time as whole
+// The key forms of MSFP Media video section 4, written a second time as whole
 // regular expressions, apart from parseVideoKey.
 var videoKeyForms = func() map[string]*regexp.Regexp {
 	o, s, e, id := `[A-Za-z0-9_-]{1,64}`, `(0|[1-9][0-9]{0,3})`, `(0|[1-9][0-9]{0,4})`, `[1-9][0-9]{0,9}`
@@ -38,7 +38,7 @@ func videoKindOfForm(key string) string {
 	return found
 }
 
-// testCasePointers lists the arrays a spec file says are in
+// videoTestCasePointers lists the arrays a spec file says are in
 // vectors/v0/video.json ("Test cases: `a` and `b` in [vectors/v0/video.json]").
 func videoTestCasePointers(spec []byte) []string {
 	var out []string
@@ -93,13 +93,18 @@ func verifyRevVideo(read func(string) []byte) []error {
 			arrays[name] = list
 		}
 	}
-	pointed := append(videoTestCasePointers(read("../spec/v0/video.md")), videoTestCasePointers(read("../spec/v0/catalog.md"))...)
+	// The text that points to them is MSFP Media's (video and listing).
+	videoText, listingText := readMediaSpec("v0/video.md"), readMediaSpec("v0/listing.md")
+	if videoText == nil || listingText == nil {
+		bad("MSFP Media's video.md and listing.md not found under %s (-media)", mediaSpec)
+	}
+	pointed := append(videoTestCasePointers(videoText), videoTestCasePointers(listingText)...)
 	if len(pointed) < 7 {
-		bad("the specification points to %d arrays (%v), fewer than expected", len(pointed), pointed)
+		bad("MSFP Media's text points to %d arrays (%v), fewer than expected", len(pointed), pointed)
 	}
 	for _, p := range pointed {
 		if _, ok := arrays[p]; !ok {
-			bad("the specification points to %q, which isn't here", p)
+			bad("MSFP Media's text points to %q, which isn't here", p)
 		}
 	}
 	for name, list := range arrays {

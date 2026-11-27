@@ -4,7 +4,7 @@ parts), restarts on the same etag, audio renditions, downloads (limits,
 late reports, the speed cap), scan access (limits, the cap the owner
 announces as scanBytes, the ticket), the previews call, and music's
 tracks, queue and lyrics; with proposal 17's: the answer's
-audioRenditions, unknown values in requests (core 8.5), a transcode's
+audioRenditions, unknown values in requests (MSFP Media base 3), a transcode's
 copy and range, the scan's cap in its answer, previews on demand (a
 ticket and the etag; the layout is the catalog's), queue entries' URLs
 built from the ticket."""
@@ -61,7 +61,7 @@ class RevisionChecks:
         self.previews_checks()
         self.music_checks()
 
-    # ---- deliveries (playback 2.7, media 1, 3.1, 3.2) -----------------------------------
+    # ---- deliveries (MSFP Media playing 2.7, MSFP Media fetching 1, 3.1, 3.2) -----------------------------------
 
     def delivery_checks(self, k):
         Fail, Skip = _x()
@@ -74,7 +74,7 @@ class RevisionChecks:
             body = {"title": k, "delivery": "file", "versionId": cp["id"]}
             a = self.play(body)
             if a.status == 409 and a.signed and a.problem_type() == "delivery-refused":
-                return (PASS, "409 delivery-refused (allowed: the owning server's choice, playback 2.2 step 7)")
+                return (PASS, "409 delivery-refused (allowed: the owning server's choice, MSFP Media playing 2.2 step 7)")
             self.signed(a, 200)
             bad, pb = self.check_playback(a.json, k, "file")
             if pb is None:
@@ -86,7 +86,7 @@ class RevisionChecks:
                 raise Fail("\n".join(bad))
             return "%s: method direct, the file at <stream root><ticket>/file, etag %s as the catalog's" % (
                 pb["id"], pb["etag"])
-        self.check("PB12", "playback 2.7, 2.3, media 1", "delivery file: 200 direct, the file, the catalog's etag (or 409 "
+        self.check("PB12", "MSFP Media playing 2.7, 2.3; MSFP Media fetching 1", "delivery file: 200 direct, the file, the catalog's etag (or 409 "
                    "delivery-refused)", file_)
         if "pb" in st:
             self.file_checks(st["pb"], st["copy"], "F")
@@ -117,7 +117,7 @@ class RevisionChecks:
             if (s1, s2) != (206, 206):
                 bad.append("bytes %d-%d: %d, then %d under the new ticket" % (off, off + 4095, s1, s2))
             elif b1 != b2:
-                bad.append("the same range gives other bytes under the new ticket (media 3.2: stable bytes while the "
+                bad.append("the same range gives other bytes under the new ticket (MSFP Media fetching 3.2: stable bytes while the "
                            "etag holds)")
             if _h(h1, "etag") != _h(h2, "etag"):
                 bad.append("ETag %r, then %r" % (_h(h1, "etag"), _h(h2, "etag")))
@@ -126,7 +126,7 @@ class RevisionChecks:
                 raise Fail("\n".join(bad))
             return "stopped, played again: the same etag %s, and bytes %d-%d the same under the new ticket" % (
                 j["etag"], off, off + 4095)
-        self.check("PB16", "playback 2.7, media 3.2, 3.3", "a restart: a new play of the same copy gives the same etag "
+        self.check("PB16", "MSFP Media playing 2.7; MSFP Media fetching 3.2, 3.3", "a restart: a new play of the same copy gives the same etag "
                    "and the same bytes at the same offset", restart)
         self.stop(st.get("pb"))
 
@@ -142,7 +142,7 @@ class RevisionChecks:
                 self.stop(a.json)
             self.signed(a, 409, "delivery-refused")
             return "%s, copy %s of %d parts: 409 delivery-refused" % (key, cp["id"], parts_of(cp))
-        self.check("PB13", "playback 2.7, media 1", "delivery file of a copy of several parts: 409 delivery-refused",
+        self.check("PB13", "MSFP Media playing 2.7; MSFP Media fetching 1", "delivery file of a copy of several parts: 409 delivery-refused",
                    several_parts)
 
         def hls_of(j, keep=None):
@@ -167,8 +167,8 @@ class RevisionChecks:
             cp = self.copy_of(k)
             mt = "%s/mp4" % ("video" if cp.get("video") else "audio")
             a = self.play({"title": k, "delivery": "remux", "mediaType": mt, "versionId": cp["id"]})
-            if a.status == 409 and a.signed and a.problem_type() == "delivery-refused":
-                return (PASS, "409 delivery-refused (allowed: the owning server's choice)")
+            if a.status == 409 and a.signed and a.problem_type() in ("delivery-refused", "target-refused"):
+                return (PASS, "409 %s (allowed: the owning server's choice, MSFP Media playing 2.2 step 7)" % a.problem_type())
             self.signed(a, 200)
             try:
                 bad, pb = self.check_playback(a.json, k, "remux")
@@ -179,15 +179,15 @@ class RevisionChecks:
             if bad:
                 raise Fail("\n".join(bad))
             return "mediaType %s: method remux, as complete HLS" % mt
-        self.check("PB14", "playback 2.7, media 3.1", "delivery remux to mp4 segments (mediaType): 200 remux as complete "
-                   "HLS (or 409 delivery-refused)", remux)
+        self.check("PB14", "MSFP Media playing 2.7; MSFP Media fetching 3.1", "delivery remux to mp4 segments (mediaType): 200 remux as complete "
+                   "HLS (or 409 delivery-refused or target-refused)", remux)
 
         def transcode():
             target = {"audioCodec": "aac", "audioChannels": 2}
             if video_key(k):
                 target.update({"videoCodec": "h264", "maxHeight": 480})
             a = self.play({"title": k, "delivery": "transcode", "transcode": target})
-            if a.status in (409, 503) and a.signed and a.problem_type() in ("delivery-refused", "server-busy"):
+            if a.status in (409, 503) and a.signed and a.problem_type() in ("delivery-refused", "target-refused", "server-busy"):
                 return (PASS, "%d %s (allowed)" % (a.status, a.problem_type()))
             self.signed(a, 200)
             try:
@@ -199,8 +199,8 @@ class RevisionChecks:
             if bad:
                 raise Fail("\n".join(bad))
             return "method transcode, as complete HLS, to %s" % dumps(target).decode()
-        self.check("PB15", "playback 2.7, media 3.1", "delivery transcode to targets: 200 transcode as complete HLS (or "
-                   "409 delivery-refused, 503 server-busy)", transcode)
+        self.check("PB15", "MSFP Media playing 2.7; MSFP Media fetching 3.1", "delivery transcode to targets: 200 transcode as complete HLS (or "
+                   "409 delivery-refused or target-refused, 503 server-busy)", transcode)
 
         def renditions():
             cp = self.copy_of(k)
@@ -212,7 +212,7 @@ class RevisionChecks:
             try:
                 said = a.json.get("audioRenditions")
                 if "audioRenditions" in a.json and not isinstance(said, bool):
-                    raise Fail("audioRenditions %r isn't a boolean (playback 2.3)" % (said,))
+                    raise Fail("audioRenditions %r isn't a boolean (MSFP Media playing 2.3)" % (said,))
                 try:
                     pb = self.view(a.json, k)
                 except Refused as e:
@@ -226,16 +226,16 @@ class RevisionChecks:
                     bad, _ = check_owner_playlist(m, True, ids)
                     if sorted(names) != sorted(ids[:32]):
                         bad.append("audioRenditions true: the master playlist names renditions %s; the copy's audio "
-                                   "tracks are %s (media 3.1: one #EXT-X-MEDIA per track)" % (names, ids))
+                                   "tracks are %s (MSFP Media fetching 3.1: one #EXT-X-MEDIA per track)" % (names, ids))
                     what = "%d audio rendition(s), named by track ID, as the answer's audioRenditions true says" % len(names)
                 else:
                     bad = []
                     if names:
                         bad.append("the answer's audioRenditions is %s, and the master playlist names renditions %s "
-                                   "(playback 2.3: false or absent means none made)" % (
+                                   "(MSFP Media playing 2.3: false or absent means none made)" % (
                                        "false" if said is False else "absent", names))
                     if said is None:
-                        bad.append("no audioRenditions in the answer to a play asking for them (playback 2.3: the "
+                        bad.append("no audioRenditions in the answer to a play asking for them (MSFP Media playing 2.3: the "
                                    "answer says whether it made them)")
                     what = "audioRenditions false: none made (allowed: a request for them is never refused), and the " \
                            "playlist has none"
@@ -244,49 +244,54 @@ class RevisionChecks:
             if bad:
                 raise Fail("\n".join(bad))
             return what
-        self.check("PB17", "playback 2.1, 2.3, media 3.1", "audioRenditions asked: the answer says whether they were made, "
+        self.check("PB17", "MSFP Media playing 2.1, 2.3; MSFP Media fetching 3.1", "audioRenditions asked: the answer says whether they were made, "
                    "and the playlist matches (every audio track, or none)", renditions)
 
         def unknown_values():
-            """Core 8.5 in play: an unknown token naming what to serve is 409
-            delivery-refused; an unknown member is ignored. (Values that
-            aren't tokens are PB1's 400s.)"""
+            """MSFP Media base 3 in play: an unknown token naming what to serve
+            is refused, 409 delivery-refused for the delivery, 409
+            target-refused for a target (a remux's media type, a transcode
+            codec, a range: MSFP Media playing 2.2 step 7, 2.7); an unknown
+            member is ignored. (Values that aren't tokens are PB1's 400s.)"""
             cp = self.copy_of(k)
             top, other = ("video", "audio") if cp.get("video") else ("audio", "video")
-            cases = [("delivery dash, an unknown token", {"delivery": "dash"}),
-                     ("remux to %s/matroska, no HLS segment format" % top, {"delivery": "remux", "mediaType": "%s/matroska" % top}),
-                     ("remux to %s/mp4, the wrong top-level type" % other, {"delivery": "remux", "mediaType": "%s/mp4" % other}),
+            D, T = "delivery-refused", "target-refused"
+            cases = [("delivery dash, an unknown token", {"delivery": "dash"}, D),
+                     ("remux to %s/matroska, no HLS segment format" % top, {"delivery": "remux", "mediaType": "%s/matroska" % top}, T),
+                     ("remux to %s/mp4, the wrong top-level type" % other, {"delivery": "remux", "mediaType": "%s/mp4" % other}, T),
                      ("transcode audioCodec conformance-codec, a token no encoder has",
-                      {"delivery": "transcode", "transcode": {"audioCodec": "conformance-codec"}})]
+                      {"delivery": "transcode", "transcode": {"audioCodec": "conformance-codec"}}, T)]
             if video_key(k):
                 cases.append(("transcode videoCodec h265, not the registry's token", {"delivery": "transcode",
-                                                                                     "transcode": {"videoCodec": "h265"}}))
+                                                                                     "transcode": {"videoCodec": "h265"}}, T))
                 cases.append(("transcode range hdr, a token not of its list", {"delivery": "transcode",
-                                                                               "transcode": {"range": "hdr"}}))
+                                                                               "transcode": {"range": "hdr"}}, T))
             bad, out = [], []
-            for name, extra in cases:
+            for name, extra, want in cases:
                 a = self.play(dict(extra, title=k, versionId=cp["id"]))
                 self.answers.append(a)
                 if a.status == 200:
                     self.stop(a.json)
-                if not (a.status == 409 and a.signed and a.problem_type() == "delivery-refused"):
-                    bad.append("%s: %s, not a signed 409 delivery-refused" % (name, a.short()))
-            out.append("%d unknown tokens refused with 409 delivery-refused" % len(cases))
+                if not (a.status == 409 and a.signed and a.problem_type() == want):
+                    bad.append("%s: %s, not a signed 409 %s" % (name, a.short(), want))
+            out.append("%d unknown tokens refused with 409: the delivery delivery-refused, %d targets target-refused" % (
+                len(cases), sum(1 for x in cases if x[2] == T)))
             a = self.play({"title": k, "versionId": cp["id"], "conformanceUnknownMember": {"x": [1]}})
             self.answers.append(a)
             if a.status == 200:
                 self.stop(a.json)
                 out.append("an unknown member ignored (200)")
             else:
-                bad.append("a play with an unknown member: %s (core 8.5: unknown members are ignored)" % a.short())
+                bad.append("a play with an unknown member: %s (MSFP Media base 3: unknown members are ignored)" % a.short())
             if bad:
                 raise Fail("\n".join(bad))
             return "; ".join(out)
-        self.check("PB24", "core 8.5, playback 2.1, 2.2, 2.7", "unknown values in play: a token or media type naming what "
-                   "to serve refused with 409 delivery-refused, an unknown member ignored", unknown_values)
+        self.check("PB24", "MSFP Media base 3, 4; MSFP Media playing 2.1, 2.2, 2.5, 2.7", "unknown values in play: a "
+                   "delivery naming what to serve refused with 409 delivery-refused, a target with 409 target-refused; an "
+                   "unknown member ignored", unknown_values)
 
         def copy_and_range():
-            """Playback 2.7: a transcode with video copy serves the video
+            """MSFP Media playing 2.7: a transcode with video copy serves the video
             unchanged (the master playlist's CODECS names the copy's own);
             burnSubtitle with video copy is refused; range sdr is SDR (no
             VIDEO-RANGE PQ or HLG); range keep is made or refused."""
@@ -302,11 +307,13 @@ class RevisionChecks:
                              ("range keep", {"videoCodec": "hevc", "range": "keep", "audioCodec": "aac"})):
                 a = self.play({"title": k, "versionId": cp["id"], "delivery": "transcode", "transcode": tr})
                 self.answers.append(a)
-                if a.status in (409, 503) and a.signed and a.problem_type() in ("delivery-refused", "server-busy"):
+                if a.status in (409, 503) and a.signed and a.problem_type() in ("delivery-refused", "target-refused",
+                                                                                "server-busy"):
                     out.append("%s: %d %s" % (name, a.status, a.problem_type()))
                     continue
                 if a.status != 200 or not a.signed:
-                    bad.append("%s: %s, not a signed 200, 409 delivery-refused or 503 server-busy" % (name, a.short()))
+                    bad.append("%s: %s, not a signed 200, 409 delivery-refused or target-refused, or 503 server-busy"
+                               % (name, a.short()))
                     continue
                 try:
                     b, pb = self.check_playback(a.json, k, "transcode")
@@ -319,14 +326,14 @@ class RevisionChecks:
                     if not b and tr["videoCodec"] == "copy" and v.get("codecs"):
                         want = v["codecs"]
                         if want.startswith("hev1."):
-                            want = "hvc1." + want[5:]   # hvc1 in mp4 segments (playback 2.7)
+                            want = "hvc1." + want[5:]   # hvc1 in mp4 segments (MSFP Media playing 2.7)
                         if not any(want in [c.strip() for c in (x.get("CODECS") or "").strip('"').split(",")] for x in infs):
                             b.append("video copy: the master playlist's CODECS %s don't name the copy's own %s (playback "
-                                     "2.7: the stream unchanged; media 3.1: CODECS describes what is served)"
+                                     "2.7: the stream unchanged; MSFP Media fetching 3.1: CODECS describes what is served)"
                                      % ([x.get("CODECS") for x in infs], want))
                     if not b and tr.get("range") == "sdr" and any((x.get("VIDEO-RANGE") or "").strip('"') in ("PQ", "HLG")
                                                                   for x in infs):
-                        b.append("range sdr: the master playlist says VIDEO-RANGE %s (playback 2.7: tone-mapped to SDR)"
+                        b.append("range sdr: the master playlist says VIDEO-RANGE %s (MSFP Media playing 2.7: tone-mapped to SDR)"
                                  % [x.get("VIDEO-RANGE") for x in infs])
                     bad += ["%s: %s" % (name, x) for x in b]
                     out.append("%s: 200 transcode" % name)
@@ -339,18 +346,18 @@ class RevisionChecks:
                 self.answers.append(a)
                 if a.status == 200:
                     self.stop(a.json)
-                if not (a.status == 409 and a.signed and a.problem_type() == "delivery-refused"):
-                    bad.append("burnSubtitle %s with video copy: %s, not a signed 409 delivery-refused (playback 2.7, "
-                               "video 5.1)" % (subs[0], a.short()))
+                if not (a.status == 409 and a.signed and a.problem_type() == "target-refused"):
+                    bad.append("burnSubtitle %s with video copy: %s, not a signed 409 target-refused (MSFP Media playing 2.7, "
+                               "MSFP Media video 5.1)" % (subs[0], a.short()))
                 else:
-                    out.append("burnSubtitle with video copy: 409 delivery-refused")
+                    out.append("burnSubtitle with video copy: 409 target-refused")
             if bad:
                 raise Fail("\n".join(bad))
             return "; ".join(out)
-        self.check("PB8", "playback 2.7, video 5.1, media 3.1", "a transcode's copy and range: video copy served unchanged, "
+        self.check("PB8", "MSFP Media playing 2.7; MSFP Media video 5.1; MSFP Media fetching 3.1", "a transcode's copy and range: video copy served unchanged, "
                    "range sdr SDR, keep made or refused; burnSubtitle with video copy refused", copy_and_range)
 
-    # ---- downloads (playback 7, media 4.1) ----------------------------------------------
+    # ---- downloads (MSFP Media playing 6, MSFP Media fetching 4.3) ----------------------------------------------
 
     def download_checks(self, k):
         Fail, Skip = _x()
@@ -385,7 +392,7 @@ class RevisionChecks:
                     for _ in range(n):
                         j, a2 = self.started(self.stream_body(k))
                         if j is None:
-                            raise Fail("with a download live, play %d of %d streams: %s (playback 7: a download never "
+                            raise Fail("with a download live, play %d of %d streams: %s (MSFP Media playing 6: a download never "
                                        "counts against streams)" % (len(extra) + 1, n, a2.short()))
                         extra.append(j)
                     out.append("the %d streams still free beside it" % n)
@@ -405,7 +412,7 @@ class RevisionChecks:
             finally:
                 for j in live + extra:
                     self.stop(j)
-        self.check("PB18", "playback 7, 5, 2.2", "downloads: 409 stream-limit-reached when none are allowed; else 200 "
+        self.check("PB18", "playback 7, 5; MSFP Media playing 6, 2.2", "downloads: 409 stream-limit-reached when none are allowed; else 200 "
                    "the file, beside the streams, within downloads", limits)
 
         def speed():
@@ -424,12 +431,12 @@ class RevisionChecks:
             in10 = max(n for t, n in marks if t <= 10.0)
             slack = 256 * 1024
             if in10 > per10 * 1.1 + slack:
-                raise Fail("%d bytes in the first 10 seconds; the cap of %d kbit/s allows %d (playback 7: paced over any "
+                raise Fail("%d bytes in the first 10 seconds; the cap of %d kbit/s allows %d (MSFP Media playing 6: paced over any "
                            "10 seconds)" % (in10, kbps, per10))
             if marks[-1][1] == 0:
                 raise Fail("no byte in 11 seconds")
             return "%d bytes in the first 10 seconds, within %d kbit/s (%d bytes)" % (in10, kbps, per10)
-        self.check("PB20", "playback 7, media 4.1", "a download's reads paced at downloadKbps", speed)
+        self.check("PB20", "playback 7; MSFP Media fetching 4.3", "a download's reads paced at downloadKbps", speed)
 
         def late():
             if "pb" not in st:
@@ -447,7 +454,7 @@ class RevisionChecks:
                 a = c.call(name.split()[0], b)
                 self.answers.append(a)
                 if a.status != want or not a.signed:
-                    bad.append("%s after the download's stop: %s, not a signed %d (playback 7: late reports)" % (
+                    bad.append("%s after the download's stop: %s, not a signed %d (MSFP Media playing 6: late reports)" % (
                         name, a.short(), want))
             s, _, _ = c.get(j["url"], [("Range", "bytes=0-99")])
             if s != 404:
@@ -455,7 +462,7 @@ class RevisionChecks:
             if bad:
                 raise Fail("\n".join(bad))
             return "stopped; then progress with at 200, without at 410, stop with at 200; the ticket 404"
-        self.check("PB19", "playback 7, 3, 4", "a download's late reports: progress and stop with at accepted after it "
+        self.check("PB19", "MSFP Media playing 6, 3, 4", "a download's late reports: progress and stop with at accepted after it "
                    "ended", late)
         self.stop(st.get("pb"))
 
@@ -498,7 +505,7 @@ class RevisionChecks:
             finally:
                 for j in extra:
                     self.stop(j)
-        self.check("PB21", "playback 8, 5, 2.2, 2.3", "scans: 409 stream-limit-reached when off; else 200 the file, "
+        self.check("PB21", "playback 8, 5, 2; MSFP Media playing 2.2", "scans: 409 stream-limit-reached when off; else 200 the file, "
                    "scanBytes in the answer, using no stream", limits)
 
         def cap():
@@ -534,7 +541,7 @@ class RevisionChecks:
                         "further" % (n, sent, cut))
             return "416 without Range; %d reads of bytes=0- served %d bytes, the last cut at the cap of %d (scanBytes), " \
                    "then 416 bytes */%d" % (n - 1, sent, cut, size)
-        self.check("PB22", "playback 8, 2.3, media 4.2", "a scan's reads: within the scan answer's scanBytes (absent: "
+        self.check("PB22", "playback 8, 2; media 4.2", "a scan's reads: within the scan answer's scanBytes (absent: "
                    "4 MiB) in all, cut at the cap, then 416", cap)
 
         def ticket():
@@ -546,21 +553,21 @@ class RevisionChecks:
             for name in ("master.m3u8", "subtitles/s0/0", "trickplay/0", "fonts/0"):
                 s, _, _ = c.get(base + name)
                 if s != 404:
-                    bad.append("%s under the scan ticket: %d, not 404 (media 4: file only)" % (name, s))
+                    bad.append("%s under the scan ticket: %d, not 404 (MSFP Media fetching 4.2: file only)" % (name, s))
             bad += self.head_405([j["url"]])
             a = c.call("progress", {"id": j["id"]})
             self.answers.append(a)
             if a.status != 200 or not a.signed:
-                bad.append("progress of a scan: %s, not a signed 200 (playback 3)" % a.short())
+                bad.append("progress of a scan: %s, not a signed 200 (MSFP Media playing 3)" % a.short())
             self.signed(c.call("stop", {"id": j["id"]}), 200)
             if bad:
                 raise Fail("\n".join(bad))
             return "the scan ticket opens the file only; HEAD 405; progress 200; stop 200"
-        self.check("PB23", "media 4, 2.2, playback 3, 8", "a scan's ticket opens the file only; progress answered 200",
+        self.check("PB23", "media 4; MSFP Media fetching 4.2, 2.2; playback 3, 8", "a scan's ticket opens the file only; progress answered 200",
                    ticket)
         self.stop(st.get("pb"))
 
-    # ---- previews (video 5.5, 5.6) -------------------------------------------------------
+    # ---- previews (MSFP Media video 5.5, 5.6) -------------------------------------------------------
 
     def previews_checks(self):
         Fail, Skip = _x()
@@ -586,24 +593,24 @@ class RevisionChecks:
             try:
                 kept = keep_previews_answer(a.json)
             except ValueError as e:
-                raise Fail("the viewer's server refuses the answer, and fetches no sheet: %s (video 5.6)" % e)
+                raise Fail("the viewer's server refuses the answer, and fetches no sheet: %s (MSFP Media video 5.6)" % e)
             bad = []
             if from_parts_urls(a.json):
-                bad.append("the answer carries URLs (video 5.6, media 1: answers carry no URLs)")
+                bad.append("the answer carries URLs (MSFP Media video 5.6, MSFP Media fetching 1: answers carry no URLs)")
             if "trickplay" in a.json:
-                self.note_default("video 5.6", "previews' answer still sends trickplay, dropped by proposal 17 (the "
+                self.note_default("MSFP Media video 5.6", "previews' answer still sends trickplay, dropped by proposal 17 (the "
                                   "layout is the catalog's; ignored)")
             if kept["etag"] != cp.get("etag"):
-                bad.append("etag %r; the catalog's copy has %r, and nothing changed on the server (video 5.6: the "
+                bad.append("etag %r; the catalog's copy has %r, and nothing changed on the server (MSFP Media video 5.6: the "
                            "copy's etag as the owning server holds it)" % (kept["etag"], cp.get("etag")))
             if len(kept["ticket"]) < 22:
-                bad.append("a ticket of %d characters can't hold 128 random bits (media 1)" % len(kept["ticket"]))
+                bad.append("a ticket of %d characters can't hold 128 random bits (MSFP Media fetching 1)" % len(kept["ticket"]))
             if bad:
                 raise Fail("\n".join(bad))
             st["base"], st["layout"] = self.root + kept["ticket"] + "/", cp["previewLayout"]
             return "%s, copy %s: a ticket and the catalog's etag; %d sheet(s) by the catalog's layout; " % (
                 key, cp["id"], sheet_count(cp["previewLayout"])) + self.sheet_check(st["base"], st["layout"])
-        self.check("PV1", "video 5.5, 5.6, media 3.4", "previews: 200 signed, a ticket and the copy's etag, no URL; the "
+        self.check("PV1", "MSFP Media video 5.5, 5.6; MSFP Media fetching 3.4", "previews: 200 signed, a ticket and the copy's etag, no URL; the "
                    "sheets of the catalog's previewLayout under that ticket, 404 past the count", previews)
 
         def scope():
@@ -614,11 +621,11 @@ class RevisionChecks:
             for name in ("file", "master.m3u8", "subtitles/s0/0", "fonts/0", "image"):
                 s, _, _ = c.get(base + name)
                 if s != 404:
-                    bad.append("%s under the previews ticket: %d, not 404 (media 4: its sheets only)" % (name, s))
+                    bad.append("%s under the previews ticket: %d, not 404 (MSFP Media fetching 4.2: its sheets only)" % (name, s))
             if bad:
                 raise Fail("\n".join(bad))
             return "the previews ticket opens its sheets only"
-        self.check("PV2", "media 4, video 5.6", "a previews ticket opens only its sheets", scope)
+        self.check("PV2", "MSFP Media fetching 4.2; MSFP Media video 5.6", "a previews ticket opens only its sheets", scope)
 
         def refusals():
             need()
@@ -644,10 +651,10 @@ class RevisionChecks:
             if bad:
                 raise Fail("\n".join(bad))
             return "%d refusals: 400 for malformed requests, 404 for what isn't offered or has no previewLayout" % len(forms)
-        self.check("PV3", "video 5.6", "previews refusals: a signed 400 for a malformed request, 404 for a copy without "
+        self.check("PV3", "MSFP Media video 5.6", "previews refusals: a signed 400 for a malformed request, 404 for a copy without "
                    "previewLayout or not offered", refusals)
 
-    # ---- music (music 5, 5.2, 6) -----------------------------------------------------------
+    # ---- music (MSFP Media music 5, 5.2, 6) -----------------------------------------------------------
 
     def music_checks(self):
         Fail, Skip = _x()
@@ -674,7 +681,7 @@ class RevisionChecks:
             if bad:
                 raise Fail("\n".join(bad))
             return "%s: %s over %s, audio only, the catalog's etag" % (t["key"], pb["method"], pb["protocol"])
-        self.check("MU1", "music 5, playback 2.3", "a track's play: 200, audio only, its etag the catalog's", play_track)
+        self.check("MU1", "MSFP Media music 5; MSFP Media playing 2.3", "a track's play: 200, audio only, its etag the catalog's", play_track)
 
         def queue():
             ts = tracks()
@@ -695,9 +702,9 @@ class RevisionChecks:
                     raise Fail("the answer is refused: %s" % e)
                 sent = a.json.get("queue") or []
                 if from_parts_urls(sent):
-                    bad.append("queue entries carry URLs (music 5.2, media 1: built from the ticket)")
+                    bad.append("queue entries carry URLs (MSFP Media music 5.2, MSFP Media fetching 1: built from the ticket)")
                 if len(kept) != len(sent):
-                    bad.append("%d queue entries sent, the viewer's server keeps %d (music 5.2): %s" % (
+                    bad.append("%d queue entries sent, the viewer's server keeps %d (MSFP Media music 5.2): %s" % (
                         len(sent), len(kept), dumps(sent).decode()[:300]))
                 if kept and kept[-1]["title"] == q[-1] and kept[-1]["versionId"] != first["id"]:
                     bad.append("the entry naming copy %s played %s" % (first["id"], kept[-1]["versionId"]))
@@ -707,14 +714,14 @@ class RevisionChecks:
                         bad.append("queue entry %s: %s %d" % (e["title"], u[len(self.root):], s))
                 s, _, _ = c.get(pb["base"] + "queue/%d/master.m3u8" % len(q))
                 if s != 404:
-                    bad.append("queue/%d, past the request's queue: %d, not 404 (media 1)" % (len(q), s))
+                    bad.append("queue/%d, past the request's queue: %d, not 404 (MSFP Media fetching 1)" % (len(q), s))
             finally:
                 self.stop(a.json)
             if bad:
                 raise Fail("\n".join(bad))
             return "%d of %d queued tracks prepared (one naming its copy), each at <stream root><ticket>/queue/<n>/; 404 " \
                    "past the queue" % (len(kept), len(q))
-        self.check("MU2", "music 5.2, media 1", "a play with a queue of entries (one with its own versionId): the entries "
+        self.check("MU2", "MSFP Media music 5.2; MSFP Media fetching 1", "a play with a queue of entries (one with its own versionId): the entries "
                    "in their forms, no URL, their streams at the names built from the ticket", queue)
 
         def queue_refusals():
@@ -740,7 +747,7 @@ class RevisionChecks:
             if bad:
                 raise Fail("expected a signed 400 for:\n" + "\n".join(bad))
             return "7 malformed queues refused with a signed 400"
-        self.check("MU3", "music 5.2", "a malformed queue: a signed 400", queue_refusals)
+        self.check("MU3", "MSFP Media music 5.2", "a malformed queue: a signed 400", queue_refusals)
 
         def lyrics():
             ts = tracks()
@@ -753,16 +760,16 @@ class RevisionChecks:
             try:
                 kept = keep_lyrics(a.body)
             except ValueError as e:
-                raise Fail("the viewer's server fails the fetch: %s (music 6)" % e)
+                raise Fail("the viewer's server fails the fetch: %s (MSFP Media music 6)" % e)
             bad = []
             if len(kept["structuredLyrics"]) != len(a.json.get("structuredLyrics") or []):
                 bad.append("sets dropped by the viewer's server")
             if cp["lyrics"] == "synced" and not any(all("start" in ln for ln in s["line"]) for s in kept["structuredLyrics"]):
-                bad.append("the copy says synced; no set whose lines all carry start (music 6)")
+                bad.append("the copy says synced; no set whose lines all carry start (MSFP Media music 6)")
             gone = sorted({f for x in a.json.get("structuredLyrics") or [] if isinstance(x, dict)
                            for f in ("synced", "offset", "displayArtist", "displayTitle") if f in x})
             if gone:
-                self.note_default("music 6", "%s: lyrics still send %s, dropped by proposal 17 (ignored)" % (key, ", ".join(gone)))
+                self.note_default("MSFP Media music 6", "%s: lyrics still send %s, dropped by proposal 17 (ignored)" % (key, ", ".join(gone)))
             for name, b, want in (("no versionId", {"title": key}, 400),
                                   ("a copy it doesn't have", {"title": key, "versionId": "conformance-no-such-copy"}, 404)):
                 r = c.call("lyrics", b)
@@ -773,4 +780,4 @@ class RevisionChecks:
                 raise Fail("\n".join(bad))
             return "%s: %d set(s) of lyrics kept whole; 400 without versionId, 404 for another copy" % (
                 key, len(kept["structuredLyrics"]))
-        self.check("MU4", "music 6", "lyrics: 200 as structuredLyrics, kept whole; refusals", lyrics)
+        self.check("MU4", "MSFP Media music 6", "lyrics: 200 as structuredLyrics, kept whole; refusals", lyrics)

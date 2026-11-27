@@ -1,5 +1,5 @@
-"""The media checks (spec/v0/media.md, video.md section 6, as revised by
-proposals 16 and 17): HLS complete from the first fetch and the same on
+"""The media checks (MSFP Media fetching and video 6, as MSFP's media
+and video parts carry them): HLS complete from the first fetch and the same on
 every fetch, segments, ranges, refusals and HEAD; the file by byte ranges
 (206, Content-Range against the exact size, ETag, Accept-Ranges, 416);
 WebVTT, ASS, PGS and fonts within their bounds; preview sheets under the
@@ -22,7 +22,7 @@ MALFORMED = ["bytes=0-1,5-9", "bytes=-", "bytes=5-1", "items=0-9", "bytes = 0-9"
 
 
 TEXT_FORMATS = ("subrip", "webvtt", "mov_text", "ttml", "ass", "ssa")
-PICTURE_FORMATS = ("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle")   # video 5.4's table
+PICTURE_FORMATS = ("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle")   # MSFP Media video 5.4's table
 
 
 def _x():
@@ -41,18 +41,18 @@ def audio_ids(copy):
 class StreamChecks:
 
     def head_405(self, urls):
-        """Media 2.2: HEAD on a media URL is 405 with Allow: GET, never 404."""
+        """MSFP Media fetching 2.2: HEAD on a media URL is 405 with Allow: GET, never 404."""
         bad = []
         for u in urls:
             status, hdrs, _ = self.client.get(u, method="HEAD")
             allow = _h(hdrs, "allow") or ""
             if status != 405 or "GET" not in [x.strip() for x in allow.split(",")]:
-                bad.append("HEAD %s: %d%s, not 405 with Allow: GET (media 2.2)" % (
+                bad.append("HEAD %s: %d%s, not 405 with Allow: GET (MSFP Media fetching 2.2)" % (
                     u.rsplit("/", 2)[-2] + "/" + u.rsplit("/", 1)[-1], status,
                     " with Allow %r" % allow if status == 405 else ""))
         return bad
 
-    # ---- a playback's media (media 1-4, video 6) ----------------------------------
+    # ---- a playback's media (MSFP Media fetching 1-4, MSFP Media video 6) ----------------------------------
 
     def media_checks(self, pb, title, prefix):
         Fail, Skip = _x()
@@ -77,8 +77,8 @@ class StreamChecks:
             if not variants:
                 raise Fail("the master playlist names no media playlist")
             st["variant"], st["master"] = variants[0], body
-            return "%d bytes, %d media playlist(s), the subset of media 3.1 only" % (len(body), len(variants))
-        self.check(prefix + "1", "media 3.1", "master.m3u8: 200, only the master subset, bare names", master)
+            return "%d bytes, %d media playlist(s), the subset of MSFP Media fetching 3.1 only" % (len(body), len(variants))
+        self.check(prefix + "1", "MSFP Media fetching 3.1", "master.m3u8: 200, only the master subset, bare names", master)
 
         def media_playlist():
             if "variant" not in st:
@@ -95,14 +95,14 @@ class StreamChecks:
             time.sleep(1)
             again = [fetch(base + st["variant"])[2], fetch(url)[2]]
             if again[0] != body:
-                raise Fail("%s fetched again, a second later, isn't the same playlist (media 3.1: every fetch under one "
+                raise Fail("%s fetched again, a second later, isn't the same playlist (MSFP Media fetching 3.1: every fetch under one "
                            "ticket gives the same, complete from the first)" % st["variant"])
             if again[1] != st["master"]:
-                raise Fail("master.m3u8 fetched again isn't the same (media 3.1)")
+                raise Fail("master.m3u8 fetched again isn't the same (MSFP Media fetching 3.1)")
             st["segment"], st["segments"] = segs[0], uris
             st["playlist"] = base + st["variant"]
             return "%s: complete (VOD, EXT-X-ENDLIST last), %d URIs, the same on a second fetch" % (st["variant"], len(uris))
-        self.check(prefix + "2", "media 3.1", "the media playlist: 200, complete from the first fetch and the same on "
+        self.check(prefix + "2", "MSFP Media fetching 3.1", "the media playlist: 200, complete from the first fetch and the same on "
                    "every fetch, the media subset, bare names", media_playlist)
 
         def segment():
@@ -121,7 +121,7 @@ class StreamChecks:
                 raise Fail("%s: %d" % (st["segment"], status))
             st["ranged"], st["size"] = u, len(body)
             return "%s: %d bytes" % (st["segment"], len(body))
-        self.check(prefix + "3", "media 3", "the first segment of the media playlist: 200", segment)
+        self.check(prefix + "3", "MSFP Media fetching 3", "the first segment of the media playlist: 200", segment)
 
         def refusals():
             if pb["protocol"] == "hls" and "variant" not in st:
@@ -139,14 +139,14 @@ class StreamChecks:
             for m in ("POST", "PUT", "DELETE"):
                 status, _, _ = fetch(url, (), m)
                 if status != 405:
-                    bad.append("%s: %d (media 2.2: 405)" % (m, status))
+                    bad.append("%s: %d (MSFP Media fetching 2.2: 405)" % (m, status))
             heads = [url] + [x for x in (st.get("playlist"), st.get("ranged") if st.get("ranged") != url else None) if x]
             bad += self.head_405(heads)
             if bad:
                 raise Fail("\n".join(bad))
             return "404 for a query, browser headers, an unknown ticket and name; POST, PUT, DELETE 405; HEAD 405 with " \
                    "Allow: GET on %d URL(s)" % len(heads)
-        self.check(prefix + "4", "media 1, 2, 2.2", "a query, browser headers, a ticket never given: 404; other methods "
+        self.check(prefix + "4", "MSFP Media fetching 1, 2.2; media 2", "a query, browser headers, a ticket never given: 404; other methods "
                    "and HEAD: 405", refusals)
 
         def range_on_playlist():
@@ -154,9 +154,9 @@ class StreamChecks:
                 raise Skip("a file stream")
             status, hdrs, body = fetch(url, [("Range", "bytes=0-9")])
             if status != 200:
-                raise Fail("a Range on master.m3u8 gave %d; media 2.1: the owning server ignores it and sends the whole" % status)
+                raise Fail("a Range on master.m3u8 gave %d; MSFP Media fetching 2.1: the owning server ignores it and sends the whole" % status)
             return "200, the whole playlist"
-        self.check(prefix + "5", "media 2.1", "a Range on a playlist is ignored: 200 and the whole", range_on_playlist)
+        self.check(prefix + "5", "MSFP Media fetching 2.1", "a Range on a playlist is ignored: 200 and the whole", range_on_playlist)
         self.range_checks(prefix + "9", st, copy if pb["protocol"] == "file" else None)
 
         if not video_key(title):
@@ -168,7 +168,7 @@ class StreamChecks:
             if not isinstance(tp, dict):
                 raise Skip("the copy playing has no previewLayout in the catalog")
             return self.sheet_check(base, tp) + " (the playback's ticket opens its copy's sheets, with no previews call)"
-        self.check(prefix + "8", "video 5.5, 6.1, 6.2, media 3.4", "a preview sheet under the playback's ticket: 200 "
+        self.check(prefix + "8", "MSFP Media video 5.5, 6.1, 6.2; MSFP Media fetching 3.4", "a preview sheet under the playback's ticket: 200 "
                    "image/jpeg within the catalog's layout; 404 past the count", sheets)
 
         def names():
@@ -200,10 +200,10 @@ class StreamChecks:
                     bad.append("%s (%s): %d, not 404" % (name, what, status))
                 out.append(name)
             if bad:
-                raise Fail("\n".join(bad) + "\n(video 6.1, media 1: the owning server serves exactly the names built "
+                raise Fail("\n".join(bad) + "\n(MSFP Media video 6.1, MSFP Media fetching 1: the owning server serves exactly the names built "
                            "from the answer and the catalog, and 404 past a count)")
             return "404 for %d names past the answer's counts: %s" % (len(out), ", ".join(out))
-        self.check(prefix + "10", "video 6.1, media 1", "the names built from the ticket: 404 past fontCount, the sheet "
+        self.check(prefix + "10", "MSFP Media video 6.1; MSFP Media fetching 1", "the names built from the ticket: 404 past fontCount, the sheet "
                    "count, and for a track not served apart in that form", names)
 
     def sheet_check(self, base, tp):
@@ -236,7 +236,7 @@ class StreamChecks:
         return "sheet 0: %dx%d JPEG, %d bytes; 404 past the count, with a leading zero, with a query; HEAD 405" % (
             size[0], size[1], len(body))
 
-    # ---- subtitles and fonts (video 5.3, 6.1 to 6.6) --------------------------------------
+    # ---- subtitles and fonts (MSFP Media video 5.3, 6.1 to 6.6) --------------------------------------
 
     def subtitle_checks(self, pb, title, prefix):
         Fail, Skip = _x()
@@ -244,7 +244,7 @@ class StreamChecks:
 
         def tracks_of(j):
             """The subtitle tracks served apart, each with its URLs built from
-            the ticket (video 6.1)."""
+            the ticket (MSFP Media video 6.1)."""
             out = []
             for x in j.get("subtitles", []):
                 t = dict(x, url=j["base"] + ("subtitles/" if x["form"] == "text" else "pictures/") + x["id"])
@@ -323,9 +323,9 @@ class StreamChecks:
                 try:
                     again = rebuild_vtt(body, whole)
                 except Refused as e:
-                    raise Fail("%s of %s is refused by video 6.3: %s" % (part, t["id"], e))
+                    raise Fail("%s of %s is refused by MSFP Media video 6.3: %s" % (part, t["id"], e))
                 if again != body:
-                    raise Fail("%s of %s isn't in the rebuilt form video 6.3 writes (the owning server applies the rules "
+                    raise Fail("%s of %s isn't in the rebuilt form MSFP Media video 6.3 writes (the owning server applies the rules "
                                "to what it serves): %r..." % (part, t["id"], body[:120]))
                 ct = _h(hdrs, "content-type") or ""
                 if not ct.lower().replace(" ", "").startswith("text/vtt"):
@@ -335,7 +335,7 @@ class StreamChecks:
             if bad:
                 raise Fail("\n".join(bad))
             return "%s: part %s, in their rebuilt form; HEAD 405" % (t["id"], " and ".join(out))
-        later(prefix + "6", "video 6.2, 6.3, media 3.4", "a text subtitle track, part 0 and whole: 200 text/vtt, already in "
+        later(prefix + "6", "MSFP Media video 6.2, 6.3; MSFP Media fetching 3.4", "a text subtitle track, part 0 and whole: 200 text/vtt, already in "
               "its rebuilt form", with_track("subtitles", "text track with a url", text_part), "subtitles")
 
         def pgs_part(t):
@@ -345,12 +345,12 @@ class StreamChecks:
             try:
                 check_pgs(body)
             except Refused as e:
-                raise Fail("part 0 of %s fails video 6.5: %s" % (t["id"], e))
+                raise Fail("part 0 of %s fails MSFP Media video 6.5: %s" % (t["id"], e))
             s2, _, _ = c.get(t["url"] + "/whole")
             if s2 != 404:
-                raise Fail("%s/whole: %d (media 3.4: picture tracks come in stretches only)" % (t["id"], s2))
+                raise Fail("%s/whole: %d (MSFP Media fetching 3.4: picture tracks come in stretches only)" % (t["id"], s2))
             return "%s part 0: %d bytes of valid PGS; no whole picture track" % (t["id"], len(body))
-        later(prefix + "7", "video 6.2, 6.5, media 3.4", "a picture subtitle part: 200, every segment and object checked",
+        later(prefix + "7", "MSFP Media video 6.2, 6.5; MSFP Media fetching 3.4", "a picture subtitle part: 200, every segment and object checked",
               with_track("pictures", "picture track with a url", pgs_part), "pictures")
 
         def ass_part(t):
@@ -362,15 +362,15 @@ class StreamChecks:
                 try:
                     again = rebuild_ass(body, whole)
                 except Refused as e:
-                    raise Fail("ASS %s of %s is refused by video 6.4: %s" % (part, t["id"], e))
+                    raise Fail("ASS %s of %s is refused by MSFP Media video 6.4: %s" % (part, t["id"], e))
                 if again != body:
-                    raise Fail("ASS %s of %s isn't in the rebuilt form video 6.4 writes: %r..." % (part, t["id"], body[:120]))
+                    raise Fail("ASS %s of %s isn't in the rebuilt form MSFP Media video 6.4 writes: %r..." % (part, t["id"], body[:120]))
                 ct = _h(hdrs, "content-type") or ""
                 if not ct.lower().replace(" ", "").startswith("text/x-ass"):
                     raise Fail("ASS %s/%s: Content-Type %r, not text/x-ass; charset=utf-8" % (t["id"], part, ct))
                 out.append("%s %d bytes" % (part, len(body)))
             return "%s as ASS: part %s, in their rebuilt form" % (t["id"], " and ".join(out))
-        later(prefix + "11", "video 6.4, media 3.4", "an ASS track, part 0 and whole: 200 text/x-ass, already in its "
+        later(prefix + "11", "MSFP Media video 6.4; MSFP Media fetching 3.4", "an ASS track, part 0 and whole: 200 text/x-ass, already in its "
               "rebuilt form", with_track("ass", "ASS or SSA track with an assUrl", ass_part), "ass")
 
         def fonts():
@@ -387,7 +387,7 @@ class StreamChecks:
                 try:
                     typ = check_font(body)
                 except Refused as e:
-                    bad.append("font %d: %s (video 6.6)" % (i, e))
+                    bad.append("font %d: %s (MSFP Media video 6.6)" % (i, e))
                     continue
                 ct = (_h(hdrs, "content-type") or "").split(";")[0].strip().lower()
                 if ct != typ:
@@ -395,22 +395,22 @@ class StreamChecks:
                 out.append("%s %d bytes" % (typ, len(body)))
                 total += len(body)
             if total > 64 * 1024 * 1024:
-                bad.append("the copy's fonts hold %d bytes in all, over 64 MiB (video 6.6)" % total)
+                bad.append("the copy's fonts hold %d bytes in all, over 64 MiB (MSFP Media video 6.6)" % total)
             s2, _, _ = c.get(pb["base"] + "fonts/%d" % len(fs))
             if s2 != 404:
-                bad.append("fonts/%d, at fontCount: %d, not 404 (video 6.1)" % (len(fs), s2))
+                bad.append("fonts/%d, at fontCount: %d, not 404 (MSFP Media video 6.1)" % (len(fs), s2))
             if bad:
                 raise Fail("\n".join(bad))
             return "%d font(s): %s" % (len(out), ", ".join(out))
-        self.check(prefix + "12", "video 6.1, 6.6, media 3.4, 2.4", "fonts 0 to fontCount - 1: TrueType or OpenType, each "
+        self.check(prefix + "12", "MSFP Media video 6.1, 6.6; MSFP Media fetching 3.4, 2.4", "fonts 0 to fontCount - 1: TrueType or OpenType, each "
                    "within 10 MiB, 64 MiB in all; 404 at fontCount",
                    fonts)
 
-    # ---- ranges, on a segment or the file (media 2.1, 3.2) ---------------------------------
+    # ---- ranges, on a segment or the file (MSFP Media fetching 2.1, 3.2) ---------------------------------
 
     def range_checks(self, cid, st, copy=None):
-        """Media 2.1 on a segment, or on the file (copy: its catalog entry,
-        whose size and etag every answer must give, media 3.2)."""
+        """media 2.1 on a segment, or on the file (copy: its catalog entry,
+        whose size and etag every answer must give, MSFP Media fetching 3.2)."""
         Fail, Skip = _x()
 
         def ranges():
@@ -427,14 +427,14 @@ class StreamChecks:
                 why = check_file_answer(rng, size, etag, status, _h(hdrs, "etag"), _h(hdrs, "content-range"),
                                         _h(hdrs, "content-length"))
                 if why:
-                    bad.append("%s: %s (media 3.2)" % (rng, why))
+                    bad.append("%s: %s (MSFP Media fetching 3.2)" % (rng, why))
                 if (_h(hdrs, "accept-ranges") or "").strip() != "bytes":
-                    bad.append("%s: Accept-Ranges %r, not bytes (media 3.2)" % (rng, _h(hdrs, "accept-ranges")))
+                    bad.append("%s: Accept-Ranges %r, not bytes (MSFP Media fetching 3.2)" % (rng, _h(hdrs, "accept-ranges")))
             status, hdrs, body = c.get(u, [("Range", "bytes=0-99")])
             if status == 200 and copy is None:
-                return (PASS, "a 200 with the whole to bytes=0-99 (allowed for a segment: media 2.1); ranges not served")
+                return (PASS, "a 200 with the whole to bytes=0-99 (allowed for a segment: MSFP Media fetching 2.1); ranges not served")
             if status != 206:
-                raise Fail("bytes=0-99: %d%s" % (status, " (media 2.1: the file answers a satisfiable Range with 206)"
+                raise Fail("bytes=0-99: %d%s" % (status, " (MSFP Media fetching 2.1: the file answers a satisfiable Range with 206)"
                                                  if copy else ""))
             why = check_206("", hdrs, body, first=0, last=99)
             if why:
@@ -463,17 +463,17 @@ class StreamChecks:
                 if s2 != 416:
                     bad.append("%s: %d, not 416" % (form, s2))
                 elif copy is not None and (_h(h2, "content-range") or "").strip() != "bytes */%d" % size:
-                    bad.append("%s: 416 with Content-Range %r, not bytes */%d (media 2.1)" % (form, _h(h2, "content-range"), size))
+                    bad.append("%s: 416 with Content-Range %r, not bytes */%d (MSFP Media fetching 2.1)" % (form, _h(h2, "content-range"), size))
             if bad:
                 raise Fail("\n".join(bad))
             return "206s that answer bytes=0-99, -10, 5-, 000-009, past the end%s; 416 for %d malformed or unsatisfiable " \
                    "ranges%s" % (" with Accept-Ranges, the ETag and the exact size" if copy else "", len(malformed),
                                  ", with bytes */<size>" if copy else "")
-        self.check(cid, "media 2.1%s" % (", 3.2" if copy else ""), "ranges: the three forms give a matching 206; "
+        self.check(cid, "MSFP Media fetching 2.1%s" % (", 3.2" if copy else ""), "ranges: the three forms give a matching 206; "
                    "malformed or past the end give 416", ranges)
 
     def file_checks(self, pb, copy, prefix="F"):
-        """The file of a delivery file (media 3.2): F1 the whole, F2 ranges,
+        """The file of a delivery file (MSFP Media fetching 3.2): F1 the whole, F2 ranges,
         F3 stable bytes, F4 HEAD and conditional headers."""
         Fail, Skip = _x()
         c = self.client
@@ -495,7 +495,7 @@ class StreamChecks:
                 raise Fail("\n".join(bad))
             st["body"] = body
             return "200 without Range: %d bytes, the catalog's exact size; ETag \"%s\"; Accept-Ranges: bytes" % (size, etag)
-        self.check(prefix + "1", "media 3.2, video 3.2", "the file without Range: 200, the catalog's size, ETag and "
+        self.check(prefix + "1", "MSFP Media fetching 3.2; MSFP Media video 3.2", "the file without Range: 200, the catalog's size, ETag and "
                    "Accept-Ranges", whole)
         self.range_checks(prefix + "2", st, copy)
 
@@ -506,7 +506,7 @@ class StreamChecks:
                 raise Fail("two ranges: %d, %d" % (a[0], b[0]))
             bad = []
             if a[2][100:200] != b[2][:100]:
-                bad.append("bytes 100 to 199 differ between bytes=0-199 and bytes=100-299 (media 3.2: stable bytes)")
+                bad.append("bytes 100 to 199 differ between bytes=0-199 and bytes=100-299 (MSFP Media fetching 3.2: stable bytes)")
             if "body" in st and st["body"][:200] != a[2]:
                 bad.append("bytes=0-199 aren't the whole file's first 200 bytes")
             t = c.get(u, [("Range", "bytes=-16")])
@@ -515,16 +515,16 @@ class StreamChecks:
             if bad:
                 raise Fail("\n".join(bad))
             return "overlapping ranges, the head and the tail give the same bytes"
-        self.check(prefix + "3", "media 3.2", "stable bytes: overlapping ranges agree", stable)
+        self.check(prefix + "3", "MSFP Media fetching 3.2", "stable bytes: overlapping ranges agree", stable)
 
         def methods():
             bad = self.head_405([u])
             s, h, _ = c.get(u, [("Range", "bytes=0-9"), ("If-None-Match", '"%s"' % etag)])
             if s != 206:
-                bad.append("bytes=0-9 with If-None-Match the etag: %d, not 206 (media 2: conditional headers ignored)" % s)
+                bad.append("bytes=0-9 with If-None-Match the etag: %d, not 206 (MSFP Media fetching 2: conditional headers ignored)" % s)
             s, h, _ = c.get(u, [("Range", "bytes=0-9"), ("If-Range", '"conformance-another-etag"')])
             if s != 206:
-                bad.append("bytes=0-9 with If-Range another etag: %d, not 206 (media 2: ignored)" % s)
+                bad.append("bytes=0-9 with If-Range another etag: %d, not 206 (MSFP Media fetching 2: ignored)" % s)
             for m in ("POST", "PUT"):
                 s, _, _ = c.get(u, method=m)
                 if s != 405:
@@ -532,4 +532,4 @@ class StreamChecks:
             if bad:
                 raise Fail("\n".join(bad))
             return "HEAD 405 with Allow: GET; If-None-Match and If-Range ignored; POST and PUT 405"
-        self.check(prefix + "4", "media 2, 2.2", "the file: HEAD and other methods 405; conditional headers ignored", methods)
+        self.check(prefix + "4", "MSFP Media fetching 2, 2.2", "the file: HEAD and other methods 405; conditional headers ignored", methods)

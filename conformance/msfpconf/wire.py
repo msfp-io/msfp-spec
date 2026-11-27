@@ -277,7 +277,7 @@ def check_base(s):
 
 
 def check_media_name(s):
-    """A file or track name of media 1, or None when valid."""
+    """A file or track name of MSFP Media fetching 1, or None when valid."""
     if not isinstance(s, str) or s in (".", "..") or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", s):
         return "not 1 to 64 characters of A-Z a-z 0-9 . _ - (or . or ..)"
     return None
@@ -754,7 +754,7 @@ class Client:
         return self.raw(path, body, self.headers(path, body, key=key, **kw), keys=keys)
 
     def get(self, url, headers=(), method="GET", limit=80 * 1024 * 1024):
-        """A media fetch (media 2): a plain GET, unsigned, needing a trusted
+        """A media fetch (MSFP Media fetching 2): a plain GET, unsigned, needing a trusted
         or named certificate. Returns (status, headers, body)."""
         u = urllib.parse.urlsplit(url)
         if "%s://%s" % (u.scheme, u.netloc) != self.address:
@@ -776,7 +776,7 @@ class Client:
     def get_timed(self, url, headers=(), seconds=12.0, limit=80 * 1024 * 1024):
         """A media fetch read for at most `seconds`: (status, headers,
         [(time since the request, bytes read so far), ...]), the body
-        dropped; for measuring a paced download (playback 7)."""
+        dropped; for measuring a paced download (MSFP Media playing 6)."""
         u = urllib.parse.urlsplit(url)
         if "%s://%s" % (u.scheme, u.netloc) != self.address:
             raise ValueError("%s isn't under the server's address %s" % (url, self.address))

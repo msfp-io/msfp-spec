@@ -1,20 +1,29 @@
 package main
 
-// The playback part's data rules (spec/v0/playback.md, with video sections
-// 5.1 and 5.3's members and media section 1's URLs), as a viewer's server
-// and an owning server apply them:
+// The rules of playing (MSFP Media's playing.md, with its video sections
+// 5.1 and 5.3's members and fetching section 1's URLs), as MSFP's
+// playback part carries them between servers (spec/v0/playback.md: the
+// purpose scan, no capability list, the pairing's limits), as a
+// viewer's server (the caller) and an owning server (the source) apply
+// them:
 //
 //   - playbackPlay: an owning server's checks of a play request, in the
-//     order of section 2.2, against the copies and limits of a context;
-//     playbackQueueEntry the same for one entry of a queue;
+//     order of playing section 2.2, against the copies and limits of a
+//     context; playbackQueueEntry the same for one entry of a queue;
 //   - playbackKeepAnswer: what a viewer's server keeps of a play answer
-//     (section 2.3, video section 5.3), and the URLs it builds from the
-//     ticket (media section 1);
+//     (playing section 2.3, MSFP Media video section 5.3), and the URLs it
+//     builds from the ticket (fetching section 1);
+//   - playbackReadRefusal: what a viewer's server does with a play
+//     refused (playing section 2.5, MSFP Media base section 4, MSFP
+//     MSFP Media playing section 2);
 //   - playbackRestart: whether a viewer's server may join the bytes of a
-//     new playback to a file it was reading (section 2.7);
+//     new playback to a file it was reading (playing section 2.7);
 //   - playbackReport: an owning server's answer to progress and stop
-//     (sections 3, 4, 6.1 and 7);
-//   - playbackKeepLimits: what a caller keeps of limits (section 5).
+//     (playing sections 3 to 6);
+//   - playbackKeepLimits: what a caller keeps of limits (MSFP playback
+//     section 5).
+//
+// A section named alone is playing's.
 
 import (
 	"bytes"
@@ -27,7 +36,8 @@ import (
 	"strings"
 )
 
-// The protocol's own lists and steps (playback sections 2.1 and 2.7).
+// The language's own lists and steps (playing sections 2.1 and 2.7), with
+// MSFP's purpose scan (MSFP playback section 2).
 var (
 	playbackPurposes         = []string{"play", "download", "scan"}
 	playbackDeliveries       = []string{"file", "remux", "transcode"}
@@ -47,7 +57,9 @@ const (
 	playbackLateWindow    = 30 * 86400
 	playbackDownloadTTL   = 86400
 	playbackScanTTL       = 600
-	playbackIdleSeconds   = 120
+	playbackProgressLow   = 45 // progressSeconds (playing section 2.3, 3)
+	playbackProgressHigh  = 120
+	playbackProgressDef   = 60
 	playbackMaxStreams    = 1000
 	playbackScanFloor     = 4 << 20 // scanBytes absent or out of range
 	playbackScanTop       = 1 << 30
@@ -61,7 +73,7 @@ var (
 	playbackSubForm    = regexp.MustCompile(`^s(0|[1-9][0-9]{0,2})$`)
 	playbackTicketForm = `[A-Za-z0-9_-]{1,64}`
 
-	// Title keys (video section 4, music section 2).
+	// Title keys (MSFP Media video section 4, MSFP Media music section 2).
 	pbID      = `([1-9][0-9]{0,9})`
 	pbOpaque  = `[A-Za-z0-9_-]{1,64}`
 	pbSeason  = `/s(0|[1-9][0-9]{0,3})`
@@ -142,7 +154,7 @@ func playbackDecode(raw []byte) (map[string]any, error) {
 	return o, nil
 }
 
-// playbackInt reads an MSFP integer (core section 2.3).
+// playbackInt reads an integer (MSFP Media base section 2.2).
 func playbackInt(v any) (int64, bool) {
 	n, ok := v.(json.Number)
 	if !ok || checkInteger(n.String()) != nil {
@@ -166,14 +178,14 @@ func playbackEncode(v any) []byte {
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 }
 
-// The protocol's own steps of a transcode (playback section 2.7): copy
-// and the range are MSFP's, not registry tokens.
+// The language's own steps of a transcode (playing section 2.7): copy
+// and the range are the language's, not registry tokens.
 const playbackCopyStep = "copy"
 
 var playbackRanges = []string{"sdr", "keep"}
 
-// playbackTargets is a transcode object as read (playback section 2.7,
-// video section 5.1); the output gives the baseline's values for targets
+// playbackTargets is a transcode object as read (playing section 2.7,
+// MSFP Media video section 5.1); the output gives the baseline's values for targets
 // left out (maxHeight left out: the copy's own height), and drops those
 // a copied stream, or a copy with no video, doesn't take.
 type playbackTargets struct {
@@ -189,7 +201,8 @@ type playbackTargets struct {
 }
 
 // playbackReadTargets reads a transcode object at step 1: codecs and the
-// range must be tokens (an unknown one is refused at step 7, 409),
+// range must be tokens (an unknown one is refused at step 7, 409
+// target-refused),
 // numbers of their steps. burnSubtitle is checked at step 4.
 func playbackReadTargets(v any) (playbackTargets, error) {
 	var t playbackTargets
@@ -204,7 +217,7 @@ func playbackReadTargets(v any) (playbackTargets, error) {
 		}
 		s, ok := raw.(string)
 		if !ok || !openToken(s) {
-			return pbBad("transcode.%s isn't a token (core section 8.5)", name)
+			return pbBad("transcode.%s isn't a token (MSFP Media base section 3)", name)
 		}
 		*dst = s
 		return nil
@@ -245,8 +258,8 @@ func playbackReadTargets(v any) (playbackTargets, error) {
 // The owning server's context: its copies, the encoders it has, the
 // pairing's limits, what is in use.
 
-// playbackColour is a stream's colour as H.273 code points (video
-// section 3.3); 0 for a member left out.
+// playbackColour is a stream's colour as H.273 code points (MSFP Media
+// MSFP Media video section 3.3); 0 for a member left out.
 type playbackColour struct {
 	Primaries int64 `json:"primaries,omitempty"`
 	Transfer  int64 `json:"transfer,omitempty"`
@@ -293,12 +306,13 @@ type playbackLimits struct {
 }
 
 type playbackUse struct {
-	Streams              int64 `json:"streams"`
-	Transcodes           int64 `json:"transcodes"`
-	Downloads            int64 `json:"downloads"`
-	DownloadsToday       int64 `json:"downloadsToday"`
-	ScansToday           int64 `json:"scansToday"`
-	ServerTranscodesFree int64 `json:"serverTranscodesFree"`
+	Streams              int64          `json:"streams"`
+	Transcodes           int64          `json:"transcodes"`
+	Downloads            int64          `json:"downloads"`
+	DownloadsToday       int64          `json:"downloadsToday"`
+	ScansToday           int64          `json:"scansToday"`
+	ServerTranscodesFree int64          `json:"serverTranscodesFree"`
+	Live                 []playbackLive `json:"live,omitempty"`
 }
 
 type playbackContext struct {
@@ -309,6 +323,9 @@ type playbackContext struct {
 	SegmentCodecs map[string][]string       `json:"segmentCodecs"`
 	OwnCapKbps    int64                     `json:"ownCapKbps"`
 	ScanBytes     int64                     `json:"scanBytes"`
+	Progress      int64                     `json:"progressSeconds"`
+	Gone          []string                  `json:"gone"`
+	Unreachable   []string                  `json:"unreachable"`
 	Limits        playbackLimits            `json:"limits"`
 	InUse         playbackUse               `json:"inUse"`
 	StreamRoot    string                    `json:"streamRoot"`
@@ -340,8 +357,21 @@ type playbackStarted struct {
 	Counts          string              `json:"counts"`
 	Transcodes      string              `json:"transcodes,omitempty"`
 	TicketSeconds   int64               `json:"ticketSeconds,omitempty"`
+	ProgressSeconds int64               `json:"progressSeconds,omitempty"`
 	IdleSeconds     int64               `json:"idleSeconds,omitempty"`
 	ScanBytes       int64               `json:"scanBytes,omitempty"`
+	Replaces        string              `json:"replaces,omitempty"`
+}
+
+// playbackLive is one of the caller's live playbacks, which the case's
+// inUse counts: its ID, its purpose, and whether it holds a transcode
+// (of the pairing's and of the server's budget; a download's, of the
+// budget only). A play that replaces it is counted as if it had ended
+// (playing sections 2.2 step 8 and 2.3; MSFP playback section 6).
+type playbackLive struct {
+	ID        string `json:"id"`
+	Purpose   string `json:"purpose"`
+	Transcode bool   `json:"transcode,omitempty"`
 }
 
 // playbackPickCopy is the copy versionId names, else the first
@@ -429,11 +459,13 @@ func playbackAllowed(purpose, delivery string, t *playbackTargets) bool {
 	return false
 }
 
-// playbackRequestMembers are the members of a play request playback and
-// video define; any other is unknown, and ignored whatever it holds.
-var playbackRequestMembers = []string{"title", "purpose", "delivery", "mediaType", "transcode", "audioRenditions", "startPositionMs", "maxBitrateKbps", "versionId", "audioTrack"}
+// playbackRequestMembers are the members of a play request playing and
+// video define (but capabilities, which MSFP refuses whatever it holds);
+// any other is unknown, and ignored whatever it holds.
+var playbackRequestMembers = []string{"title", "purpose", "delivery", "mediaType", "transcode", "audioRenditions", "startPositionMs", "maxBitrateKbps", "versionId", "audioTrack", "replaces"}
 
-// playbackPlay applies section 2.2, steps 1 to 9, to a play request.
+// playbackPlay applies playing section 2.2, steps 1 to 9, to a play
+// request, as MSFP carries it.
 func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw []byte) ([]byte, error) {
 	o, err := playbackDecode(raw)
 	if err != nil {
@@ -448,7 +480,12 @@ func playbackPlay(ctx playbackContext, lim playbackLimits, use playbackUse, raw 
 
 func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o map[string]any) (playbackStarted, error) {
 	var s playbackStarted
-	// Step 1: forms, types, ranges, combinations.
+	// Step 1: forms, types, ranges, combinations. MSFP takes no capability
+	// list (MSFP playback section 2; playing section 2.8): refused,
+	// whatever it holds.
+	if _, present := o["capabilities"]; present {
+		return s, pbBad("capabilities: MSFP takes no capability list")
+	}
 	for _, name := range playbackRequestMembers {
 		if v, present := o[name]; present && v == nil {
 			return s, pbBad("%s is null", name)
@@ -493,7 +530,7 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 		return s, err
 	} else if present {
 		if !openToken(d) {
-			return s, pbBad("delivery %q isn't a token (core section 8.5)", d)
+			return s, pbBad("delivery %q isn't a token (MSFP Media base section 3)", d)
 		}
 		unknownDelivery = !slices.Contains(playbackDeliveries, d)
 		s.Delivery = d
@@ -505,7 +542,7 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 			return s, pbBad("mediaType without delivery remux")
 		}
 		if !openMediaType(m) {
-			return s, pbBad("mediaType %q isn't a media type (core section 8.5)", m)
+			return s, pbBad("mediaType %q isn't a media type (MSFP Media base section 3)", m)
 		}
 		s.MediaType = m
 	} else if s.Delivery == "remux" {
@@ -559,6 +596,13 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 	if err != nil {
 		return s, err
 	}
+	replaces, hasReplaces, err := text("replaces")
+	if err != nil {
+		return s, err
+	}
+	if hasReplaces && !playbackIDForm.MatchString(replaces) {
+		return s, pbBad("replaces isn't of a playback ID's form")
+	}
 	// An unknown delivery is answered at step 7, whatever the purpose.
 	if !unknownDelivery && !playbackAllowed(s.Purpose, s.Delivery, s.Transcode) {
 		d := s.Delivery
@@ -576,9 +620,13 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 	case s.Purpose == "scan" && lim.ScansPerDay == 0:
 		return s, pbRefuse(409, "stream-limit-reached", "scansPerDay is 0")
 	}
-	// Step 3: copies of that exact key.
+	// Step 3: copies of that exact key; gone when it held the title for
+	// this caller and no longer does.
 	copies := ctx.Copies[title]
 	if len(copies) == 0 {
+		if slices.Contains(ctx.Gone, title) {
+			return s, pbRefuse(404, "gone", "the title was offered to this caller, and is no longer held")
+		}
 		return s, pbRefuse(404, "not-found", "no copy of that key is offered")
 	}
 	// Step 4: the copy, then malformed track IDs and burnSubtitle.
@@ -596,13 +644,41 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 	s.VersionID = c.ID
 	audio, _ := playbackPickAudio(c, audioTrack)
 	s.AudioTrack = audio.ID
+	// A replaces naming a live playback of this caller: the limits are
+	// checked as if it had ended (steps 5 and 8); one naming none is
+	// ignored.
+	if hasReplaces {
+		for _, old := range use.Live {
+			if old.ID != replaces {
+				continue
+			}
+			s.Replaces = old.ID
+			switch old.Purpose {
+			case "play":
+				use.Streams--
+				if old.Transcode {
+					use.Transcodes--
+				}
+			case "download":
+				use.Downloads-- // the day's count stays
+			}
+			if old.Transcode {
+				use.ServerTranscodesFree++
+			}
+		}
+	}
+	// The interval the answer states, and the idle limit, twice it.
+	progress := ctx.Progress
+	if progress < playbackProgressLow || progress > playbackProgressHigh {
+		progress = playbackProgressDef
+	}
 	// Step 5: the purpose's limits in use.
 	switch s.Purpose {
 	case "play":
 		if use.Streams >= lim.Streams {
 			return s, pbRefuse(409, "stream-limit-reached", "the pairing's streams are all in use")
 		}
-		s.Counts, s.IdleSeconds = "streams", playbackIdleSeconds
+		s.Counts, s.ProgressSeconds, s.IdleSeconds = "streams", progress, 2*progress
 	case "download":
 		if use.Downloads >= lim.Downloads {
 			return s, pbRefuse(409, "stream-limit-reached", "the pairing's downloads are all in use")
@@ -616,7 +692,7 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 		if use.ScansToday >= lim.ScansPerDay {
 			return s, pbRefuse(409, "stream-limit-reached", "scansPerDay reached")
 		}
-		s.Counts, s.TicketSeconds, s.IdleSeconds, s.ScanBytes = "scansPerDay", playbackScanTTL, playbackIdleSeconds, ctx.ScanBytes
+		s.Counts, s.TicketSeconds, s.ProgressSeconds, s.IdleSeconds, s.ScanBytes = "scansPerDay", playbackScanTTL, progress, 2*progress, ctx.ScanBytes
 	}
 	// Step 6: the bitrate cap, for play only; with none, no cap.
 	if s.Purpose == "play" {
@@ -630,10 +706,14 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 			}
 		}
 	}
-	// Step 7: the delivery asked, or a refusal.
+	// Step 7: the delivery asked, or a refusal: delivery-refused for the
+	// delivery as such, target-refused for a target it doesn't make.
 	hasVideo := c.Video != nil
 	refuse := func(why string) (playbackStarted, error) {
 		return s, pbRefuse(409, "delivery-refused", why)
+	}
+	target := func(why string) (playbackStarted, error) {
+		return s, pbRefuse(409, "target-refused", why)
 	}
 	if unknownDelivery {
 		return refuse("a delivery the owning server doesn't make")
@@ -645,17 +725,17 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 			want = "audio"
 		}
 		if sub != "mp2t" && sub != "mp4" {
-			return refuse("a remux to a media type of another subtype than mp2t or mp4")
+			return target("a remux to a media type of another subtype than mp2t or mp4")
 		}
 		if top != want {
-			return refuse("a remux to " + top + "/" + sub + " of a copy that calls for " + want + "/")
+			return target("a remux to " + top + "/" + sub + " of a copy that calls for " + want + "/")
 		}
 		streams := []string{audio.Codec}
 		if hasVideo {
 			streams = append(streams, c.Video.Codec)
 		}
 		if !playbackCarried(ctx, sub, streams...) {
-			return refuse("a remux to a segment format that can't carry the copy's streams")
+			return target("a remux to a segment format that can't carry the copy's streams")
 		}
 	}
 	videoCopy, audioCopy := false, false
@@ -663,12 +743,12 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 		if hasVideo && t.VideoCodec == playbackCopyStep {
 			videoCopy = true
 		} else if hasVideo && t.VideoCodec != "" && !slices.Contains(ctx.VideoEncoders, t.VideoCodec) {
-			return refuse("a video codec the owning server doesn't encode")
+			return target("a video codec the owning server doesn't encode")
 		}
 		if t.AudioCodec == playbackCopyStep {
 			audioCopy = true
 		} else if t.AudioCodec != "" && !slices.Contains(ctx.AudioEncoders, t.AudioCodec) {
-			return refuse("an audio codec the owning server doesn't encode")
+			return target("an audio codec the owning server doesn't encode")
 		}
 		var copied []string
 		if videoCopy {
@@ -678,17 +758,17 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 			copied = append(copied, audio.Codec)
 		}
 		if len(copied) > 0 && !playbackCarried(ctx, "mp2t", copied...) && !playbackCarried(ctx, "mp4", copied...) {
-			return refuse("a copied stream no segment format can carry")
+			return target("a copied stream no segment format can carry")
 		}
 		if videoCopy && t.BurnSubtitle != "" {
-			return refuse("burnSubtitle with video copy")
+			return target("burnSubtitle with video copy")
 		}
 		if hasVideo && !videoCopy && t.Range != "" {
 			if !slices.Contains(playbackRanges, t.Range) {
-				return refuse("a range other than sdr or keep")
+				return target("a range other than sdr or keep")
 			}
 			if !slices.Contains(ctx.Ranges, t.Range) {
-				return refuse("a range the owning server can't make")
+				return target("a range the owning server can't make")
 			}
 		}
 	}
@@ -700,7 +780,7 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 		return refuse("the copy's overall rate is above the cap")
 	}
 	if s.Transcode != nil && s.Transcode.BurnSubtitle != "" && !slices.Contains(c.Subtitles, s.Transcode.BurnSubtitle) {
-		return refuse("burnSubtitle isn't a subtitle track of the copy")
+		return target("burnSubtitle isn't a subtitle track of the copy")
 	}
 	// Targets left out take the baseline's values (maxHeight: the copy's
 	// own height, left out); a copied stream, and a copy with no video,
@@ -752,7 +832,10 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 		}
 		s.Baseline = b
 	}
-	// Step 8: transcodes.
+	// Step 8: the media reached, then transcodes.
+	if slices.Contains(ctx.Unreachable, title) {
+		return s, pbRefuse(503, "unreachable", "the copy's media can't be reached now")
+	}
 	if needsTranscode {
 		if s.Purpose == "play" && use.Transcodes >= lim.Transcodes {
 			return s, pbRefuse(503, "server-busy", "the pairing's transcodes are all in use, or 0")
@@ -768,7 +851,7 @@ func playbackStart(ctx playbackContext, lim playbackLimits, use playbackUse, o m
 	return s, nil
 }
 
-// Queue entries (playback section 2.1, music section 5.2): an entry may
+// Queue entries (playing section 2.1, MSFP Media music section 5.2): an entry may
 // name its own copy and delivery.
 
 // playbackQueueEntryMembers are what an entry may carry of a request.
@@ -815,13 +898,15 @@ func playbackQueueEntry(ctx playbackContext, lim playbackLimits, use playbackUse
 	if err != nil {
 		return nil, err
 	}
-	s.Counts, s.IdleSeconds = "", 0 // the playback counts once, under the request
+	s.Counts, s.ProgressSeconds, s.IdleSeconds, s.Replaces = "", 0, 0, "" // the playback counts once, under the request
 	return playbackEncode(s), nil
 }
 
-// The answer (section 2.3, video section 5.3), as a viewer's server keeps it.
+// The answer (playing section 2.3, MSFP Media video section 5.3), as a
+// viewer's server keeps it.
 
-// playbackSubtitle is an entry of the answer's subtitles (video section 5.3).
+// playbackSubtitle is an entry of the answer's subtitles (MSFP Media video
+// section 5.3).
 type playbackSubtitle struct {
 	ID   string `json:"id"`
 	Form string `json:"form"`
@@ -839,6 +924,7 @@ type playbackAnswer struct {
 	AudioTrack      string             `json:"audioTrack,omitempty"`
 	AudioRenditions bool               `json:"audioRenditions,omitempty"`
 	MaxBitrateKbps  *int64             `json:"maxBitrateKbps,omitempty"`
+	ProgressSeconds int64              `json:"progressSeconds"`
 	ScanBytes       int64              `json:"scanBytes,omitempty"`
 	Subtitles       []playbackSubtitle `json:"subtitles,omitempty"`
 	FontCount       int64              `json:"fontCount,omitempty"`
@@ -859,7 +945,7 @@ type playbackAsked struct {
 }
 
 // playbackKeepAnswer checks and cleans a play answer, and builds the URLs
-// it opens from the stream root and the ticket (media section 1). An
+// it opens from the stream root and the ticket (fetching section 1). An
 // error means the viewer's server stops that playback and gives up.
 func playbackKeepAnswer(raw []byte, ask playbackAsked, root string) ([]byte, error) {
 	o, err := playbackDecode(raw)
@@ -957,6 +1043,11 @@ func playbackKeepAnswer(raw []byte, ask playbackAsked, root string) ([]byte, err
 			a.MaxBitrateKbps = &n
 		}
 	}
+	// The interval of progress reports: 45 to 120, else 60 (section 3).
+	a.ProgressSeconds = playbackProgressDef
+	if n, ok := playbackInt(o["progressSeconds"]); ok && n >= playbackProgressLow && n <= playbackProgressHigh {
+		a.ProgressSeconds = n
+	}
 	if ask.Purpose == "scan" {
 		a.ScanBytes = playbackScanFloor
 		if n, ok := playbackInt(o["scanBytes"]); ok && n >= playbackScanFloor && n <= playbackScanTop {
@@ -1009,7 +1100,122 @@ func playbackKeepAnswer(raw []byte, ask playbackAsked, root string) ([]byte, err
 	return playbackEncode(a), nil
 }
 
-// Restarts (section 2.7).
+// Refusals of play, as a viewer's server reads them (section 2.5, MSFP
+// Media base section 4, MSFP playback section 2).
+
+// playbackRefusalRead is what a viewer's server does with a play
+// refused: what it tells the viewer ("asks again" with another delivery
+// or other targets, "not playable", "busy now"), the entries of instead
+// it keeps, the retryAfter it keeps, and whether it drops the title and
+// reads the owning server's titles again (gone).
+type playbackRefusalRead struct {
+	Tells      string           `json:"tells"`
+	Instead    []map[string]any `json:"instead,omitempty"`
+	RetryAfter int64            `json:"retryAfter,omitempty"`
+	DropTitle  bool             `json:"dropTitle,omitempty"`
+}
+
+// playbackInsteadMax is how many entries of instead a caller reads.
+const playbackInsteadMax = 4
+
+// playbackReadRefusal reads a play refused with status (signed: whether
+// MSFP vouches for it, a signed answer) and body, for a request of
+// purpose. An unsigned refusal, a 429 and a 503 mean busy now; a 409 is
+// told by its type; any other refusal of the language means not
+// playable, gone besides dropping the title.
+func playbackReadRefusal(status int, signed bool, body []byte, purpose string) playbackRefusalRead {
+	busy := playbackRefusalRead{Tells: "busy now"}
+	if !signed {
+		return busy
+	}
+	o, _ := playbackDecode(body) // a body that isn't JSON counts as one without a type
+	typ, _ := o["type"].(string)
+	retry := int64(0)
+	if n, ok := playbackInt(o["retryAfter"]); ok && n >= 1 && n <= 3600 {
+		retry = n
+	}
+	switch status {
+	case 429, 503:
+		busy.RetryAfter = retry
+		return busy
+	case 409:
+		switch typ {
+		case "delivery-refused", "target-refused":
+			return playbackRefusalRead{Tells: "asks again", Instead: playbackKeepInstead(o["instead"], purpose)}
+		case "not-playable":
+			return playbackRefusalRead{Tells: "not playable"}
+		}
+		busy.RetryAfter = retry
+		return busy
+	}
+	return playbackRefusalRead{Tells: "not playable", DropTitle: status == 404 && typ == "gone"}
+}
+
+// playbackKeepInstead keeps the entries of instead a caller may ask for:
+// of the first 4, each object whose delivery, mediaType and transcode
+// keep the forms of a play request of that purpose (section 2.2, step 1;
+// burnSubtitle's form of step 4), with only those members. Not an
+// array: none.
+func playbackKeepInstead(v any, purpose string) []map[string]any {
+	list, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	if purpose == "" {
+		purpose = "play"
+	}
+	var out []map[string]any
+	for i, e := range list {
+		if i >= playbackInsteadMax {
+			break
+		}
+		eo, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+		d, ok := eo["delivery"].(string)
+		if !ok || !openToken(d) {
+			continue
+		}
+		keep := map[string]any{"delivery": d}
+		m, hasM := eo["mediaType"]
+		if hasM != (d == "remux") {
+			continue
+		}
+		if hasM {
+			if ms, ok := m.(string); !ok || !openMediaType(ms) {
+				continue
+			}
+			keep["mediaType"] = m
+		}
+		var targets *playbackTargets
+		if t, hasT := eo["transcode"]; hasT {
+			if d != "transcode" {
+				continue
+			}
+			read, err := playbackReadTargets(t)
+			if err != nil {
+				continue
+			}
+			if read.hasBurn {
+				if b, ok := read.burn.(string); !ok || !playbackSubForm.MatchString(b) {
+					continue
+				}
+			}
+			targets = &read
+			keep["transcode"] = t
+		} else if d == "transcode" {
+			targets = &playbackTargets{}
+		}
+		if slices.Contains(playbackDeliveries, d) && !playbackAllowed(purpose, d, targets) {
+			continue
+		}
+		out = append(out, keep)
+	}
+	return out
+}
+
+// Restarts (playing section 2.7).
 
 type playbackReading struct {
 	VersionID string `json:"versionId"`
@@ -1072,7 +1278,7 @@ func playbackRestart(r playbackReading, request []byte, status int, answer []byt
 	return playbackRestartResult{Join: true, Offset: r.Offset}
 }
 
-// Progress and stop (sections 3, 4, 6.1 and 7).
+// Progress and stop (playing sections 3 to 6).
 
 // playbackState is the owning server's playback a report names.
 type playbackState struct {
@@ -1090,6 +1296,7 @@ type playbackReportResult struct {
 	Title      string `json:"title,omitempty"`
 	PositionMs *int64 `json:"positionMs,omitempty"`
 	At         int64  `json:"at,omitempty"`
+	Paused     bool   `json:"paused,omitempty"`
 }
 
 // playbackReport answers a progress or stop (call) at time now.
@@ -1126,6 +1333,15 @@ func playbackReport(call string, now int64, pb playbackState, raw []byte) ([]byt
 		}
 		at, hasAt = n, true
 	}
+	// paused, a member of progress only (section 3); in stop, unknown.
+	paused := false
+	if v, present := o["paused"]; present && call == "progress" {
+		b, ok := v.(bool)
+		if !ok {
+			return nil, pbBad("paused isn't a boolean")
+		}
+		paused = b
+	}
 	title, hasTitle := "", false
 	if v, present := o["title"]; present {
 		if title, ok = v.(string); !ok {
@@ -1148,7 +1364,7 @@ func playbackReport(call string, now int64, pb playbackState, raw []byte) ([]byt
 	if !hasTitle {
 		title = pb.Title
 	}
-	rec := playbackReportResult{Title: title, PositionMs: pos, At: at}
+	rec := playbackReportResult{Title: title, PositionMs: pos, At: at, Paused: paused}
 	live := pb.State != "ended"
 	if !live {
 		late := pb.Purpose == "download" && hasAt && now <= pb.PlayedAt+playbackLateWindow
@@ -1183,7 +1399,8 @@ func playbackReport(call string, now int64, pb playbackState, raw []byte) ([]byt
 	return playbackEncode(rec), nil
 }
 
-// Limits (section 5, music section 5.1), as a caller keeps them.
+// Limits (MSFP playback section 5, MSFP music section 5.1), as a caller
+// keeps them.
 
 type playbackKeptLimits struct {
 	Streams         *int64 `json:"streams,omitempty"`

@@ -1,7 +1,8 @@
 package main
 
-// The video part's rules (spec/v0/video.md, as revised by proposals 16
-// and 17):
+// The rules of MSFP Media's video (its video.md), as MSFP's video part
+// carries them (spec/v0/video.md); sections named alone are MSFP Media
+// video's:
 // title keys of the tmdb, tvdb and local schemes and extras' keys
 // (section 4), what a caller keeps of a video title (section 3.1), of
 // its copies (sections 3.2 to 3.8), of an extra (section 3.9) and of a
@@ -135,7 +136,7 @@ func checkVideoKey(key string) (string, error) {
 	return k.Kind, nil
 }
 
-// videoInt reads an MSFP integer (core section 2.3) in [lo, hi]; any
+// videoInt reads an integer (MSFP Media base section 2.2) in [lo, hi]; any
 // other value is nil.
 func videoInt(v any, lo, hi int64) *int64 {
 	n, ok := v.(json.Number)
@@ -189,7 +190,7 @@ func videoPlain(v any, max int) string {
 	return strings.Trim(t, " ")
 }
 
-// videoTag is v when it is a valid tag (catalog section 3), else "".
+// videoTag is v when it is a valid tag (MSFP Media listing section 3), else "".
 func videoTag(v any) string {
 	if s, ok := v.(string); ok && validTag(s) {
 		return s
@@ -643,7 +644,7 @@ func keepVideoCopy(raw []byte) ([]byte, error) {
 	return videoEncode(c)
 }
 
-// keepVideoTitle applies catalog section 3.3 and video sections 3.1,
+// keepVideoTitle applies MSFP Media listing section 3.3 and MSFP Media video sections 3.1,
 // 3.8, 3.9 and 3.10 to one entry of titles, given the libraries the
 // caller asked for. It returns what the caller keeps, written as JSON,
 // or why the title is skipped. A kind member is ignored: the key names
@@ -657,7 +658,7 @@ func keepVideoTitle(raw []byte, libraries []string) ([]byte, error) {
 	if !ok {
 		return nil, errors.New("not an object")
 	}
-	// A title carries no kind (catalog section 3): the key names it, and
+	// A title carries no kind (MSFP Media listing section 3): the key names it, and
 	// a kind member is unknown, ignored.
 	key, ok1 := o["key"].(string)
 	lib, ok2 := o["library"].(string)

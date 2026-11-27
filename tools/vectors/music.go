@@ -1,11 +1,12 @@
 package main
 
-// The music part's rules (spec/v0/music.md, revised by proposals 16
-// and 17):
+// The rules of MSFP Media's music (its music.md), as MSFP's music part
+// carries them (spec/v0/music.md); sections named alone are MSFP Media
+// music's:
 // title keys under the mb and local schemes (section 2), what a caller
 // keeps of a music title and of a track's copies (sections 3.2 and 3.3),
 // the queue of a play (section 5.2) and the lyrics call (section 6).
-// Names are cleaned as core section 9.1 cleans a server's name.
+// Names are cleaned as MSFP's core section 9.1 cleans a server's name.
 
 import (
 	"bytes"
@@ -23,20 +24,20 @@ import (
 
 var (
 	mbidForm        = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	musicOpaqueForm = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`) // catalog section 4.2
+	musicOpaqueForm = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`) // MSFP Media listing section 4.2
 	musicIDForm     = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`) // version IDs, etags, tickets
 	musicDateForm   = regexp.MustCompile(`^([0-9]{4})(?:-([0-9]{2})(?:-([0-9]{2}))?)?$`)
-	musicTypeForm   = regexp.MustCompile(`^[a-z0-9._/-](?:[a-z0-9 ._/-]{0,30}[a-z0-9._/-])?$`) // music section 3
-	musicCodecsForm = regexp.MustCompile(`^[A-Za-z0-9.+-]{1,64}$`)                             // RFC 6381, video section 3.3
+	musicTypeForm   = regexp.MustCompile(`^[a-z0-9._/-](?:[a-z0-9 ._/-]{0,30}[a-z0-9._/-])?$`) // MSFP Media music section 3
+	musicCodecsForm = regexp.MustCompile(`^[A-Za-z0-9.+-]{1,64}$`)                             // RFC 6381, MSFP Media video section 3.3
 
 	musicMethods    = []string{"direct", "remux", "transcode"}
 	musicDeliveries = []string{"file", "remux", "transcode"}
 	// A track's remux: MPEG-TS or fragmented MP4 segments, audio only
-	// (playback section 2.7).
+	// (MSFP Media playing section 2.7).
 	musicRemuxTypes = []string{"audio/mp2t", "audio/mp4"}
 )
 
-// musicType: a MusicBrainz release-group type as music section 3 sends
+// musicType: a MusicBrainz release-group type as MSFP Media music section 3 sends
 // it: lowercased, 1 to 32 characters of a-z 0-9 space . _ - /, no space
 // at either end.
 func musicType(s string) bool { return musicTypeForm.MatchString(s) }
@@ -53,7 +54,7 @@ func checkMBID(s string) error {
 }
 
 // musicParseKey returns the kind and the scheme a music title key names
-// (music section 2): <kind>/mb/<mbid> or <kind>/local/<opaque>.
+// (MSFP Media music section 2): <kind>/mb/<mbid> or <kind>/local/<opaque>.
 func musicParseKey(key string) (kind, scheme string, err error) {
 	p := strings.Split(key, "/")
 	if len(p) != 3 {
@@ -129,7 +130,7 @@ func kindIn(kind string, kinds ...string) bool {
 	return false
 }
 
-// integerIn reads an MSFP integer (core section 2.3) in [lo, hi]; any
+// integerIn reads an integer (MSFP Media base section 2.2) in [lo, hi]; any
 // other value counts as absent.
 func integerIn(v any, lo, hi int64) *int64 {
 	n, ok := v.(json.Number)
@@ -169,7 +170,7 @@ func musicEncode(v any) []byte {
 }
 
 // musicDate: YYYY, YYYY-MM or YYYY-MM-DD, year 1000 to 9999, a month
-// 01 to 12, a day that exists (music section 3.2). It returns the year.
+// 01 to 12, a day that exists (MSFP Media music section 3.2). It returns the year.
 func musicDate(s string) (int, bool) {
 	m := musicDateForm.FindStringSubmatch(s)
 	if m == nil {
@@ -217,7 +218,7 @@ type musicTitle struct {
 	IDs            map[string]string `json:"ids,omitempty"`
 }
 
-// musicCopy is what a caller keeps of a track's copy (music section 3.3).
+// musicCopy is what a caller keeps of a track's copy (MSFP Media music section 3.3).
 type musicCopy struct {
 	ID         string           `json:"id"`
 	DurationMs int64            `json:"durationMs"`
@@ -240,14 +241,14 @@ type musicReplayGain struct {
 	AlbumPeak *float64 `json:"albumPeak,omitempty"`
 }
 
-// musicIDKinds: the kind each scheme of ids is for (music section 3.1),
+// musicIDKinds: the kind each scheme of ids is for (MSFP Media music section 3.1),
 // on mb titles only.
 var musicIDKinds = map[string]string{
 	"mbreleasegroup": "album",
 	"mbrecording":    "track",
 }
 
-// keepMusicTitle applies catalog section 3.3 and music section 3.2 to one
+// keepMusicTitle applies MSFP Media listing section 3.3 and MSFP Media music section 3.2 to one
 // entry of titles, given the libraries the caller asked for. It returns
 // what the caller keeps, written as JSON, or why the title is skipped.
 func keepMusicTitle(raw []byte, libraries []string) ([]byte, error) {
@@ -260,7 +261,7 @@ func keepMusicTitle(raw []byte, libraries []string) ([]byte, error) {
 		return nil, errors.New("not an object")
 	}
 	text := func(k string) (string, bool) { s, ok := o[k].(string); return s, ok }
-	// A title carries no kind (catalog section 3): the key names it, and
+	// A title carries no kind (MSFP Media listing section 3): the key names it, and
 	// a kind member is unknown, ignored.
 	key, ok1 := text("key")
 	lib, ok3 := text("library")
@@ -382,7 +383,7 @@ func keepMusicTitle(raw []byte, libraries []string) ([]byte, error) {
 	return musicEncode(t), nil
 }
 
-// keepMusicCopies is music section 3.3's "what the caller keeps", copy
+// keepMusicCopies is MSFP Media music section 3.3's "what the caller keeps", copy
 // by copy: the first 16 kept, a repeat of a kept copy's id skipped.
 func keepMusicCopies(list []any) []musicCopy {
 	var out []musicCopy
@@ -401,7 +402,7 @@ func keepMusicCopies(list []any) []musicCopy {
 		etag, _ := o["etag"].(string)
 		dur := integerIn(o["durationMs"], 1, 86_400_000)
 		size := integerIn(o["size"], 1, 999_999_999_999_999)
-		// mediaType and codec are open (core section 8.5): an unknown
+		// mediaType and codec are open (MSFP Media base section 3): an unknown
 		// value is kept; a malformed one is dropped, and the copy,
 		// missing a required member, skipped.
 		if !musicIDForm.MatchString(id) || seen[id] || dur == nil || !okT || !okK || !openMediaType(mt) || !openToken(codec) || size == nil || !musicIDForm.MatchString(etag) {
@@ -456,7 +457,7 @@ func musicNumberIn(v any, lo, hi float64, places int) *float64 {
 	return &r
 }
 
-// --- The queue (music section 5.2) ---
+// --- The queue (MSFP Media music section 5.2) ---
 
 // musicAsked is one entry of a play request's queue, once the request
 // is accepted.
@@ -467,8 +468,9 @@ type musicAsked struct {
 // musicCheckQueueRequest is what the owning server checks of a play
 // request's title and queue: nil means it accepts them. Malformed
 // values are refused first (400), then deliveries the owning server
-// doesn't make (409 delivery-refused), as playback section 2.2's steps
-// go. The request's own delivery members are playback.json's, and an
+// doesn't make (409 delivery-refused) and a remux's media types it
+// doesn't make (409 target-refused), as MSFP Media playing section 2.2's
+// steps go. The request's own delivery members are playback.json's, and an
 // entry's transcode targets too: here a transcode is only an object.
 func musicCheckQueueRequest(raw []byte) error {
 	_, err := musicQueueAsked(raw)
@@ -535,7 +537,7 @@ func musicQueueAsked(raw []byte) ([]musicAsked, error) {
 		if hasD {
 			x, ok := d.(string)
 			if !ok || !openToken(x) {
-				return nil, fmt.Errorf("400: queue entry %d: delivery isn't a token (core section 8.5)", i)
+				return nil, fmt.Errorf("400: queue entry %d: delivery isn't a token (MSFP Media base section 3)", i)
 			}
 			if !kindIn(x, musicDeliveries...) && refused == nil {
 				refused = fmt.Errorf("409 delivery-refused: queue entry %d: a delivery the owning server doesn't make", i)
@@ -552,9 +554,9 @@ func musicQueueAsked(raw []byte) ([]musicAsked, error) {
 			case entryD != "remux":
 				return nil, fmt.Errorf("400: queue entry %d: mediaType without its own delivery remux", i)
 			case !ok || !openMediaType(x):
-				return nil, fmt.Errorf("400: queue entry %d: mediaType isn't a media type (core section 8.5)", i)
+				return nil, fmt.Errorf("400: queue entry %d: mediaType isn't a media type (MSFP Media base section 3)", i)
 			case !kindIn(x, musicRemuxTypes...) && refused == nil:
-				refused = fmt.Errorf("409 delivery-refused: queue entry %d: a remux into %s, not audio/mp2t or audio/mp4", i, x)
+				refused = fmt.Errorf("409 target-refused: queue entry %d: a remux into %s, not audio/mp2t or audio/mp4", i, x)
 			}
 		} else if entryD == "remux" {
 			return nil, fmt.Errorf("400: queue entry %d: delivery remux without mediaType", i)
@@ -641,7 +643,7 @@ func musicKeepQueueAnswer(request, answer []byte) ([]byte, error) {
 	return musicEncode(kept), nil
 }
 
-// --- Lyrics (music section 6) ---
+// --- Lyrics (MSFP Media music section 6) ---
 
 // musicCheckLyricsRequest: nil means the owning server reads the
 // request; otherwise it answers 400 invalid-request.
@@ -712,7 +714,7 @@ func musicKeepLyrics(raw []byte) ([]byte, error) {
 		if l, ok := so["lang"].(string); ok && validTag(l) {
 			s.Lang = l
 		}
-		if k, ok := so["kind"].(string); ok && openToken(k) { // open (core section 8.5)
+		if k, ok := so["kind"].(string); ok && openToken(k) { // open (MSFP Media base section 3)
 			s.Kind = k
 		}
 		// The lines left: objects whose value is a string.

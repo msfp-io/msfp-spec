@@ -5,16 +5,22 @@ server against [version 0](../spec/v0/README.md): the
 [core](../spec/v0/core.md) and the parts
 [catalog](../spec/v0/catalog.md), [playback](../spec/v0/playback.md),
 [media](../spec/v0/media.md), [video](../spec/v0/video.md) and, when the
-server lists it, [music](../spec/v0/music.md), as revised by
+server lists it, [music](../spec/v0/music.md), and the
+[MSFP Media version 0](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/README.md)
+those parts carry
+([proposal 19](../proposals/0019-msfp-media.md): the language of titles,
+copies, `play`, `progress`, `stop` and fetching is MSFP Media's; MSFP
+keeps the federation's rules), as revised by
 [proposal 16](../proposals/0016-version-0-revision.md) (copies in the
 catalog, extras, `local` titles and their image, deliveries, restarts,
 downloads, scan access, previews, files by byte ranges and complete HLS)
 and [proposal 17](../proposals/0017-neutrality.md) as frozen: no
-capabilities (a `play` asks a `delivery`, or none for the baseline, its
-picture defined), the rule for unknown values of core section 8.5
-(tokens and media types kept in facts; in requests ignored, or `409`
-`delivery-refused` when they name what to serve; `400` only when
-malformed), copies by `mediaType` with the registry's tokens, `codecs`
+capability list between servers (a `play` asks a `delivery`, or none
+for the baseline, its picture defined; MSFP refuses `capabilities` with
+`400`), the rule for unknown values of MSFP Media's base section 3
+(tokens and media types kept in facts; in requests ignored, or refused
+when they name what to serve: `409` `delivery-refused` for the delivery,
+`409` `target-refused` for a target; `400` only when malformed), copies by `mediaType` with the registry's tokens, `codecs`
 required for six codecs, H.273 `colour`, `objects`, `refFrames`,
 `endMs`, `parts` as a count, subtitle `role`, `previewLayout`, the
 dropped fields gone, titles and libraries without `kind`, answers with a
@@ -25,7 +31,10 @@ type, a transcode's `copy` and `range`, the scan's cap in its answer,
 previews on demand, the choice of copy and audio reduced to the
 normative minimum, music queue entries with their own copy and delivery,
 lyrics synced by their starts, and no name in groups' `group-pair` and
-mail.
+mail; and with what MSFP Media added: `libraries` optional in `titles`,
+its filters `kind` and `under`, `target-refused` apart from
+`delivery-refused`, `gone`, `paused` in `progress`, `progressSeconds` in
+`play`'s answer with the idle limit twice it, and `replaces`.
 It tests version 0 only. For the part [groups](../spec/v0/groups.md),
 with `--group-code`, it checks joining a group of the server's, its
 list, `group-sync`, `group-push`, the mail both ways (sealed with HPKE,
@@ -41,9 +50,13 @@ the strict forms of core section 2, replay and nonces, the catalog,
 playback and media, rotation and revocation of its own key, address
 changes, what a server does toward a peer that can't be called, and,
 with `--watch-pause`, the server as a viewer of the suite's films.
-Every check names the file and section it tests (`core 6.4`,
-`media 2.1`), whether that section says *must* or *should*, whether it
-needs the server's operator, and why it passed, failed or was skipped.
+Every check names the file and section it tests, whether that section
+says *must* or *should*, whether it needs the server's operator, and why
+it passed, failed or was skipped. A document of MSFP Media is named so
+(`MSFP Media playing 2.7`, `MSFP Media fetching 2.1`, `MSFP Media video
+5.3`); a document named alone is MSFP's spec/v0 (`core 6.4`, `playback
+5`, `media 4.2`, `video 5.5`); groups of sections of different documents
+are separated by `;`.
 
 It needs Python 3 and its standard library, nothing else (tested with
 Python 3.13). Ed25519 is bundled in pure Python (the reference code of
@@ -127,7 +140,7 @@ They are marked `[operator]`:
 | want the suite's library "Conformance films" | Q1 to Q3 |
 | add one title to an offered library and remove one (with `--watch-changes SECONDS`) | T9 |
 | stop sharing local titles with the suite, then share them again (with `--watch-local SECONDS`) | T12 |
-| play one of the suite's films, pause it at once, stop it after the given time (with `--watch-pause SECONDS`) | VW1 to VW4 |
+| play one of the suite's films, pause it at once, stop it after the given time (with `--watch-pause SECONDS`) | VW1 to VW5 |
 | accept the second pairing (with `--code2`) | UP2, UP3 |
 | accept the suite's join of the group (with `--group-code`) | GR8 to GR17, GM |
 | name the suite an admin of that group | GM1 to GM8 |
@@ -146,12 +159,16 @@ after the pairing if nothing does.
 
 With `--watch-pause`, the suite is also the owning server of its three
 films: it answers `play` with a playback of a two-second clip (served as
-it is, with ranges, under its stream root) and ends a playback it hears
-nothing of for 2 minutes, as playback section 6.3 says. The checks VW1
-to VW4 look at the server as a viewer: its `play` well signed and
-formed, the playback kept while its viewer pauses (no 2 minutes without
-`progress` or a media request), the pause reported, and `stop` at the
-end. Give a pause longer than 2 minutes (150 s, say) for VW2 to tell.
+it is, with ranges, under its stream root), with `progressSeconds` 60,
+and ends a playback it hears nothing of for its idle limit, twice that:
+2 minutes, as MSFP Media's playing sections 3 and 5 say. The checks VW1
+to VW5 look at the server as a viewer: its `play` well signed and
+formed (no capability list), the playback kept while its viewer pauses
+(no 2 minutes without `progress` or a media request), the pause
+reported at once with `paused` `true`, `stop` at the end, and reports no
+more often than every 45 seconds but at a pause or a resume. Give a
+pause longer than 2 minutes (150 s, say) for VW2 to tell, and longer
+than 45 s for VW5.
 
 The steps can also be played by a program, through the server's own
 administration API: build the suite in Python with
@@ -197,16 +214,16 @@ The run goes in this order; the counts are the checks in each group.
 | J | 2 | core 2.3 | I-JSON and types: twice-named members, surrogates, noncharacters, bad UTF-8, a byte order mark, `null`, wrong types refused; white space and unknown members accepted |
 | G | 10 | core 2.2, 2.4, 3, 6.2, 6.4 | signatures: dates, nonces, keys and signatures outside their one form, another host, path or key, duplicate headers, a query, percent-encoding, the media type, `Sec-Fetch-Site`, content codings, a body over 64 KiB |
 | N | 3 | core 6.5, 6.3 | replay, a nonce used again, the answer bound to the nonce and the media type |
-| L | 5 | catalog 2, playback 5, music 5.1 | `libraries`: IDs (no `kind`: a note when sent), `limits` (streams and downloads to 1,000, scans; `scanBytes` left them) and their ranges, opaque and stable IDs, bad bodies |
-| T | 12 | catalog 3 to 5; video 3, 4; music 2, 3 | `titles`: canonical keys of every scheme (`tmdb`, `tvdb`, `mb`, `local`), the kind each names (no `kind` member), libraries, every copy as a caller keeps it (`mediaType`, open tokens, `codecs` required and readable for `h264`, `hevc`, `av1`, `vp9`, `aac`, `dts`, exact values, `fps` as a fraction, H.273 `colour`, `hdr` without `hdr10`, `hlg`, `dv`, `parts` as a count, `endMs`, `previewLayout` in its bounds, at most 16 copies), extras (themes among them) and `local` descriptions, `with`, `ids` (only on episodes and `tvdb` titles; music's on `mb` titles), music's descriptions (`mediaType`, `primaryType`, `secondaryTypes`, a track's dates and genres); order, paging, pages within 5,000 titles and 3 MiB with `next` whenever titles remain; `since` and `seq`, bad requests, the first library, changes adding up; extras only with their title; (`--watch-local`) `local` titles following the owner's switch. Members proposal 17 dropped are noted, not failed (a caller ignores them) |
-| I | 3 | catalog 4.4, media 1, 3.4, 4 | the `image` call: `{"ticket"}`, no URL; a `local` title's image at `<stream root><ticket>/image` (a JPEG or PNG within 1 MiB and 4,096 pixels), that ticket opening nothing else, HEAD `405`, its refusals (`400`, `404`) |
-| PB | 24 | playback 2 to 8, video 5, media 1, core 8.5 | `play`: the `400`s of `vectors/v0/playback.json` (members, `purpose`, `delivery`, `mediaType`, `transcode`, values that aren't tokens or media types), keys not offered (`404`), the answer as a viewer's server keeps it (an opaque playback ID and ticket of 128 bits, no URLs, its `etag`, `versionId` and `audioTrack` the catalog's, `subtitles` in video 5.4's forms for the formats it lists, `fontCount`), no `delivery` (the baseline: HLS, left as it is only when within H.264 High 4.1 8-bit SDR BT.709 and AAC-LC stereo 48 kHz); `progress` and `stop` with `at` and their bounds (`paused` an unknown member); the choice (only the normative minimum: a copy or audio track named wins; without one, the first copy and the file's default audio); the streams limit and the race for the last stream; `delivery` `file`, `remux` (`video/mp4`), `transcode` (or `409` `delivery-refused`), a transcode's video `copy` (the playlist's `CODECS` the copy's own) and `range` (`sdr` without `VIDEO-RANGE` PQ or HLG, `keep` made or refused), `burnSubtitle` with video `copy` refused, a copy of several parts refused as `file`, a restart on the same `etag` and bytes, the answer's `audioRenditions` matching the playlist; downloads (`409` when off, beside the streams, within `downloads`, the speed cap, late reports with `at`); scans (`409` when off, no stream used, `scanBytes` in the answer, reads cut at it, then `416`, the ticket opening the file only); unknown tokens and media types naming what to serve (`delivery`, a remux's `mediaType`, a transcode codec, `range`) refused with `409` `delivery-refused`, an unknown member ignored |
-| M | 12 | media 1 to 4, video 5.5, 6 | the media of the first `play`, at the URLs the suite builds from the ticket: the HLS subset, playlists complete from the first fetch and the same on every fetch, renditions' names, segments, ranges (`206` and `416`), refusals (a query, browser headers, an unknown ticket), `405` for HEAD and other methods, WebVTT parts and whole tracks in their rebuilt form, ASS parts and whole tracks, picture parts, fonts 0 to `fontCount` − 1, a preview sheet under the playback's ticket by the catalog's `previewLayout`, and `404` for the names past the answer's counts (a font at `fontCount`, the sheet at the sheet count, a track not served apart in that form, a queue entry not asked) |
-| F | 4 | media 2, 3.2 | the file of a `delivery` `file`: `200` with the catalog's exact size, `ETag` and `Accept-Ranges`; ranges with `Content-Range` against the exact size, `416` with `bytes */<size>`; stable bytes; HEAD `405`, conditional headers ignored |
-| PV | 3 | video 5.5, 5.6, media 4 | `previews`: `{"ticket", "etag"}` for a copy with a `previewLayout`, no URL, the catalog's `etag`; its sheets by the catalog's layout under that ticket, `404` past the count; the ticket opening only its sheets; its refusals (`404` for a copy without `previewLayout`) |
-| MU | 4 | music 5, 5.2, 6 | (music on, tracks offered) a track's play, audio only; a queue of entries (one naming its own copy), no URLs, their streams at `<stream root><ticket>/queue/<n>/`, `404` past the queue; malformed queues (`400`); lyrics and their refusals |
-| Q | 4 | catalog 2, 3; core 6.4; video 5.5 | the server as a reader of the suite's catalog: its calls well signed, its `titles` requests, following `next`; no `previews` call nor sheet fetched while it reads (the suite's copies carry a `previewLayout`) |
-| VW | 4 | playback 2 to 4, 6.3; core 6.4 | (`--watch-pause`) the server as a viewer of the suite's films: its `play` well signed and formed, the playback kept while paused, the pause reported at once (a `progress` within 60 s; `paused` is an unknown member now), `stop` at the end |
+| L | 5 | MSFP Media listing 2; playback 5; music 5.1 | `libraries`: IDs (no `kind`: a note when sent), `limits` (streams and downloads to 1,000, scans; `scanBytes` left them) and their ranges, opaque and stable IDs, bad bodies |
+| T | 15 | MSFP Media listing 3, 3.1 to 3.6, 4; catalog 5; MSFP Media video 3, 4; MSFP Media music 2, 3 | `titles`: canonical keys of every scheme (`tmdb`, `tvdb`, `mb`, `local`), the kind each names (no `kind` member), libraries, every copy as a caller keeps it (`mediaType`, open tokens, `codecs` required and readable for `h264`, `hevc`, `av1`, `vp9`, `aac`, `dts`, exact values, `fps` as a fraction, H.273 `colour`, `hdr` without `hdr10`, `hlg`, `dv`, `parts` as a count, `endMs`, `previewLayout` in its bounds, at most 16 copies), extras (themes among them) and `local` descriptions, `with`, `ids` (only on episodes and `tvdb` titles; music's on `mb` titles), music's descriptions (`mediaType`, `primaryType`, `secondaryTypes`, a track's dates and genres); order, paging, pages within 5,000 titles and 3 MiB with `next` whenever titles remain; `since` and `seq`, bad requests, the first library, changes adding up; extras only with their title; (`--watch-local`) `local` titles following the owner's switch (catalog 5); `titles` without `libraries` (every library the suite may see), with `kind` (that kind alone; a token that is no kind, none) and with `under` (the titles directly under that key, by MSFP Media listing 3.6's table; always the whole list), malformed filters a signed `404`. Members proposal 17 dropped are noted, not failed (a caller ignores them) |
+| I | 3 | MSFP Media listing 4.4; MSFP Media fetching 1, 3.4, 4.2 | the `image` call: `{"ticket"}`, no URL; a `local` title's image at `<stream root><ticket>/image` (a JPEG or PNG within 1 MiB and 4,096 pixels), that ticket opening nothing else, HEAD `405`, its refusals (`400`, `404`) |
+| PB | 27 | MSFP Media playing 2 to 6; MSFP Media base 3, 4; MSFP Media video 5; MSFP Media fetching 1; playback 2, 5 to 8 | `play`: the `400`s of `vectors/v0/playback.json` (members, `purpose`, `delivery`, `mediaType`, `transcode`, `replaces`, values that aren't tokens or media types, and `capabilities`, which MSFP refuses whatever it holds), keys not offered (`404`), a title no longer held (`404` `gone`, should, after T9), the answer as a viewer's server keeps it (an opaque playback ID and ticket of 128 bits, no URLs, its `etag`, `versionId` and `audioTrack` the catalog's, `subtitles` in video 5.4's forms for the formats it lists, `fontCount`, `progressSeconds` from 45 to 120 when sent), no `delivery` (the baseline: HLS, left as it is only when within H.264 High 4.1 8-bit SDR BT.709 and AAC-LC stereo 48 kHz); `progress` and `stop` with `at` and their bounds (`paused` a boolean in `progress`, `400` otherwise); the choice (only the normative minimum: a copy or audio track named wins; without one, the first copy and the file's default audio); the streams limit and the race for the last stream; `replaces` (the old playback ends with the new one's `200`, the two counted as one stream; one naming no live playback ignored); `delivery` `file`, `remux` (`video/mp4`), `transcode` (or `409` `delivery-refused` or `target-refused`), a transcode's video `copy` (the playlist's `CODECS` the copy's own) and `range` (`sdr` without `VIDEO-RANGE` PQ or HLG, `keep` made or refused), `burnSubtitle` with video `copy` refused (`target-refused`), a copy of several parts refused as `file` (`delivery-refused`), a restart on the same `etag` and bytes, the answer's `audioRenditions` matching the playlist; downloads (`409` when off, beside the streams, within `downloads`, the speed cap, late reports with `at`); scans (`409` when off, no stream used, `scanBytes` in the answer, reads cut at it, then `416`, the ticket opening the file only); unknown tokens and media types naming what to serve refused with `409`: `delivery-refused` for a `delivery`, `target-refused` for a remux's `mediaType`, a transcode codec or `range`; an unknown member ignored |
+| M | 12 | MSFP Media fetching 1 to 4.2; MSFP Media video 5.5, 6; media 2 | the media of the first `play`, at the URLs the suite builds from the ticket: the HLS subset, playlists complete from the first fetch and the same on every fetch, renditions' names, segments, ranges (`206` and `416`), refusals (a query, browser headers, an unknown ticket), `405` for HEAD and other methods, WebVTT parts and whole tracks in their rebuilt form, ASS parts and whole tracks, picture parts, fonts 0 to `fontCount` − 1, a preview sheet under the playback's ticket by the catalog's `previewLayout`, and `404` for the names past the answer's counts (a font at `fontCount`, the sheet at the sheet count, a track not served apart in that form, a queue entry not asked) |
+| F | 4 | MSFP Media fetching 2, 3.2 | the file of a `delivery` `file`: `200` with the catalog's exact size, `ETag` and `Accept-Ranges`; ranges with `Content-Range` against the exact size, `416` with `bytes */<size>`; stable bytes; HEAD `405`, conditional headers ignored |
+| PV | 3 | MSFP Media video 5.5, 5.6; MSFP Media fetching 4.2 | `previews`: `{"ticket", "etag"}` for a copy with a `previewLayout`, no URL, the catalog's `etag`; its sheets by the catalog's layout under that ticket, `404` past the count; the ticket opening only its sheets; its refusals (`404` for a copy without `previewLayout`) |
+| MU | 4 | MSFP Media music 5, 5.2, 6 | (music on, tracks offered) a track's play, audio only; a queue of entries (one naming its own copy), no URLs, their streams at `<stream root><ticket>/queue/<n>/`, `404` past the queue; malformed queues (`400`); lyrics and their refusals |
+| Q | 4 | MSFP Media listing 2, 3; core 6.4; video 5.5 | the server as a reader of the suite's catalog: its calls well signed, its `titles` requests, following `next`; no `previews` call nor sheet fetched while it reads (the suite's copies carry a `previewLayout`) |
+| VW | 5 | MSFP Media playing 2 to 5; playback 2 to 4; core 6.4 | (`--watch-pause`) the server as a viewer of the suite's films: its `play` well signed and formed (no capability list, a `replaces` of a playback ID's form), the playback kept while paused (within the idle limit, twice the answer's `progressSeconds`), the pause reported at once with `paused` `true` (a `progress` within 60 s), `stop` at the end, reports no more often than every 45 s but at a pause or a resume |
 | R | 2 | core 8.3 | (`--load`) a signed `429` or `503` with `retryAfter`, then calls passing again |
 | GR | 17 | groups 2, 3, 6 to 8 | (`--group-code`) groups: the group code; `group-sync` from a non-member and about an unknown group (a `404`, plain or signed: see the notes); `group-join` with a wrong proof, an unknown code (signed `404`s), the code (`200` `{}`), again (`409`); accepted, the list pushed (`founded`, the suite's `joined`, every envelope well signed); `group-sync` (every event, `seq` order, `have`; nothing more with a full `have`); the suite's `profile` and an unknown type kept; a forged signature, a date 10 minutes ahead, another group's event and a payload over 4,096 bytes not kept; `left`, then a `404` (GR17 runs after GM) |
 | GM | 8 | groups 4, 5, 8.3 | (`--group-code`) the mail: named admin, the suite signs `joined` for a second identity N of its own that can't be called, and N its `profile`; N's request, sealed with HPKE to the server's `encryptionKey`, no name, kept; accepted, the server's answer, signed, sealed to N, opened, with its address and no name; N's `group-pair` with it (signed `200`, no name), the same again (`409`), N's `hello`; a mail with a forged signature and an expired one not kept |
@@ -219,8 +236,8 @@ The run goes in this order; the counts are the checks in each group.
 | E | 2 | core 7.4 | (`--end`) `hello` `ended`, then the unsigned `404` |
 | A | 2 | core 6.6, 8.2 | every answer that had to be signed was, and every signed refusal is a problem document |
 
-That is 180 checks in all, with `--code2`, `--group-code`, `--load` and
-`--end`, and 185 with `--watch-local` and `--watch-pause` too. A server that doesn't answer
+That is 186 checks in all, with `--code2`, `--group-code`, `--load` and
+`--end`, and 192 with `--watch-local` and `--watch-pause` too. A server that doesn't answer
 at its address at all gets one failed S0, and nothing else runs.
 
 Every signed answer is also read as I-JSON and checked for `null`; a
@@ -229,14 +246,17 @@ type is signed as core section 6.3's fifth line.
 
 The suite offers the server one library, "Conformance films", with
 three films on two pages, each with one copy (the two-second clip it
-serves, described as video section 3 says: `video/mp4`, H.264
+serves, described as MSFP Media's video section 3 says: `video/mp4`, H.264
 `avc1.42C00C` and AAC `mp4a.40.2`, with a one-sheet `previewLayout`). It
 answers a `play` with `delivery` `file` with the clip as it is, one
 without `delivery`, or with a remux to `video/mp2t`, with complete HLS of
-the same streams in MPEG-TS (the baseline), and refuses other deliveries
-with `409` `delivery-refused`; its answers carry the ticket, no URL. It
+the same streams in MPEG-TS (the baseline), refuses another remux media
+type with `409` `target-refused` and other deliveries with `409`
+`delivery-refused`; its answers carry the ticket and `progressSeconds`,
+no URL. A `play` whose `replaces` names one of its live playbacks of the
+server ends that one. It
 answers `previews` with a ticket for the clip's one sheet. Its first page is short
-and still has `next`, as catalog section 3.1 allows, to see that the
+and still has `next`, as MSFP Media's listing section 3.1 allows, to see that the
 server follows it. With `--watch-pause` it plays them; otherwise it
 answers `play` with a playback of that clip all the same.
 
@@ -253,8 +273,8 @@ answers `play` with a playback of that clip all the same.
   suite can't make a server rotate.
 - **Timing rules** that take long are not waited for: the 30-day
   overlaps, the 30-day suspension turning `gone`, the hourly retry of a
-  failed address confirmation, the 2-minute expiry of an unused
-  playback, the 24-hour code.
+  failed address confirmation, the expiry of an unused playback (its
+  idle limit, twice its `progressSeconds`), the 24-hour code.
 - **Limits** are each server's numbers (core 8.3). The burst of `--load`
   is pure Python, and may not reach them over HTTPS; the `play` limit
   is not tested (the suite paces its own plays under it).
@@ -270,11 +290,13 @@ answers `play` with a playback of that clip all the same.
   `CODECS` and `VIDEO-RANGE` only, and `mp4` segments' `hvc1` not at
   all.
 - **Deliveries** an owning server may refuse (`409` `delivery-refused`
-  for `file`, `remux`, `transcode`; `503` for a transcode) pass as
-  refused; only a copy of several parts must be refused as `file`.
+  for `file`, `remux`, `transcode`, or `target-refused` for the targets
+  it doesn't make; `503` for a transcode) pass as refused; only a copy of
+  several parts must be refused as `file`, and `burnSubtitle` with video
+  `copy` with `target-refused`. `instead` in a refusal is not checked.
 - **Downloads and scans** need the server's `limits` to allow them; the
   suite checks the refusal when they are 0. The 24-hour and 10-minute
-  lifetimes of their tickets, the 2-minute idle rule, and the limit of 2
+  lifetimes of their tickets, the idle limit, and the limit of 2
   scan reads at once are not waited for or loaded; the speed cap is
   measured over the first 10 seconds of one read, and needs a copy
   larger than 13 seconds at the cap. A restart (PB16) is made after a
@@ -285,7 +307,7 @@ answers `play` with a playback of that clip all the same.
   and range, the notes' advice), and members proposal 17 dropped that a
   server still sends (a title's or a library's `kind`, a copy's `name`,
   `container` beside `mediaType`, `bitrateKbps`, `added`, track `title`,
-  `profile`, `layout`, `paused`, `limits.scanBytes`, the answer's
+  `profile`, `layout`, `limits.scanBytes`, the answer's
   `stream`, `audioTracks`, `durationMs`, `trickplay`, lyrics' `synced`
   and `offset`): a receiver ignores them, so the suite notes them at the
   end of a run. A URL in an answer is a failure (answers carry none).
@@ -300,7 +322,12 @@ answers `play` with a playback of that clip all the same.
   read, chooses its `delivery` from a copy's facts, keeps unknown values,
   or refuses a growing playlist or a file whose `ETag` changed happens
   inside it, out of the suite's sight. VW1 checks that its `play` is well
-  formed (a `delivery`, or none; values that are tokens).
+  formed (a `delivery`, or none; values that are tokens; no capability
+  list), but not that a `replaces` names the playback it changes.
+- **Refusals only some servers make**: `unreachable` (the media can't be
+  reached now) and `gone` without `--watch-changes` can't be caused from
+  outside; PB27 checks `gone` only for a title T9 saw removed. A
+  `ticket-refused` is a media fetch's `404`, read by its status alone.
   Music is checked only when the server offers tracks.
 
 When it ends, the suite prints the points of the specification it found
@@ -317,8 +344,11 @@ It checks the suite's readers against the cases of `vectors/v0/` (keys,
 code, exchanges, rotation, revocation, strict, media, video, playback,
 music and groups: every array the suite reads as a caller or a viewer's
 server, the codecs, answers, names, relayed types, previews, queue and
-lyrics among them; the owning server's decisions of playback.json,
-requests to reports, are the fake's and the live checks'; and
+lyrics among them, refusals of `play` as a caller reads them; the owning
+server's decisions of playback.json, requests to reports, are the fake's
+and the live checks'; strict.json's `titleRequests`, the owning server's
+reading of a `titles` request, is checked against the code the fake
+answers with; and
 those of `vectors/history/test-draft-strict.json` that core section 17 says hold for
 core 0), then runs the whole suite, over HTTPS both ways, against an
 in-process fake version 0 server (`msfpconf/fake.py`, built from the
@@ -341,9 +371,16 @@ in play's answer, a font served past `fontCount`, the last copy played
 without `versionId`, another audio than the file's default without
 `audioTrack`, `burnSubtitle` with video `copy` served, every copy's
 previews fetched while reading a catalog, a name in the mail and in
-`group-pair`), and the checks aimed at each fault must fail; the two
-faults of choice (the last copy, another audio) run in a pass of their
-own, since playing another copy would hide the first pass's faults. The fake
+`group-pair`, a target refused with `delivery-refused`, a capability
+list ignored, a `paused` that isn't a boolean accepted, `replaces`
+ignored, `progressSeconds` 30, a title no longer held answered
+`not-found`, `titles` without `libraries` refused, `kind` and `under`
+ignored), and the checks aimed at each fault must fail; the two faults
+of choice (the last copy, another audio) and the two of a viewer's
+reports (every 10 seconds while paused, a pause without `paused`) run in
+a pass of their own, since playing another copy would hide the first
+pass's faults, and the first pass's silent viewer would hide the
+reports'. The fake
 founds a group and makes its code, for the group checks.
 
 ## License

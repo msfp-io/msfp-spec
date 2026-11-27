@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Checks an MSFP version 0 server against spec/v0/, as a peer would.
+"""Checks an MSFP version 0 server against spec/v0/ and the MSFP Media
+version 0 it carries, as a peer would.
 
     python3 conformance/run.py --code '<pairing code from the server>' \\
         --address https://<this machine, as the server reaches it>:8000 --listen 0.0.0.0:8000
@@ -20,7 +21,7 @@ from msfpconf.report import Report  # noqa: E402
 
 def parser():
     ap = argparse.ArgumentParser(description="MSFP version 0 conformance suite (spec/v0/: core 0, catalog, playback, "
-                                             "media, video and music 1)")
+                                             "media, video and music; and MSFP Media version 0, which they carry)")
     ap.add_argument("--code", help="a pairing code the server's operator made (msfp-pair-0.…); it is used: one code per run")
     ap.add_argument("--group-code", help="a code of a group the server's operator made (groups 2), of the same server as "
                     "--code: the suite joins it through group-join (groups 8.4), its operator accepts, and the group "

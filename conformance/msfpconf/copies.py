@@ -1,9 +1,9 @@
-"""What a caller keeps of a video title and its copies (spec/v0/video.md
-sections 3.1 to 3.10, as revised by proposals 16 and 17), video title
-keys of the tmdb, tvdb and local schemes and extras' keys (video 4), what
-a viewer's server reads from a codecs string (video 3.5), play's video
-members and the URLs built from its ticket (video 5.3, 6.1), the previews
-answer (video 5.6), language tags as catalog 3 sends them, and the JSON
+"""What a caller keeps of a video title and its copies (MSFP Media video
+3.1 to 3.10, as MSFP's video part carries it), video title
+keys of the tmdb, tvdb and local schemes and extras' keys (MSFP Media video 4), what
+a viewer's server reads from a codecs string (MSFP Media video 3.5), play's video
+members and the URLs built from its ticket (MSFP Media video 5.3, 6.1), the previews
+answer (MSFP Media video 5.6), language tags as MSFP Media base 2.4 sends them, and the JSON
 helpers the vectors' outputs need.
 
 The keep_* functions take a title or a copy as parsed JSON: from
@@ -72,6 +72,8 @@ def dumps(v):
         return "false"
     if isinstance(v, (int, float)):
         return num_text(v)
+    if isinstance(v, Num):
+        return v.text
     if isinstance(v, str):
         return json.dumps(v, ensure_ascii=False).replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
     if isinstance(v, list):
@@ -119,7 +121,7 @@ def plain(v, n):
     return clean_name(v, n) if isinstance(v, str) else ""
 
 
-# ---- Language tags (catalog 3) -------------------------------------------------------
+# ---- Language tags (MSFP Media listing 3) -------------------------------------------------------
 
 ISO639 = dict(x.split(":") for x in (
     "aar:aa abk:ab afr:af aka:ak alb:sq amh:am ara:ar arg:an arm:hy asm:as ava:av ave:ae aym:ay aze:az bak:ba bam:bm "
@@ -163,11 +165,11 @@ def sent_tag(code):
 
 
 def valid_tag(s):
-    """A valid tag (catalog 3): one sent_tag leaves as it is."""
+    """A valid tag (MSFP Media listing 3): one sent_tag leaves as it is."""
     return isinstance(s, str) and sent_tag(s) == s
 
 
-# ---- Video title keys (video 4) -----------------------------------------------------
+# ---- Video title keys (MSFP Media video 4) -----------------------------------------------------
 
 _ID = re.compile(r"[1-9][0-9]{0,9}")
 OPAQUE = re.compile(r"[A-Za-z0-9_-]{1,64}")
@@ -242,7 +244,7 @@ def parse_video_key(key):
 
 def video_key(k):
     """The VideoKey of k ((kind, series) with .scheme, .parent, .by_id),
-    or None when it isn't a video title key in canonical form (video 4)."""
+    or None when it isn't a video title key in canonical form (MSFP Media video 4)."""
     try:
         return parse_video_key(k)
     except ValueError:
@@ -255,9 +257,9 @@ def extra_parent(k):
     return vk.parent if vk and vk.kind == "extra" else None
 
 
-# ---- Copies (video 3.2 to 3.8) ------------------------------------------------------
+# ---- Copies (MSFP Media video 3.2 to 3.8) ------------------------------------------------------
 
-# Every list of video 3.2 to 3.9 is open (core 8.5, proposal 17): its
+# Every list of MSFP Media video 3.2 to 3.9 is open (MSFP Media base 3, proposal 17): its
 # values are tokens (or media types), kept known or not.
 _TOKEN = re.compile(r"[a-z0-9._-]{1,32}")
 _MEDIA_TYPE = re.compile(r"[a-z0-9.+_/-]{1,127}")
@@ -269,7 +271,7 @@ _ASPECT = re.compile(r"([1-9][0-9]{0,4}):([1-9][0-9]{0,4})")
 MAX_COPIES = 16
 MAX_HDR = 8
 _DATE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
-# The six codecs whose codecs string is required (video 3.5).
+# The six codecs whose codecs string is required (MSFP Media video 3.5).
 REQUIRES_CODECS = ("h264", "hevc", "av1", "vp9", "aac", "dts")
 
 
@@ -278,13 +280,13 @@ def _form(v, rx):
 
 
 def token(v):
-    """v when it is a string and a token (core 8.5: 1 to 32 characters of
+    """v when it is a string and a token (MSFP Media base 3: 1 to 32 characters of
     a-z 0-9 . _ -), else None: an open field keeps any token, known or not."""
     return v if isinstance(v, str) and _TOKEN.fullmatch(v) else None
 
 
 def media_type(v):
-    """v when it is a media type of core 8.5 (lowercase, exactly one /, no
+    """v when it is a media type of MSFP Media base 3 (lowercase, exactly one /, no
     parameters, each half starting with a letter or a digit, at most 127
     characters of a-z 0-9 . + - _ /), else None."""
     if not isinstance(v, str) or not _MEDIA_TYPE.fullmatch(v) or v.count("/") != 1:
@@ -334,7 +336,7 @@ def _h273(v):
 
 
 def keep_layout(v):
-    """Video 5.5's reading of a previewLayout: None when it is dropped."""
+    """MSFP Media video 5.5's reading of a previewLayout: None when it is dropped."""
     if not isinstance(v, dict):
         return None
     w, h = int_in(v.get("tileWidth"), 1, 2048), int_in(v.get("tileHeight"), 1, 2048)
@@ -349,7 +351,7 @@ def keep_layout(v):
 
 
 def sheet_count(layout):
-    """The number of sheets a kept previewLayout gives (video 5.5)."""
+    """The number of sheets a kept previewLayout gives (MSFP Media video 5.5)."""
     per = layout["columns"] * layout["rows"]
     return -(-layout["tileCount"] // per)
 
@@ -470,7 +472,7 @@ def _keep_segments(v, duration):
 
 
 def keep_video_copy(o):
-    """Video 3.8 for one entry of copies: what the caller keeps (a dict
+    """MSFP Media video 3.8 for one entry of copies: what the caller keeps (a dict
     in the vectors' order); raises ValueError with why it skips the copy."""
     if not isinstance(o, dict):
         raise ValueError("not an object")
@@ -482,7 +484,7 @@ def keep_video_copy(o):
         raise ValueError("durationMs isn't an integer from 0 to 8,640,000,000")
     mt = media_type(o.get("mediaType"))
     if mt is None:
-        raise ValueError("mediaType missing or not a media type (core 8.5)")
+        raise ValueError("mediaType missing or not a media type (MSFP Media base 3)")
     size = int_in(o.get("size"), 1, MAX_SIZE)
     if size is None:
         raise ValueError("size isn't an integer from 1 to 999,999,999,999,999")
@@ -510,15 +512,15 @@ def keep_video_copy(o):
     return c
 
 
-# ---- Titles (video 3.1, 3.9, 3.10) ----------------------------------------------------
+# ---- Titles (MSFP Media video 3.1, 3.9, 3.10) ----------------------------------------------------
 
 def keep_video_title(o, libraries):
-    """Catalog 3.3 and video 3.1, 3.8 to 3.10 for one entry of titles:
+    """MSFP Media listing 3.3 and MSFP Media video 3.1, 3.8 to 3.10 for one entry of titles:
     what the caller keeps (a dict in the vectors' order); raises
     ValueError with why it skips the title."""
     if not isinstance(o, dict):
         raise ValueError("not an object")
-    # A title carries no kind (catalog 3): its key names it, and a kind
+    # A title carries no kind (MSFP Media listing 3): its key names it, and a kind
     # member is unknown, ignored.
     key, lib = o.get("key"), o.get("library")
     if not all(isinstance(x, str) for x in (key, lib)):
@@ -560,7 +562,7 @@ def keep_video_title(o, libraries):
             if x and x.kind == "episode" and x.series == k.series:
                 w.append(s)
         _put(t, "with", w)
-    # ids (video 4.3): on episodes of tmdb and tvdb and on tvdb series only.
+    # ids (MSFP Media video 4.3): on episodes of tmdb and tvdb and on tvdb series only.
     episode = kind == "episode" and k.scheme != "local"
     tvdb_series = kind == "series" and k.scheme == "tvdb"
     ids = o.get("ids")
@@ -591,7 +593,7 @@ def keep_video_title(o, libraries):
     return t
 
 
-# ---- previews (video 5.5, 5.6) ----------------------------------------------------------
+# ---- previews (MSFP Media video 5.5, 5.6) ----------------------------------------------------------
 
 def check_previews_request(o):
     """A previews request as the owning server reads it: None, or why it
@@ -615,7 +617,7 @@ def check_previews_request(o):
 
 
 def keep_previews_answer(o):
-    """Video 5.6: what the viewer's server keeps of a previews answer (its
+    """MSFP Media video 5.6: what the viewer's server keeps of a previews answer (its
     ticket and etag); raises ValueError when it refuses it (no sheets)."""
     if not isinstance(o, dict):
         raise ValueError("not an object")
@@ -627,7 +629,7 @@ def keep_previews_answer(o):
     return {"ticket": tk, "etag": et}
 
 
-# ---- codecs (video 3.5) ----------------------------------------------------------------
+# ---- codecs (MSFP Media video 3.5) ----------------------------------------------------------------
 
 _AVC = re.compile(r"(avc1|avc3)\.([0-9A-Fa-f]{2})[0-9A-Fa-f]{2}([0-9A-Fa-f]{2})")
 _HEVC = re.compile(r"(hvc1|hev1)\.[ABC]?([0-9]{1,2})\.[0-9A-Fa-f]{1,8}\.([LH])([0-9]{1,3})((?:\.[0-9A-Fa-f]{1,2}){0,6})")
@@ -639,7 +641,7 @@ DV_ENTRY = {"hvc1": "dvh1", "hev1": "dvhe", "av01": "dav1", "avc1": "dva1", "avc
 
 
 def read_codecs(o):
-    """Video 3.5: what a viewer's server decides by in a stream or a track
+    """MSFP Media video 3.5: what a viewer's server decides by in a stream or a track
     as kept (codec, codecs, bitDepth, dv): the parts of codecs it reads,
     those it ignores left out, and the Dolby Vision string rebuilt from
     the base 4CC and dv. Raises ValueError when it treats the copy as one
@@ -732,7 +734,7 @@ def read_codecs(o):
 
 
 def codecs_problems(c, where):
-    """Video 3.5 in one copy as a caller keeps it: the streams and tracks
+    """MSFP Media video 3.5 in one copy as a caller keeps it: the streams and tracks
     a viewer's server can't read (codecs missing or malformed where it is
     required, or unreadable for its codec)."""
     out = []
@@ -742,13 +744,13 @@ def codecs_problems(c, where):
         try:
             read_codecs(s)
         except ValueError as e:
-            out.append("%s: %s: %s (video 3.5)" % (where, what, e))
+            out.append("%s: %s: %s (MSFP Media video 3.5)" % (where, what, e))
     return out
 
 
-# ---- play's video members (video 5.3, 5.4, 6.1) ----------------------------------------------
+# ---- play's video members (MSFP Media video 5.3, 5.4, 6.1) ----------------------------------------------
 
-# Video 5.4's table: the form (and ass) a track of a listed format is served in.
+# MSFP Media video 5.4's table: the form (and ass) a track of a listed format is served in.
 SERVED_FORM = {"subrip": ("text", False), "webvtt": ("text", False), "mov_text": ("text", False),
                "ttml": ("text", False), "ass": ("text", True), "ssa": ("text", True),
                "hdmv_pgs_subtitle": ("picture", False), "dvd_subtitle": ("picture", False),
@@ -756,7 +758,7 @@ SERVED_FORM = {"subrip": ("text", False), "webvtt": ("text", False), "mov_text":
 
 
 def keep_video_answer(o, cp, root):
-    """Video 5.3 and 6.1: the video members of play's answer as the
+    """MSFP Media video 5.3 and 6.1: the video members of play's answer as the
     viewer's server keeps them for the copy cp (as kept), with urls, every
     URL it may build from the stream root and the ticket; raises
     ValueError when it refuses the answer."""
@@ -798,13 +800,13 @@ def keep_video_answer(o, cp, root):
     return out
 
 
-# ---- fonts (video 6.6) -----------------------------------------------------------
+# ---- fonts (MSFP Media video 6.6) -----------------------------------------------------------
 
 MAX_FONTS, MAX_FONT, MAX_FONT_SET = 64, 10 * 1024 * 1024, 64 * 1024 * 1024
 
 
 def check_font_set(sizes):
-    """Video 6.6's bounds on one copy's fonts, by their sizes in order:
+    """MSFP Media video 6.6's bounds on one copy's fonts, by their sizes in order:
     (count, bytes); raises ValueError at the first bound broken (at most
     64 fonts, each 1 byte to 10 MiB, 64 MiB in all)."""
     if not isinstance(sizes, list):
@@ -898,7 +900,7 @@ def _show(v):
     return s if len(s) <= 80 else s[:77] + "..."
 
 
-# Members proposal 17 dropped from copies, streams and tracks (video 3.2,
+# Members proposal 17 dropped from copies, streams and tracks (MSFP Media video 3.2,
 # 3.3; proposal 17 section 4): an owning server no longer sends them.
 DROPPED = {"copy": ("name", "container", "bitrateKbps", "added", "previews"),
            "video": ("codecTag", "profile", "level"),
@@ -931,16 +933,16 @@ def dropped_members(c, where):
 
 
 def _hdr_problems(c, where):
-    """Video 3.6: hdr holds only enhancement layers and dynamic metadata;
+    """MSFP Media video 3.6: hdr holds only enhancement layers and dynamic metadata;
     hdr10, hlg and dv aren't sent there (colour and dv say them)."""
     v = c.get("video") if isinstance(c.get("video"), dict) else {}
     hdr = v.get("hdr") if isinstance(v.get("hdr"), list) else []
-    return ["%s: hdr lists %s, which aren't sent there: colour or dv says it (video 3.6)" % (where, x)
+    return ["%s: hdr lists %s, which aren't sent there: colour or dv says it (MSFP Media video 3.6)" % (where, x)
             for x in ("hdr10", "hlg", "dv") if x in hdr]
 
 
 def copy_problems(c, where="copy"):
-    """What an owning server got wrong in one copy it sent (video 3.2 to
+    """What an owning server got wrong in one copy it sent (MSFP Media video 3.2 to
     3.8): anything a caller would skip, drop, cut, round or change, and
     the owning server's own rules."""
     try:
@@ -959,5 +961,5 @@ def copy_problems(c, where="copy"):
     if "parts" in c and "parts" not in kept and not isinstance(c["parts"], list):
         bad.append("%s: parts counts as absent for a caller (a count of 2 to 16 files)" % where)
     if "previewLayout" in c and "previewLayout" not in kept:
-        bad.append("%s: previewLayout is dropped by a caller (video 5.5's bounds)" % where)
+        bad.append("%s: previewLayout is dropped by a caller (MSFP Media video 5.5's bounds)" % where)
     return bad

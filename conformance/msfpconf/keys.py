@@ -20,7 +20,7 @@ def _x():
 
 class KeyChecks:
 
-    # ---- the server reads this suite's catalog (catalog 2, 3) ---------------------------
+    # ---- the server reads this suite's catalog (MSFP Media listing 2, 3) ---------------------------
 
     def reader_checks(self):
         Fail, Skip = _x()
@@ -28,10 +28,10 @@ class KeyChecks:
         ok, why = self.can_ask_operator()
         title = "the server reads this suite's libraries and titles, well signed, following next"
         if not ok:
-            self.skip("Q1", "catalog 2, 3; core 6.4", title, why, operator=True)
+            self.skip("Q1", "MSFP Media listing 2, 3; core 6.4", title, why, operator=True)
             return
         if "catalog" not in self.parts_on():
-            self.skip("Q1", "catalog 2, 3; core 6.4", title, "catalog is off", operator=True)
+            self.skip("Q1", "MSFP Media listing 2, 3; core 6.4", title, "catalog is off", operator=True)
             return
         t0 = time.time()
 
@@ -52,7 +52,7 @@ class KeyChecks:
             if not ts:
                 raise Fail("the server read libraries but asked for no titles")
             return "%d libraries and %d titles calls, all well signed and formed" % (len(lib), len(ts))
-        self.check("Q1", "catalog 2, 3; core 6.4", "the server's calls to this suite are well signed and well formed", reads,
+        self.check("Q1", "MSFP Media listing 2, 3; core 6.4", "the server's calls to this suite are well signed and well formed", reads,
                    operator=True)
 
         def bodies():
@@ -75,14 +75,14 @@ class KeyChecks:
             if bad:
                 raise Fail("\n".join(bad))
             return "well formed"
-        self.check("Q2", "catalog 3", "the server's titles requests: libraries offered, after a string, since an integer", bodies,
+        self.check("Q2", "MSFP Media listing 3", "the server's titles requests: libraries offered, after a string, since an integer", bodies,
                    operator=True)
 
         def follows():
             if not done():
                 raise Fail("the server didn't ask for the page after next = movie/tmdb/603")
             return "followed next (the suite sends next on a short page on purpose: a caller follows any next above its after)"
-        self.check("Q3", "catalog 3.1", "the server follows next to the following page", follows, operator=True)
+        self.check("Q3", "MSFP Media listing 3.1", "the server follows next to the following page", follows, operator=True)
 
         def ahead():
             calls = s.since(0, call="previews")
@@ -96,7 +96,7 @@ class KeyChecks:
                    operator=True)
         self.viewer_checks()
 
-    # ---- the server as a viewer of this suite's films (playback 2 to 4, 6.3) -------------
+    # ---- the server as a viewer of this suite's films (MSFP Media playing 2 to 4, 5) -------------
 
     def viewer_checks(self):
         """With --watch-pause: the operator plays one of this suite's films
@@ -105,13 +105,18 @@ class KeyChecks:
         film) and ends a playback it hears nothing of for 2 minutes."""
         Fail, Skip = _x()
         s = self.peer
-        ids = ("VW1", "VW2", "VW3", "VW4")
-        sections = ("playback 2 to 4; core 6.4", "playback 3, 6.3", "playback 3", "playback 4")
+        ids = ("VW1", "VW2", "VW3", "VW4", "VW5")
+        sections = ("MSFP Media playing 2 to 4; playback 2 to 4; core 6.4", "MSFP Media playing 3, 5", "MSFP Media playing 3",
+                    "MSFP Media playing 4", "MSFP Media playing 2.3, 3")
         titles = ("the server's play, progress and stop for this suite's film are well signed and well formed",
-                  "while its viewer pauses, the server keeps the playback: never 2 minutes without progress or media",
-                  "the pause is reported at once (a progress soon after the play, the viewer pausing at once)",
-                  "the server sends stop when its viewer stops")
-        levels = ("MUST", "SHOULD", "SHOULD", "SHOULD")
+                  "while its viewer pauses, the server keeps the playback: never its idle limit (twice the answer's "
+                  "progressSeconds) without progress or media",
+                  "the pause is reported at once, with paused true (a progress soon after the play, the viewer pausing "
+                  "at once)",
+                  "the server sends stop when its viewer stops",
+                  "progress at the answer's interval: never more often than every 45 seconds, but when the viewer pauses "
+                  "or resumes")
+        levels = ("MUST", "SHOULD", "SHOULD", "SHOULD", "SHOULD")
 
         def skip_all(why):
             for cid, sec, title, level in zip(ids, sections, titles, levels):
@@ -130,7 +135,7 @@ class KeyChecks:
 
         def done():
             # Any stop ends the step: a malformed one too (VW1 and VW4 tell).
-            return any(pb["stopped"] is not None for pb in mine()) or bool(s.since(t0, call="stop"))
+            return any(pb["stopped"] is not None and not pb.get("replaced") for pb in mine()) or bool(s.since(t0, call="stop"))
         self.ask_operator("watch", "on the server, play one of this peer's films (Fight Club, The Matrix or Heat), "
                                    "pause it at once, keep it paused, and stop it after %d seconds" % self.a.watch_pause,
                           done, self.a.watch_pause + 120)
@@ -138,7 +143,7 @@ class KeyChecks:
         if not pbs:
             skip_all("the server played none of this suite's films")
             return
-        pb = next((x for x in pbs if x["stopped"] is not None), pbs[-1])
+        pb = next((x for x in pbs if x["stopped"] is not None and not x.get("replaced")), pbs[-1])
         end = pb["stopped"] or time.time()
 
         def well():
@@ -158,8 +163,8 @@ class KeyChecks:
             gaps = [(b - a, a) for a, b in zip(times, times[1:])]
             gap, since = max(gaps) if gaps else (0, pb["opened"])
             if gap > s.EXPIRY:
-                raise Fail("%d s without progress or media from %d s after the play (a playback ends after %d s, "
-                           "playback 6.3)" % (gap, since - pb["opened"], s.EXPIRY))
+                raise Fail("%d s without progress or media from %d s after the play (a playback ends after %d s, its "
+                           "idle limit: MSFP Media playing 3, 5)" % (gap, since - pb["opened"], s.EXPIRY))
             return "%d progress reports and %d media requests over %d s; the longest gap %d s" % (
                 len(pb["progress"]), len(pb["media"]), end - pb["opened"], gap)
         self.check("VW2", sections[1], titles[1], kept, level="SHOULD", operator=True)
@@ -167,13 +172,14 @@ class KeyChecks:
         def paused():
             first = min([t for t, _, _ in pb["progress"]] or [None]) if pb["progress"] else None
             if first is None or first - pb["opened"] > 60:
-                raise Fail("no progress within 60 s of the play, its viewer pausing at once (playback 3: at once when "
-                           "the viewer pauses; %d progress reports in all)" % len(pb["progress"]))
-            if any(p for _, _, p in pb["progress"]):
-                rec_note = "; paused sent, an unknown member since proposal 17"
-            else:
-                rec_note = ""
-            return "a progress %d s after the play%s" % (first - pb["opened"], rec_note)
+                raise Fail("no progress within 60 s of the play, its viewer pausing at once (MSFP Media playing 3: at "
+                           "once when the viewer pauses; %d progress reports in all)" % len(pb["progress"]))
+            told = [t for t, _, p in pb["progress"] if p]
+            if not told or told[0] - pb["opened"] > 60:
+                raise Fail("no progress with paused true within 60 s of the play, its viewer pausing at once (MSFP Media "
+                           "playing 3: paused true when the viewer has paused; %d progress reports, %d with paused true)"
+                           % (len(pb["progress"]), len(told)))
+            return "a progress %d s after the play, paused true %d s after it" % (first - pb["opened"], told[0] - pb["opened"])
         self.check("VW3", sections[2], titles[2], paused, level="SHOULD", operator=True)
 
         def stopped():
@@ -181,6 +187,19 @@ class KeyChecks:
                 raise Fail("no stop within %d s" % (self.a.watch_pause + 120))
             return "stop %d s after the play" % (pb["stopped"] - pb["opened"])
         self.check("VW4", sections[3], titles[3], stopped, level="SHOULD", operator=True)
+
+        def spaced():
+            reps = sorted((t, p) for t, _, p in pb["progress"])
+            close = [(b[0] - a[0], a[0] - pb["opened"]) for a, b in zip(reps, reps[1:])
+                     if b[0] - a[0] < 45 - 2 and a[1] == b[1]]
+            if close:
+                gap, since = close[0]
+                raise Fail("%d progress reports less than 45 s apart, the viewer neither pausing nor resuming between "
+                           "them (the first: %d s apart, %d s after the play; MSFP Media playing 3: about every "
+                           "progressSeconds, %d here, never more often than every 45 seconds)" % (
+                               len(close) + 1, gap, since, s.PROGRESS))
+            return "%d progress report(s), none closer than 45 s but at a pause or a resume" % len(reps)
+        self.check("VW5", sections[4], titles[4], spaced, level="SHOULD", operator=True)
 
     # ---- rate limits (core 8.3) ----------------------------------------------------------
 

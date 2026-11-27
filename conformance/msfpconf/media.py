@@ -1,8 +1,9 @@
-"""The media rules, as revised by proposal 16: HLS playlists
-(spec/v0/media.md section 3.1), ranges, the file's answers and the scan
-cap (media 2.1, 3.2, 4.2), WebVTT, ASS, PGS and fonts (video.md sections
-6.3 to 6.6), a local title's image (catalog.md section 4.4), and a JPEG's
-size from its header (video 6.2)."""
+"""The media rules of MSFP Media's fetching and video, as MSFP's media and
+video parts carry them: HLS playlists (MSFP Media fetching 3.1), ranges,
+the file's answers (fetching 2.1, 3.2) and MSFP's scan cap (media 4.2),
+WebVTT, ASS, PGS and fonts (MSFP Media video 6.3 to 6.6), a local title's
+image (MSFP Media listing 4.4), and a JPEG's
+size from its header (MSFP Media video 6.2)."""
 
 import html
 import math
@@ -44,7 +45,7 @@ def _text(raw):
     return raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else raw
 
 
-# ---- HLS (media 3.1) -------------------------------------------------------------
+# ---- HLS (MSFP Media fetching 3.1) -------------------------------------------------------------
 
 MASTER_TAGS = {"#EXTM3U", "#EXT-X-VERSION", "#EXT-X-INDEPENDENT-SEGMENTS", "#EXT-X-STREAM-INF", "#EXT-X-MEDIA"}
 MEDIA_TAGS = {"#EXTM3U", "#EXT-X-VERSION", "#EXT-X-TARGETDURATION", "#EXT-X-MEDIA-SEQUENCE", "#EXT-X-PLAYLIST-TYPE",
@@ -117,7 +118,7 @@ def _media_playlist(lines, last_uri):
 
 
 def check_playlist(b, audio_ids=None):
-    """The viewer's server's checks of media 3.1, steps 1 to 10, in order.
+    """The viewer's server's checks of MSFP Media fetching 3.1, steps 1 to 10, in order.
     audio_ids: the playback's audio track IDs, for step 10 (None: any
     a<n>). Returns (None, uris) when they pass, else (why, [])."""
     if len(b) > 2 * 1024 * 1024:
@@ -190,12 +191,12 @@ _MEDIA_ATTRS = {"TYPE", "GROUP-ID", "NAME", "LANGUAGE", "DEFAULT", "AUTOSELECT",
 
 
 def check_owner_playlist(b, master, audio_ids=None):
-    """What the owning server sends (media 3.1): the viewer's checks, and
+    """What the owning server sends (MSFP Media fetching 3.1): the viewer's checks, and
     besides: lines end in a line feed, only the subset's tags, URIs only
     in URI lines, #EXT-X-MAP:URI="<name>" and #EXT-X-MEDIA's URI, a URI
     line only after #EXT-X-STREAM-INF or #EXTINF; a media playlist
     complete (VOD, #EXT-X-ENDLIST its last tag); #EXT-X-MEDIA with exactly
-    the attributes media 3.1 lists, one DEFAULT=YES, every
+    the attributes MSFP Media fetching 3.1 lists, one DEFAULT=YES, every
     #EXT-X-STREAM-INF then naming AUDIO="audio". Returns (problems, uris)."""
     why, uris = check_playlist(b, audio_ids)
     if why:
@@ -228,7 +229,7 @@ def check_owner_playlist(b, master, audio_ids=None):
                 extra = set(a) - _MEDIA_ATTRS
                 missing = {"TYPE", "GROUP-ID", "NAME", "DEFAULT", "AUTOSELECT", "URI"} - set(a)
                 if extra or missing:
-                    bad.append("EXT-X-MEDIA with %s%s (media 3.1: exactly TYPE, GROUP-ID, NAME, LANGUAGE, DEFAULT, "
+                    bad.append("EXT-X-MEDIA with %s%s (MSFP Media fetching 3.1: exactly TYPE, GROUP-ID, NAME, LANGUAGE, DEFAULT, "
                                "AUTOSELECT, CHANNELS, URI)" % ("attributes " + ", ".join(sorted(extra)) if extra else "",
                                                                " without " + ", ".join(sorted(missing)) if missing else ""))
                 if a.get("GROUP-ID") not in (None, '"audio"'):
@@ -267,7 +268,7 @@ def check_owner_playlist(b, master, audio_ids=None):
     return bad, uris
 
 
-# ---- Ranges, the file and scans (media 2.1, 3.2, 4.2) -------------------------------
+# ---- Ranges, the file and scans (MSFP Media fetching 2.1, 3.2; media 4.2) -------------------------------
 
 _RANGE = re.compile(r"bytes=(?:([0-9]{1,15})-([0-9]{1,15})?|-([0-9]{1,15}))")
 _CONTENT_RANGE = re.compile(r"bytes ([0-9]+)-([0-9]+)/([0-9]+|\*)")
@@ -285,7 +286,7 @@ def scan_cap(scan_bytes):
 
 
 def parse_range(h):
-    """A Range header (media 2.1): (form, first, last, count), form 1 for
+    """A Range header (MSFP Media fetching 2.1): (form, first, last, count), form 1 for
     first-last, 2 for first-, 3 for -count; raises Refused when malformed."""
     m = _RANGE.fullmatch(h)
     if not m:
@@ -318,7 +319,7 @@ def check_range(h, size):
 
 
 def check_file_answer(rng, size, etag, status, etag_header=None, content_range=None, content_length=None):
-    """The viewer's server's check of an answer for the file (media 2.1,
+    """The viewer's server's check of an answer for the file (MSFP Media fetching 2.1,
     2.3, 3.2): None when it relays it, else why. rng is the Range sent
     (None or "" for none); headers None when absent."""
     satisfiable = False
@@ -386,7 +387,7 @@ def scan_answer(sent, rng, size, scan_bytes=None):
     return 206, "bytes %d-%d/%d" % (start, end, size)
 
 
-# ---- Checking a 206 (media 2.1) --------------------------------------------------
+# ---- Checking a 206 (MSFP Media fetching 2.1) --------------------------------------------------
 
 def check_206(range_form, headers, body, first=None, last=None, count=None):
     """Checks a 206 against the range asked for: None when it answers it."""
@@ -414,7 +415,7 @@ def check_206(range_form, headers, body, first=None, last=None, count=None):
     return None
 
 
-# ---- WebVTT (video 6.3) ------------------------------------------------------------
+# ---- WebVTT (MSFP Media video 6.3) ------------------------------------------------------------
 
 _TIMING = re.compile(r"((?:[0-9]{1,3}:)?[0-9]{2}:[0-9]{2}\.[0-9]{3})[\t\f ]+-->[\t\f ]+"
                      r"((?:[0-9]{1,3}:)?[0-9]{2}:[0-9]{2}\.[0-9]{3})([\t\f ].*)?")
@@ -615,7 +616,7 @@ def _balance(lines):
 
 
 def rebuild_vtt(raw, whole=False):
-    """Rebuilds a WebVTT part (or a whole track) as video 6.3 says: the
+    """Rebuilds a WebVTT part (or a whole track) as MSFP Media video 6.3 says: the
     bytes, or raises Refused."""
     if len(raw) > (16 if whole else 5) * 1024 * 1024:
         raise Refused("over %d MiB" % (16 if whole else 5))
@@ -646,7 +647,7 @@ def rebuild_vtt(raw, whole=False):
     return "".join(out).encode("utf-8")
 
 
-# ---- ASS (video 6.4) -------------------------------------------------------------
+# ---- ASS (MSFP Media video 6.4) -------------------------------------------------------------
 
 _ASS_NUMBER = re.compile(r"-?[0-9]{1,7}(?:\.[0-9]{1,3})?")
 _ASS_HEX_COLOUR = re.compile(r"&H([0-9A-Fa-f]{1,8})&?")
@@ -769,7 +770,7 @@ def _default_style():
 
 
 def rebuild_ass(raw, whole=False):
-    """Rebuilds an ASS or SSA part (or a whole track) as video 6.4 says:
+    """Rebuilds an ASS or SSA part (or a whole track) as MSFP Media video 6.4 says:
     the bytes, or raises Refused."""
     if len(raw) > (16 if whole else 5) * 1024 * 1024:
         raise Refused("over %d MiB" % (16 if whole else 5))
@@ -1125,10 +1126,10 @@ def _ass_drawing(s):
     return " ".join(out)
 
 
-# ---- Fonts (video 6.6) -------------------------------------------------------------
+# ---- Fonts (MSFP Media video 6.6) -------------------------------------------------------------
 
 def check_font(b):
-    """Checks a font as video 6.6 says: its media type, "font/ttf" or
+    """Checks a font as MSFP Media video 6.6 says: its media type, "font/ttf" or
     "font/otf"; raises Refused."""
     if len(b) > 10 * 1024 * 1024:
         raise Refused("step 1: over 10 MiB")
@@ -1166,7 +1167,7 @@ def check_font(b):
     return typ
 
 
-# ---- A local title's image (catalog 4.4) ---------------------------------------------
+# ---- A local title's image (MSFP Media listing 4.4) ---------------------------------------------
 
 _PNG = b"\x89PNG\r\n\x1a\n"
 
@@ -1200,7 +1201,7 @@ def _jpeg_frame(b):
 
 def image_kind(b, size=None):
     """The checks of a local title's image before decoding it (catalog
-    4.4, media 3.4): ("jpeg" or "png", width, height); raises Refused. b
+    4.4, MSFP Media fetching 3.4): ("jpeg" or "png", width, height); raises Refused. b
     is the image (or its first bytes, with size its whole length)."""
     if size is None:
         size = len(b)
@@ -1226,7 +1227,7 @@ def image_kind(b, size=None):
 
 
 def image_answer(body):
-    """The viewer's server's check of an image answer (catalog 4.4):
+    """The viewer's server's check of an image answer (MSFP Media listing 4.4):
     {"ticket"}, the ticket 1 to 64 characters of A-Z a-z 0-9 _ -; raises
     Refused (the answer dropped, no image). The URL is built from it
     (image_url), never read from the answer: a url member is unknown."""
@@ -1244,11 +1245,11 @@ def image_answer(body):
 
 
 def image_url(root, ticket):
-    """The URL of a local title's image (catalog 4.4, media 1)."""
+    """The URL of a local title's image (MSFP Media listing 4.4, MSFP Media fetching 1)."""
     return root + ticket + "/image"
 
 
-# ---- The names an owning server serves (media 1) ---------------------------------------------
+# ---- The names an owning server serves (MSFP Media fetching 1) ---------------------------------------------
 
 _NUMBER = re.compile(r"0|[1-9][0-9]*")
 
@@ -1258,12 +1259,12 @@ def _number(s, top):
 
 
 def serves(t, name):
-    """Media 1 and 4: None when the owning server serves name (the URL's
+    """MSFP Media fetching 1 and 4.2: None when the owning server serves name (the URL's
     path after <stream root><ticket>/) under a ticket t (its kind; for a
     playback or a download what its answer opened: protocol, subtitles,
     fontCount, sheetCount, queue (each entry's protocol, "" for one not
     prepared) and the bare names its playlists give), else why it answers
-    404. It serves exactly the names media 1 lists, within their counts."""
+    404. It serves exactly the names MSFP Media fetching 1 lists, within their counts."""
     from .wire import check_media_name
     p = name.split("/")
 
@@ -1319,7 +1320,7 @@ def serves(t, name):
 
 
 def relay_type(what, value):
-    """Media 3: the Content-Type the viewer's server relays the file with
+    """MSFP Media fetching 3: the Content-Type the viewer's server relays the file with
     (what "file", value the copy's mediaType from the catalog, "" for
     none) or a segment with (what "segment", value the owning server's
     Content-Type)."""
@@ -1334,7 +1335,7 @@ def relay_type(what, value):
     return mt
 
 
-# ---- PGS (video 6.5) ------------------------------------------------------------------
+# ---- PGS (MSFP Media video 6.5) ------------------------------------------------------------------
 
 def check_pgs(raw):
     """Checks a PGS part whole; raises Refused."""
@@ -1433,7 +1434,7 @@ def _runs_fit(d, w, h):
             raise Refused("a line wider than the object")
 
 
-# ---- JPEG (video 6.2) -------------------------------------------------------------------
+# ---- JPEG (MSFP Media video 6.2) -------------------------------------------------------------------
 
 def jpeg_size(b):
     """(width, height) from a JPEG's header (its first SOF marker), or None

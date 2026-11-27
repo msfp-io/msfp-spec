@@ -8,7 +8,7 @@ with the index first. Made with:
         -c:a aac -b:a 16k -map_metadata -1 -movflags +faststart clip.mp4
 
 and the same streams in MPEG-TS, the one segment of its HLS (the baseline
-of playback 2.7, for a play without delivery, and a remux to mpegts):
+of MSFP Media playing 2.7, for a play without delivery, and a remux to mpegts):
 
     ffmpeg -i clip.mp4 -c copy -bsf:v h264_mp4toannexb -muxdelay 0 -f mpegts clip.ts
 """
@@ -471,7 +471,7 @@ TS = base64.b64decode(
     "wAATgIAFIQALnL3/8VxAAX/8ARggBw=="
 )
 
-# The clip's one preview sheet (video 5.5): a JPEG header of 160x90, its
+# The clip's one preview sheet (MSFP Media video 5.5): a JPEG header of 160x90, its
 # frame header only, as the self-test's fake serves its own.
 SHEET = (b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
          b"\xff\xc0\x00\x11\x08\x00\x5a\x00\xa0\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01\xff\xd9")

@@ -1,10 +1,11 @@
 package main
 
-// The media rules of version 0, as revised by proposals 16 and 17: the
-// names an owning server serves, HLS playlists, the relayed media type,
-// ranges and the file's answers, the scan cap of the scan answer's
-// scanBytes (spec/v0/media.md sections 1, 2.1, 3, 3.1, 3.2 and 4.2),
-// WebVTT, ASS, PGS and fonts (spec/v0/video.md sections 6.3 to 6.6), and
+// The media rules of MSFP Media's fetching, as MSFP's media part carries
+// them: the names an owning server serves, HLS playlists, the relayed
+// media type, ranges and the file's answers (MSFP Media fetching sections
+// 1, 2.1, 3, 3.1 and 3.2), the scan cap of the scan answer's scanBytes
+// (MSFP media section 4.2),
+// WebVTT, ASS, PGS and fonts (MSFP Media video sections 6.3 to 6.6), and
 // the destinations of spec/v0/core.md section 3.3. Written from the
 // specification's text, to check vectors/v0/media.json and the
 // destinations of vectors/v0/strict.json.
@@ -107,7 +108,7 @@ func mediaInt(s string, lo, hi int64) bool {
 	return err == nil && v >= lo && v <= hi
 }
 
-// --- HLS (media section 3.1) ---
+// --- HLS (fetching section 3.1) ---
 
 const (
 	maxPlaylist        = 2 << 20
@@ -315,7 +316,8 @@ func checkMediaPlaylist(lines []string, lastURI int) error {
 	return nil
 }
 
-// --- Ranges and the file (media sections 2.1, 3.2 and 4.2) ---
+// --- Ranges and the file (fetching sections 2.1 and 3.2; MSFP media
+// section 4.2 for scans) ---
 
 var rangeForm = regexp.MustCompile(`^bytes=(?:([0-9]{1,15})-([0-9]{1,15})?|-([0-9]{1,15}))$`)
 
@@ -465,7 +467,7 @@ func checkFileAnswer(a mediaAnswer) error {
 	return nil
 }
 
-// The scan cap is the scan answer's scanBytes (playback section 8): 4
+// The scan cap is the scan answer's scanBytes (MSFP playback section 8): 4
 // MiB to 1 GiB, 4 MiB when the answer has none, or one out of range.
 const (
 	scanFloor = 4 << 20
@@ -497,7 +499,7 @@ func scanAnswer(scanCap, sent int64, rng string, size int64) (int, string) {
 	return 206, fmt.Sprintf("bytes %d-%d/%d", start, end, size)
 }
 
-// --- The names an owning server serves (media section 1) ---
+// --- The names an owning server serves (fetching section 1) ---
 
 // mediaTicket is what an owning server knows of a ticket: its kind
 // (playback, download, scan, previews or image), and for a playback what
@@ -621,7 +623,7 @@ func mediaServes(t mediaTicket, name string) error {
 	return stream(t.Protocol, p)
 }
 
-// --- The relayed media type (media section 3) ---
+// --- The relayed media type (fetching section 3) ---
 
 // mediaRelayType is the Content-Type the viewer's server relays the file
 // with, from the copy's mediaType in the catalog ("" for none), or a
@@ -647,7 +649,7 @@ func mediaRelayType(what, value string) string {
 	return mt
 }
 
-// --- WebVTT (video section 6.3) ---
+// --- WebVTT (MSFP Media video section 6.3) ---
 
 const (
 	maxVTT      = 5 << 20
@@ -1009,7 +1011,7 @@ func balanceCue(lines [][]vttTok) []string {
 	return out
 }
 
-// --- ASS (video section 6.4) ---
+// --- ASS (MSFP Media video section 6.4) ---
 
 const (
 	maxASS           = 5 << 20
@@ -1738,7 +1740,7 @@ func assDrawing(s string) string {
 	return strings.Join(out, " ")
 }
 
-// --- PGS (video section 6.5) ---
+// --- PGS (MSFP Media video section 6.5) ---
 
 const (
 	maxPGS        = 64 << 20
@@ -1889,7 +1891,7 @@ func runsFit(d []byte, w, h int) error {
 	return nil
 }
 
-// --- Fonts (video section 6.6) ---
+// --- Fonts (MSFP Media video section 6.6) ---
 
 const (
 	maxFont       = 10 << 20

@@ -18,7 +18,7 @@ from .wire import (FED, STREAM, H_SIG, MAX_INT, NotIJSON, answer_message, b64u, 
                    unb64u)
 
 NOT_FOUND = b'{"type":"not-found","title":"Not found","status":404}\n'
-MAX_POSITION = 8640000000       # playback 3 and 4: 100 days
+MAX_POSITION = 8640000000       # MSFP Media playing 3 and 4: 100 days
 
 
 def problem(status, typ, title, **extra):
@@ -322,19 +322,23 @@ class PeerServer:
 
     # ---- this suite as the owning server: the server under test plays its films ----------
 
-    EXPIRY = 120    # playback 6.3: neither progress nor a media request for 2 minutes
+    PROGRESS = 60   # the interval its play answers state (MSFP Media playing 2.3, 3)
+    EXPIRY = 120    # MSFP Media playing 5: the idle limit, twice the interval
 
     def _play(self, j, rec):
-        """Playback 2: a film of this suite's catalog (the same short clip
+        """MSFP Media playing 2: a film of this suite's catalog (the same short clip
         for each), with a ticket under the stream root. delivery file: the
-        clip as it is; no delivery (the baseline, playback 2.7: its streams
+        clip as it is; no delivery (the baseline, MSFP Media playing 2.7: its streams
         already are H.264 and AAC) or a remux to mpegts: complete HLS of the
         clip in MPEG-TS; any other delivery, media type or codec: 409
-        delivery-refused. The answer carries the ticket, no URL (playback
-        2.3); the ticket opens the clip and its one preview sheet."""
+        delivery-refused for another delivery, target-refused for another
+        media type (MSFP Media playing 2.2 step 7). The answer carries the
+        ticket, no URL, and progressSeconds (MSFP Media playing 2.3); the
+        ticket opens the clip and its one preview sheet. A play that
+        replaces a live playback of the server ends that one."""
         bad = self._play_faults(j)
         for b in bad:
-            rec["faults"].append("its play would be refused with 400: %s (playback 2.1, 2.2, 2.7; core 8.5)" % b)
+            rec["faults"].append("its play would be refused with 400: %s (MSFP Media playing 2.1, 2.2, 2.7; MSFP Media base 3)" % b)
         if bad:
             return 400, problem(400, "invalid-request", "Invalid request")
         keys = {t["key"] for page in self.pages.values() for t in page.get("titles", [])}
@@ -345,9 +349,15 @@ class PeerServer:
             proto = "file"
         elif delivery is None or (delivery == "remux" and j.get("mediaType") == "video/mp2t"):
             proto = "hls"
+        elif delivery == "remux":
+            return 409, problem(409, "target-refused", "This target is refused")
         else:
             return 409, problem(409, "delivery-refused", "This delivery is refused")
-        for f in ("capabilities", "container", "audioLanguage", "subtitleLanguage", "subtitleTrack"):
+        old = self.playbacks.get(j.get("replaces")) if isinstance(j.get("replaces"), str) else None
+        if old is not None and old["stopped"] is None and self.live(old):
+            old["stopped"] = time.time()    # replaced: it ends with this 200 (MSFP Media playing 2.3, 5)
+            old["replaced"] = True
+        for f in ("container", "audioLanguage", "subtitleLanguage", "subtitleTrack"):
             if f in j:
                 rec["notes"].append("its play sends %s, which proposal 17 removed (an unknown member, ignored)" % f)
         alphabet = "abcdefghijklmnopqrstuvwxyz234567"
@@ -359,10 +369,10 @@ class PeerServer:
         self.tickets[ticket] = pid
         return 200, dumps({"id": pid, "ticket": ticket, "protocol": proto, "method": "direct" if proto == "file" else "remux",
                            "etag": clip.ETAG, "positionMs": 0, "versionId": "c_clip", "audioTrack": "a1",
-                           "audioRenditions": False})
+                           "audioRenditions": False, "progressSeconds": self.PROGRESS})
 
     def _previews(self, j, rec):
-        """Video 5.6: a ticket for the clip's one sheet, for 10 minutes."""
+        """MSFP Media video 5.6: a ticket for the clip's one sheet, for 10 minutes."""
         keys = {t["key"] for page in self.pages.values() for t in page.get("titles", [])}
         if not isinstance(j.get("title"), str) or not isinstance(j.get("versionId"), str):
             return 400, problem(400, "invalid-request", "Invalid request")
@@ -378,10 +388,14 @@ class PeerServer:
     @staticmethod
     def _play_faults(j):
         """What in a play request the owning server refuses with 400
-        (playback 2.1, 2.2 step 1, 2.7; core 8.5: a value that isn't a
+        (MSFP Media playing 2.1, 2.2 step 1, 2.7; MSFP Media base 3: a value that isn't a
         token is malformed, an unknown token isn't)."""
         tok = re.compile(r"[a-z0-9._-]{1,32}")
         bad = []
+        if "capabilities" in j:
+            bad.append("capabilities, a capability list: MSFP refuses it (playback 2)")
+        if "replaces" in j and not (isinstance(j["replaces"], str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", j["replaces"])):
+            bad.append("replaces %r isn't of a playback ID's form" % (j["replaces"],))
         if not isinstance(j.get("title"), str):
             bad.append("title missing or not a string")
         purpose = j.get("purpose", "play")
@@ -395,7 +409,7 @@ class PeerServer:
             if d != "remux":
                 bad.append("mediaType without delivery remux")
             elif media_type(c) is None:
-                bad.append("mediaType %r isn't a media type (core 8.5)" % (c,))
+                bad.append("mediaType %r isn't a media type (MSFP Media base 3)" % (c,))
         elif d == "remux":
             bad.append("delivery remux without mediaType")
         if "transcode" in j:
@@ -422,7 +436,8 @@ class PeerServer:
 
     def live(self, pb, now=None):
         """Whether a playback is live: not stopped, and heard of (progress
-        or media) within the last 2 minutes; marks it expired otherwise."""
+        or media) within its idle limit (EXPIRY, twice its progressSeconds);
+        marks it expired otherwise."""
         now = now or time.time()
         if pb["stopped"] is not None or pb["expired"] is not None:
             return False
@@ -434,14 +449,16 @@ class PeerServer:
 
     @staticmethod
     def _malformed(call, j, rec):
-        """Playback 3 and 4: a progress or stop body this suite refuses with
+        """MSFP Media playing 3 and 4: a progress or stop body this suite refuses with
         400, noted as the server's fault."""
         bad = []
         if not isinstance(j.get("id"), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", j["id"]):
-            bad.append("id %r isn't 1 to 64 characters of A-Z a-z 0-9 _ - (playback 2.3)" % j.get("id"))
+            bad.append("id %r isn't 1 to 64 characters of A-Z a-z 0-9 _ - (MSFP Media playing 2.3)" % j.get("id"))
         pos = j.get("positionMs")
         if "positionMs" in j and not (isinstance(pos, int) and not isinstance(pos, bool) and 0 <= pos <= MAX_POSITION):
             bad.append("positionMs %r isn't an integer from 0 to 8,640,000,000" % pos)
+        if call == "progress" and "paused" in j and not isinstance(j["paused"], bool):
+            bad.append("paused %r isn't a boolean (MSFP Media playing 3)" % (j["paused"],))
         at, now = j.get("at"), time.time()
         if "at" in j and not (isinstance(at, int) and not isinstance(at, bool) and now - 30 * 86400 <= at <= now + 300):
             bad.append("at %r isn't Unix seconds from 30 days ago to 5 minutes ahead" % at)
@@ -456,11 +473,11 @@ class PeerServer:
         if pb is None or not self.live(pb):
             return 410, problem(410, "playback-stopped", "Playback was stopped")
         pos = j.get("positionMs")
-        pb["progress"].append((time.time(), pos if isinstance(pos, int) else None, "paused" in j))
+        pb["progress"].append((time.time(), pos if isinstance(pos, int) else None, j.get("paused") is True))
         return 200, b"{}"
 
     def _media(self, h, label):
-        """Media 1 and 2.1: the clip at <stream root><ticket>/file, with
+        """MSFP Media fetching 1 and 2.1: the clip at <stream root><ticket>/file, with
         ranges, for a live playback's ticket."""
         rest = h.path[len(STREAM):].split("?")[0].split("/")
         rest = [rest[0], "/".join(rest[1:])] if len(rest) >= 2 else rest

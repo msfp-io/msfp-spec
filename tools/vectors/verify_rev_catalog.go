@@ -16,12 +16,14 @@ func verifyRevCatalog(read func(string) []byte) []error {
 
 	raw := read("v0/strict.json")
 	var f struct {
-		Pages  []json.RawMessage `json:"titlePages"`
-		Opaque []verdict         `json:"opaqueKeyParts"`
-		Images []json.RawMessage `json:"localImages"`
-		Tokens []verdict         `json:"openTokens"`
-		Types  []verdict         `json:"openMediaTypes"`
-		Kinds  json.RawMessage   `json:"libraryKinds"`
+		Pages  []json.RawMessage  `json:"titlePages"`
+		Opaque []verdict          `json:"opaqueKeyParts"`
+		Images []json.RawMessage  `json:"localImages"`
+		Tokens []verdict          `json:"openTokens"`
+		Types  []verdict          `json:"openMediaTypes"`
+		Kinds  json.RawMessage    `json:"libraryKinds"`
+		Offer  listingOffer       `json:"titleOffer"`
+		Reqs   []titleRequestCase `json:"titleRequests"`
 	}
 	if err := json.Unmarshal(raw, &f); err != nil {
 		bad("%v", err)
@@ -31,7 +33,7 @@ func verifyRevCatalog(read func(string) []byte) []error {
 		bad("titlePages, opaqueKeyParts, localImages, openTokens or openMediaTypes missing or empty")
 	}
 	if f.Kinds != nil {
-		bad("libraryKinds: libraries carry no kind (catalog section 2)")
+		bad("libraryKinds: libraries carry no kind (MSFP Media listing section 2)")
 	}
 
 	// Each case holds exactly the members its kind defines.
@@ -59,6 +61,33 @@ func verifyRevCatalog(read func(string) []byte) []error {
 			bad("%s: a case named %q empty or twice", list, name)
 		}
 		names[list+"\n"+name] = true
+	}
+
+	// titleRequests: each answer derived again from the offer; what is
+	// listed is in byte order, of the libraries the caller may see, and
+	// a request with under is never a changes answer.
+	if len(f.Reqs) == 0 || len(f.Offer.Titles) == 0 {
+		bad("titleRequests or titleOffer missing or empty")
+	}
+	for _, c := range f.Reqs {
+		seen("titleRequests", c.Name)
+		a, err := listingRequest(f.Offer, c.Parts, []byte(c.Body))
+		ok, _ := reason(err)
+		out := ""
+		if err == nil {
+			out = string(playbackEncode(a))
+		}
+		if ok != c.Valid || out != c.Output || (c.Status == 200) != ok || !ok && c.Type != "not-found" {
+			bad("titleRequests %s: the file says %v %d %q; the rules give %v %q", c.Name, c.Valid, c.Status, c.Output, err, out)
+		}
+		for i, t := range a.Titles {
+			if i > 0 && a.Titles[i-1].Key >= t.Key || !strings.Contains(" Lf1 Lf2 Lm3 ", " "+t.Library+" ") {
+				bad("titleRequests %s: %s out of order, or of a library the caller may not see", c.Name, t.Key)
+			}
+		}
+		if a.MayBeChanges && strings.Contains(c.Body, `"under"`) {
+			bad("titleRequests %s: a changes answer with under", c.Name)
+		}
 	}
 
 	// titlePages: valid and caller derived again from the inputs.
@@ -238,7 +267,7 @@ func verifyRevCatalog(read func(string) []byte) []error {
 	return errs
 }
 
-// catalogStreamRoot tells a stream root (spec/v0/media.md section 1):
+// catalogStreamRoot tells a stream root (MSFP Media fetching section 1):
 // an https address, a prefix of the base path's form, /api/v1/stream/.
 func catalogStreamRoot(root string) bool {
 	const pre, end = "https://", "/api/v1/stream/"

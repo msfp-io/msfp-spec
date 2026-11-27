@@ -8,8 +8,9 @@ import (
 	"strings"
 )
 
-// verifyRevPlayback checks the playback vectors of the revision of version 0
-// (proposals 16 and 17), read back from the files: each value on its own.
+// verifyRevPlayback checks the playback vectors (MSFP Media's playing, as
+// MSFP's playback part carries it), read back from the files: each value
+// on its own.
 func verifyRevPlayback(read func(string) []byte) []error {
 	const file = "v0/playback.json"
 	var errs []error
@@ -122,13 +123,47 @@ func verifyRevPlayback(read func(string) []byte) []error {
 					bad("%s: capabilities kept", where)
 				}
 			}
-			if c.Call == "play" && c.Type == "delivery-refused" && c.Status != 409 {
-				bad("%s: delivery-refused without 409", where)
+			if c.Call == "play" && (c.Type == "delivery-refused" || c.Type == "target-refused") && c.Status != 409 {
+				bad("%s: %s without 409", where, c.Type)
+			}
+			// A name that says the refusal says the right one.
+			for _, t := range []string{"delivery-refused", "target-refused", "stream-limit-reached", "server-busy", "unreachable", "gone"} {
+				if strings.Contains(c.Name, ": 409 "+t) || strings.Contains(c.Name, ": 404 "+t) || strings.Contains(c.Name, ": 503 "+t) {
+					if c.Type != t {
+						bad("%s: the name says %s, the case %q", where, t, c.Type)
+					}
+				}
+			}
+			// capabilities never starts a playback between servers.
+			if c.Call == "play" && strings.Contains(c.Text, `"capabilities"`) && c.Status != 400 {
+				bad("%s: capabilities not refused with 400", where)
+			}
+			// replaces: kept only when it names a live playback of the
+			// caller, and then the old one ends with the 200.
+			if c.Call == "play" && c.Valid {
+				var s playbackStarted
+				_ = json.Unmarshal([]byte(c.Output), &s)
+				var req map[string]any
+				_ = json.Unmarshal([]byte(c.Text), &req)
+				r, _ := req["replaces"].(string)
+				live := c.InUse != nil && slices.ContainsFunc(c.InUse.Live, func(l playbackLive) bool { return l.ID == r })
+				if s.Replaces != "" && (s.Replaces != r || !live) || s.Replaces == "" && live {
+					bad("%s: replaces %q kept, the request's %q", where, s.Replaces, r)
+				}
+				if s.IdleSeconds != 0 && (s.IdleSeconds != 2*s.ProgressSeconds || s.ProgressSeconds < 45 || s.ProgressSeconds > 120) {
+					bad("%s: idleSeconds %d, progressSeconds %d", where, s.IdleSeconds, s.ProgressSeconds)
+				}
 			}
 		}
 		names(list, n)
 	}
 	calls("requests", f.Requests)
+	calls("replaces", f.Replaces)
+	for _, c := range f.Replaces {
+		if c.Call != "play" || !strings.Contains(c.Text, `"replaces"`) {
+			bad("replaces %s: not a play with replaces", c.Name)
+		}
+	}
 	calls("deliveries", f.Deliveries)
 	calls("baseline", f.Baseline)
 	for _, c := range f.Baseline {
@@ -190,6 +225,20 @@ func verifyRevPlayback(read func(string) []byte) []error {
 	names("queueEntries", n)
 
 	n = nil
+	for _, c := range f.Refusals {
+		n = append(n, c.Name)
+		got := playbackReadRefusal(c.Status, c.Signed, []byte(c.Body), c.Purpose)
+		if string(playbackEncode(got)) != c.Output {
+			bad("refusals %s: the file says %s; the rules give %s", c.Name, c.Output, playbackEncode(got))
+		}
+		if !slices.Contains([]string{"asks again", "not playable", "busy now"}, got.Tells) || len(got.Instead) > 4 ||
+			len(got.Instead) > 0 && got.Tells != "asks again" || got.DropTitle && c.Status != 404 {
+			bad("refusals %s: %s out of the rules' forms", c.Name, c.Output)
+		}
+	}
+	names("refusals", n)
+
+	n = nil
 	for _, c := range f.Restarts {
 		n = append(n, c.Name)
 		r := playbackRestart(c.Reading, []byte(c.Request), c.Status, []byte(c.Answer), ctx.StreamRoot)
@@ -219,7 +268,7 @@ func verifyRevPlayback(read func(string) []byte) []error {
 	return errs
 }
 
-// playbackBuiltName is a name media section 1 lets a viewer's server
+// playbackBuiltName is a name fetching section 1 lets a viewer's server
 // build after <stream root><ticket>/ from a play answer.
 var playbackBuiltName = regexp.MustCompile(`^(master\.m3u8|file|(subtitles|ass|pictures)/s(0|[1-9][0-9]{0,2})|fonts/(0|[1-9][0-9]?))$`)
 

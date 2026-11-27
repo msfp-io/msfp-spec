@@ -1,5 +1,5 @@
 """A minimal MSFP version 0 server, in process, for selftest.py: the suite
-runs against it and must pass. It is built from spec/v0/ and from the
+runs against it and must pass. It is built from spec/v0/, MSFP Media's text it carries, and from the
 vectors (its keys are vectors/v0/keys.json's "a", "a2", "a3"; its
 playlists, subtitles and PGS come from vectors/v0/media.json), and does
 only what the suite needs. Test code: never a server for real use."""
@@ -27,6 +27,8 @@ from .wire import (CODE_PREFIX, VERSION, FED, H_DATE, H_KEY, H_NONCE, H_SIG, Ans
                    split_hostport, spki_pin, unb64u)
 from .copies import check_previews_request, media_type, token, video_key
 from .media import scan_cap, serves
+from .listing import Malformed, kind_of, list_titles
+from .playback import progress_seconds
 from .music import check_lyrics_request, check_queue_request, music_key
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -39,7 +41,7 @@ JPEG = (b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
         b"\xff\xc0\x00\x11\x08\x00\x5a\x00\xa0\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01\xff\xd9")
 
 
-PICTURES = ("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle")     # video 5.4's table
+PICTURES = ("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle")     # MSFP Media video 5.4's table
 TEXTS = ("subrip", "webvtt", "mov_text", "ttml", "ass", "ssa")
 
 
@@ -76,7 +78,7 @@ class Peer:
         self.calls = []                 # (time, bucket)
         self.local = True               # its local titles shared with this peer (catalog 5)
         self.offer_seq = 0              # the seq of the last change of what it is offered
-        self.downloads = []             # when its downloads started (playback 7)
+        self.downloads = []             # when its downloads started (MSFP Media playing 6)
         self.scans = []                 # when its scans started (playback 8)
 
 
@@ -97,6 +99,7 @@ class FakeServer:
         self.seen = set()               # (key, nonce) accepted
         self.inflight = {}              # claimed key -> requests in flight (core 8.3 item 3)
         self.playbacks = {}             # id -> dict
+        self.gone = set()               # titles it offered and no longer holds (MSFP Media base 4: gone)
         self.tickets = {}               # ticket -> id
         self.seq = 1
         self.log = []                   # (seq, key, "add"/"gone")
@@ -114,9 +117,9 @@ class FakeServer:
         FILE = 4 * 1024 * 1024 + 123
 
         def copy(cid, height, etag, audio=("en",), subs=(), previews=False, parts=None, duration=7200000, video=True):
-            """A copy as video 3.2 to 3.8 say: H.264 High 4.0, 8-bit SDR in
+            """A copy as MSFP Media video 3.2 to 3.8 say: H.264 High 4.0, 8-bit SDR in
             BT.709, AAC-LC (the default track 5.1, the others stereo), its
-            track IDs its streams' indexes in the file (video 3.7)."""
+            track IDs its streams' indexes in the file (MSFP Media video 3.7)."""
             c = {"id": cid, "durationMs": duration + 417, "mediaType": "video/mp4" if video else "audio/mp4",
                  "size": FILE, "etag": etag}
             if parts:
@@ -438,26 +441,30 @@ class FakeServer:
     watch_seconds = 30
 
     def op_watch(self):
-        """A viewer of the suite's film Heat: play, paused at once, reported
-        paused every 10 seconds, stopped after watch_seconds."""
+        """A viewer of the suite's film Heat: play, paused at once and
+        reported so (paused true), then reported at the answer's
+        progressSeconds (MSFP Media playing 3), stopped after watch_seconds."""
         for p in list(self.peers.values()):
             if p.state != "paired" or not p.inbound:
                 continue
             # The suite's copy is H.264 and AAC in MP4, which this viewer
-            # plays as it is: it asks for the file (playback 2.7).
+            # plays as it is: it asks for the file (MSFP Media playing 2.7).
             a = self.call(p, "play", {"title": "movie/tmdb/949", "delivery": "file"})
             if not a or a.status != 200 or not isinstance(a.json.get("id"), str):
                 return
             pid = a.json["id"]
+            every = 10 if "chatty" in self.faults else progress_seconds(a.json)
+            report = {"id": pid, "positionMs": 0} if "nopaused" in self.faults else {"id": pid, "positionMs": 0, "paused": True}
             if "quietpause" in self.faults:
                 # A viewer's server that says nothing while its viewer pauses.
                 time.sleep(self.watch_seconds)
             else:
-                self.call(p, "progress", {"id": pid, "positionMs": 0})
+                self.call(p, "progress", report)
                 end = time.time() + self.watch_seconds
                 while time.time() < end:
-                    time.sleep(max(0, min(10, end - time.time())))
-                    self.call(p, "progress", {"id": pid, "positionMs": 0})
+                    time.sleep(max(0, min(every, end - time.time())))
+                    if time.time() < end:
+                        self.call(p, "progress", report)
             self.call(p, "stop", {"id": pid, "positionMs": -1 if "badstop" in self.faults else 0})
             return
 
@@ -475,6 +482,7 @@ class FakeServer:
                  "audioTracks": [{"id": "a0", "language": "en", "codec": "aac", "codecs": "mp4a.40.2"}]}]}
             self.changes["movie/tmdb/680"] = self.seq
             self.titles.pop("movie/tmdb/603", None)
+            self.gone.add("movie/tmdb/603")   # held for its peers, no longer: play answers gone
             self.changes["movie/tmdb/603"] = self.seq
 
     def _local(self, on):
@@ -929,45 +937,62 @@ class FakeServer:
         return 200, dumps({"state": "rotated"}), sk
 
     def titles_call(self, peer, j, on, sk):
-        libs, after, since = j.get("libraries"), j.get("after", ""), j.get("since", 0)
-        if not isinstance(libs, list) or any(not isinstance(x, str) for x in libs):
+        """MSFP Media listing 3, 3.6 (msfpconf.listing): libraries optional,
+        the filters kind and under; a changes answer only without under."""
+        if "nolibraries" in self.faults and "libraries" not in j:
             return 404, NF, sk
-        if not isinstance(after, str) or len(after.encode()) > 512 or not is_int(since):
+        q = dict(j)
+        if "kind" in self.faults:
+            q.pop("kind", None)
+        if "under" in self.faults:
+            q.pop("under", None)
+        offered = [x["id"] for x in self.libraries]
+        held = [{"key": k, "libraries": [t["library"]], "season": (t.get("place") or {}).get("season"),
+                 "album": t.get("album"), "artists": t.get("artists")}
+                for k, t in self.titles.items() if peer.local or not t.get("local")]
+        try:
+            whole = dict(q)
+            whole.pop("after", None)
+            listed, may = list_titles(held, offered, on, whole)
+            if not isinstance(j.get("after", ""), str) or len(j.get("after", "").encode()) > 512:
+                raise Malformed("after")
+        except Malformed:
             return 404, NF, sk
-        offered = {x["id"] for x in self.libraries}
-
-        def shown(k, t):
-            part = "video" if video_key(k) else "music"
-            return part in on and t["library"] in libs and t["library"] in offered and (peer.local or not t.get("local"))
-
-        if (0 < since <= self.seq and since >= peer.offer_seq) or ("since" in self.faults and since > self.seq):
+        since, after = j.get("since", 0), j.get("after", "")
+        if may and ((0 < since <= self.seq and since >= peer.offer_seq) or ("since" in self.faults and since > self.seq)):
+            shown = {k for k, _ in listed}
             keys = sorted((k for k, s in self.changes.items() if s > since), key=str.encode)
-            titles = [self._shown(dict(self.titles[k], key=k)) for k in keys if k in self.titles and shown(k, self.titles[k])]
-            gone = [k for k in keys if k not in self.titles]
+            titles = [self._shown(dict(self.titles[k], key=k)) for k in keys if k in shown]
+            kind = q.get("kind")
+            gone = [k for k in keys if k not in self.titles and (kind is None or kind_of(k)[0] == kind)]
             return 200, dumps({"titles": titles, "gone": gone, "changes": True, "seq": self.seq}), sk
-        keys = sorted((k for k, t in self.titles.items() if shown(k, t) and k.encode() > after.encode()), key=str.encode)
-        page = keys[:5000]
-        out = {"titles": [self._shown(dict(self.titles[k], key=k)) for k in page], "seq": self.seq}
-        if len(page) == 5000 and len(keys) > 5000:
-            out["next"] = page[-1]
+        page = [(k, lib) for k, lib in listed if k.encode() > after.encode()]
+        out = {"titles": [self._shown(dict(self.titles[k], key=k, library=lib)) for k, lib in page[:5000]], "seq": self.seq}
+        if len(page) > 5000:
+            out["next"] = page[4999][0]
         return 200, dumps(out), sk
 
     @staticmethod
     def _shown(t):
-        """A title as titles sends it: no kind (catalog 3: the key names it)."""
+        """A title as titles sends it: no kind (MSFP Media listing 3: the key names it)."""
         return dict([("key", t["key"]), ("library", t["library"])] +
                     [(k, v) for k, v in t.items() if k not in ("key", "kind", "library", "local")])
 
-    # ---- playback (playback 2-8, video 5, music 5) ----------------------------------------------
+    # ---- playback (MSFP Media playing 2 to 6, playback 2 to 8, MSFP Media video 5 and music 5) -------------------
 
     def _copies(self, key):
         t = self.titles.get(key)
         return t.get("copies", []) if t else []
 
     def play_refusal(self, j, on):
-        """Playback 2.2 step 1, 2.7, video 5.1, music 5.2: None, or why it is
-        a 400. Core 8.5: a value that isn't a token (or a media type) is
-        malformed; an unknown well-formed one is a 409 later (step 7)."""
+        """MSFP Media playing 2.2 step 1, 2.7, MSFP Media video 5.1, MSFP Media music 5.2: None, or why it is
+        a 400. MSFP Media base 3: a value that isn't a token (or a media
+        type) is malformed; an unknown well-formed one is a 409 later (step
+        7). playback 2: a capability list is refused, whatever it holds."""
+        if "capabilities" in j and "capsignored" not in self.faults:
+            return "capabilities"
+        if "replaces" in j and not (isinstance(j["replaces"], str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", j["replaces"])):
+            return "replaces"
         t = j.get("title")
         if not isinstance(t, str):
             return "title"
@@ -1015,7 +1040,7 @@ class FakeServer:
 
     @staticmethod
     def _within(cp, track):
-        """Playback 2.7: the copy's video and the audio track playing are
+        """MSFP Media playing 2.7: the copy's video and the audio track playing are
         within the baseline (H.264 up to High 4.1, 8-bit, progressive,
         H.273 1/1/1; AAC-LC, at most 2 channels and 48 kHz)."""
         v = cp.get("video")
@@ -1031,7 +1056,7 @@ class FakeServer:
 
     @staticmethod
     def _default_audio(cp, asked):
-        """Playback 2.6: the track named, else the file's default audio (the
+        """MSFP Media playing 2.6: the track named, else the file's default audio (the
         track marked default, else the first)."""
         tracks = cp.get("audioTracks") or []
         return next((a for a in tracks if a["id"] == asked), None) or next(
@@ -1047,6 +1072,8 @@ class FakeServer:
         if {"play": lim["streams"], "download": lim["downloads"], "scan": lim["scansPerDay"]}[purpose] == 0:
             return 409, busy, sk
         copies = self._copies(t)
+        if t in self.gone and t not in self.titles and "nogone" not in self.faults:
+            return 404, problem(404, "gone", "No longer held"), sk
         if t not in self.titles or not copies or (self.titles[t]["library"] not in {x["id"] for x in self.libraries}):
             return 404, NF, sk
         if self.titles[t].get("local") and not peer.local:
@@ -1059,7 +1086,12 @@ class FakeServer:
         if "burnSubtitle" in tr and not re.fullmatch(r"s(0|[1-9][0-9]{0,2})", tr["burnSubtitle"]):
             return 400, BAD, sk
         now = time.time()
-        mine = [p for p in self.playbacks.values() if p["peer"] is peer and p["live"]]
+        # A play that replaces a live playback of this peer counts as if
+        # that one had ended (MSFP Media playing 2.2 step 8, 2.3; playback 6).
+        old = self.playbacks.get(j.get("replaces"))
+        if not (old and old["peer"] is peer and old["live"] and old.get("kind") == "playback") or "replaces" in self.faults:
+            old = None
+        mine = [p for p in self.playbacks.values() if p["peer"] is peer and p["live"] and p is not old]
         if purpose == "play" and len([p for p in mine if p["purpose"] == "play"]) >= lim["streams"] and "limits" not in self.faults:
             return 409, busy, sk
         if purpose == "download" and (len([p for p in mine if p["purpose"] == "download"]) >= lim["downloads"] or
@@ -1067,28 +1099,29 @@ class FakeServer:
             return 409, busy, sk
         if purpose == "scan" and len([x for x in peer.scans if x > now - 86400]) >= lim["scansPerDay"]:
             return 409, busy, sk
-        refused = problem(409, "delivery-refused", "Delivery refused")
+        # Step 7: delivery-refused for the delivery as such, target-refused
+        # for a target it doesn't make (MSFP Media playing 2.2, 2.7; base 4).
+        refused = problem(409, "delivery-refused", "This delivery is refused")
+        target = refused if "targettype" in self.faults else problem(409, "target-refused", "This target is refused")
         if delivery == "file" and cp.get("parts", 1) > 1:
             return 409, refused, sk
         subs = cp.get("subtitleTracks") or []
         if "burnSubtitle" in tr and tr["burnSubtitle"] not in [x["id"] for x in subs]:
-            return 409, refused, sk
-        # Step 7: a delivery, media type, codec, copy or range it doesn't
-        # make (core 8.5, playback 2.7).
+            return 409, target, sk
         if delivery is not None and delivery not in ("file", "remux", "transcode"):
             return 409, refused, sk
         top = "video" if cp.get("video") else "audio"
         if delivery == "remux" and j["mediaType"] not in (top + "/mp2t", top + "/mp4") and "remux" not in self.faults:
-            return 409, refused, sk
+            return 409, target, sk
         if tr.get("videoCodec", "h264") not in ("h264", "hevc", "copy") or \
                 tr.get("audioCodec", "aac") not in ("aac", "ac3", "eac3", "copy"):
-            return 409, refused, sk
+            return 409, target, sk
         if tr.get("range", "sdr") not in ("sdr", "keep") and "rangetoken" not in self.faults:
-            return 409, refused, sk
+            return 409, target, sk
         if tr.get("range") not in (None, "sdr", "keep") and "rangetoken" in self.faults:
             return 400, BAD, sk
         if tr.get("videoCodec") == "copy" and "burnSubtitle" in tr and "burncopy" not in self.faults:
-            return 409, refused, sk
+            return 409, target, sk
         audio = self._default_audio(cp, j.get("audioTrack"))
         if "defaultaudio" in self.faults and "audioTrack" not in j and len(cp.get("audioTracks") or []) > 1:
             audio = cp["audioTracks"][-1]
@@ -1097,7 +1130,7 @@ class FakeServer:
             if delivery == "transcode" and tr.get("videoCodec") == "copy" and tr.get("audioCodec") == "copy":
                 method = "transcode"
         else:
-            # The baseline (playback 2.7): left unchanged only when within it.
+            # The baseline (MSFP Media playing 2.7): left unchanged only when within it.
             method = "remux" if self._within(cp, audio) or "baselinecopy" in self.faults else "transcode"
             if "baseline" in self.faults and "startPositionMs" in j and cp.get("parts", 1) < 2:
                 method = "direct"
@@ -1110,20 +1143,21 @@ class FakeServer:
         proto = "file" if method == "direct" else "hls"
         out = {"id": pid, "ticket": ticket, "protocol": proto, "method": method,
                "etag": cp["etag"] + ("x" if "etag" in self.faults and purpose == "download" else ""),
-               "positionMs": j.get("startPositionMs", 0) if purpose == "play" else 0, "versionId": cp["id"]}
+               "positionMs": j.get("startPositionMs", 0) if purpose == "play" else 0, "versionId": cp["id"],
+               "progressSeconds": 30 if "progressrange" in self.faults else self.PROGRESS}
         if "urls" in self.faults:
             out["stream"] = {"url": self.address + "/api/v1/stream/" + ticket + "/" + (
                 "file" if proto == "file" else "master.m3u8"), "protocol": proto}
         if audio:
             out["audioTrack"] = audio["id"]
-        # Audio renditions when asked and served as HLS (playback 2.3).
+        # Audio renditions when asked and served as HLS (MSFP Media playing 2.3).
         out["audioRenditions"] = proto == "hls" and j.get("audioRenditions") is True
         made = out["audioRenditions"] and "renditions" not in self.faults
         if purpose == "scan":
             out["scanBytes"] = self.scan_bytes
         served, fonts = [], 0
         if video_key(t) and delivery != "file":
-            # Video 5.4's table, a must for the formats it lists.
+            # MSFP Media video 5.4's table, a must for the formats it lists.
             for x in subs:
                 if x["format"] in PICTURES:
                     served.append({"id": x["id"], "form": "picture"})
@@ -1155,6 +1189,9 @@ class FakeServer:
                                "renditions": made, "sent": 0, "played": now, "kind": "playback",
                                "subtitles": served, "fontCount": fonts, "scanBytes": out.get("scanBytes"),
                                "sheetCount": -(-layout["tileCount"] // (layout["columns"] * layout["rows"])) if layout else 0}
+        if old is not None:
+            old["live"] = False     # replaced: it ends with this 200 (MSFP Media playing 2.3, 5)
+            self.tickets.pop(old["ticket"], None)
         if purpose == "download":
             peer.downloads.append(now)
         if purpose == "scan":
@@ -1180,6 +1217,8 @@ class FakeServer:
     def progress(self, peer, j, on, sk):
         if self._report_refusal(j, "progress"):
             return 400, BAD, sk
+        if "paused" in j and not isinstance(j["paused"], bool) and "pausedtype" not in self.faults:
+            return 400, BAD, sk     # MSFP Media playing 3: paused is a boolean
         p = self.playbacks.get(j["id"])
         if p and p["peer"] is peer and not p["live"] and p["purpose"] == "download" and "at" in j \
                 and time.time() <= p["played"] + 30 * 86400:
@@ -1195,6 +1234,8 @@ class FakeServer:
         if p and p["peer"] is peer:
             p["live"] = False
         return 200, b"{}", sk
+
+    PROGRESS = 45   # the interval its play answers state (MSFP Media playing 2.3, 3)
 
     TRICKPLAY = {"tileWidth": 160, "tileHeight": 90, "columns": 10, "rows": 10, "intervalMs": 10000, "tileCount": 50}
 
@@ -1239,7 +1280,7 @@ class FakeServer:
         return 200, dumps({"structuredLyrics": [{"lang": "en", "synced": True, "line": [
             {"start": 0, "value": "I am just a poor boy"}, {"start": 4000, "value": ""}]}]}), sk
 
-    # ---- media (media 2, 3, 4; video 6) ----------------------------------------------------------
+    # ---- media (MSFP Media fetching 2, 3, 4.2; MSFP Media video 6) ----------------------------------------------------------
 
     def _master(self, p):
         lines = ["#EXTM3U", "#EXT-X-VERSION:7", "#EXT-X-INDEPENDENT-SEGMENTS"]
@@ -1279,7 +1320,7 @@ class FakeServer:
                   "sheetCount": p.get("sheetCount", 0), "queue": p.get("queueProto", []), "names": names}
         why = serves(ticket, name)
         if why and "pastcount" in self.faults and name == "fonts/%d" % ticket["fontCount"] and ticket["fontCount"]:
-            why = None      # a built name served past its count (video 6.1: 404)
+            why = None      # a built name served past its count (MSFP Media video 6.1: 404)
         if why:
             return self.send(h, 404, b"")
         q = re.fullmatch(r"queue/([0-9]+)/(.+)", name)
@@ -1323,7 +1364,7 @@ class FakeServer:
         self.send(h, 200, body, ctype=ctype)
 
     def _range(self, rng, total):
-        """Media 2.1: (start, end) of one well-formed, satisfiable Range, or None (416)."""
+        """MSFP Media fetching 2.1: (start, end) of one well-formed, satisfiable Range, or None (416)."""
         if len(rng) != 1:
             return None
         r0 = rng[0].split(",")[0] if "range" in self.faults else rng[0]
@@ -1342,8 +1383,8 @@ class FakeServer:
         return start, min(end, total - 1)
 
     def _file(self, h, p):
-        """Media 3.2: the copy as it is, by ranges, with its ETag; a scan's
-        cap (media 4.2) and a download's pace (media 4.1)."""
+        """MSFP Media fetching 3.2: the copy as it is, by ranges, with its ETag; a scan's
+        cap (media 4.2) and a download's pace (MSFP Media fetching 4.3)."""
         cp = p["copy"]
         size, data = cp["size"], self.file_bytes(cp)
         common = [("Accept-Ranges", "bytes"), ("ETag", '"%s"' % cp["etag"])]

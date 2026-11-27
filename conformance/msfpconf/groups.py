@@ -122,19 +122,19 @@ class GroupChecks:
                 raise Fail("--group-code holds another key than --code: it must be the same server's")
             st.update(secret=secret, group=b64u(group), name=name)
             return "group %s, named %r" % (b64u(group), name)
-        if not self.check("GR1", "groups 2, core 5.1", "the group code reads, with the group's ID and name", code):
+        if not self.check("GR1", "groups 2; core 5.1", "the group code reads, with the group's ID and name", code):
             return
         gid, secret = st["group"], st["secret"]
         hashed = b64u(hashlib.sha256(secret).digest())
 
         def not_member_sync():
             return self.not_heard(self.group_call("group-sync", {"group": gid, "have": {}}))
-        self.check("GR2", "groups 8, core 6.4, 6.6", "group-sync from a paired server that isn't a member: a 404",
+        self.check("GR2", "groups 8; core 6.4, 6.6", "group-sync from a paired server that isn't a member: a 404",
                    not_member_sync)
 
         def unknown_group():
             return self.not_heard(self.group_call("group-sync", {"group": b64u(os.urandom(32)), "have": {}}))
-        self.check("GR3", "groups 8, core 6.4, 6.6", "group-sync about a group the server isn't in: a 404", unknown_group)
+        self.check("GR3", "groups 8; core 6.4, 6.6", "group-sync about a group the server isn't in: a 404", unknown_group)
 
         def wrong_proof():
             a = self.group_call("group-join", {"secretHash": hashed, "proof": join_proof(os.urandom(32), self.key.pub)})
@@ -594,5 +594,5 @@ class GroupChecks:
             e = st["n_client"].call("hello", {"state": "ended"})
             self.signed(e, 200)
             return "paired; then ended by N"
-        self.check("GM8", "groups 4.2, core 9.2, 7.4", "N's hello: the server answers paired; N then ends the pairing",
+        self.check("GM8", "groups 4.2; core 9.2, 7.4", "N's hello: the server answers paired; N then ends the pairing",
                    n_hello)

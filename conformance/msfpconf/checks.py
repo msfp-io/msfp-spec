@@ -311,9 +311,9 @@ class Suite(PartChecks, KeyChecks, GroupChecks):
         self.peer.hosts.add(host_of(self.address))
         self.peer.offer = [{"id": "lib_conformance", "name": "Conformance films"}]
         # The clip (clip.py): H.264 Constrained Baseline 1.2 and AAC-LC mono
-        # at 22,050 Hz in MP4, track IDs its stream indexes (video 3.7), a
+        # at 22,050 Hz in MP4, track IDs its stream indexes (MSFP Media video 3.7), a
         # preview layout of one sheet so that a server reading the catalog
-        # is seen not to fetch previews ahead (video 5.5).
+        # is seen not to fetch previews ahead (MSFP Media video 5.5).
         clip_copy = [{"id": "c_clip", "durationMs": clip.DURATION_MS, "mediaType": "video/mp4", "size": len(clip.MP4),
                       "etag": clip.ETAG, "video": {"codec": "h264", "codecs": "avc1.42C00C", "width": 160, "height": 90,
                                                    "bitDepth": 8, "colour": {"primaries": 1, "transfer": 1, "matrix": 1},
@@ -654,7 +654,7 @@ class Suite(PartChecks, KeyChecks, GroupChecks):
                 raise Fail("libraries answered 200 before the server's operator accepted")
             self.signed(a, 404, "not-found")
             return "signed 404 not-found"
-        self.check("W3", "core 7.3, catalog 2", "libraries before the server's operator accepts: a signed 404", libs_waiting)
+        self.check("W3", "core 7.3; MSFP Media listing 2", "libraries before the server's operator accepts: a signed 404", libs_waiting)
 
     def wait_for_accept(self):
         timeout = self.a.accept_timeout if self.a.accept_timeout is not None else (60 if self.a.no_operator else 600)
@@ -876,7 +876,7 @@ class Suite(PartChecks, KeyChecks, GroupChecks):
         def no_limits():
             a = self.signed(c.call("libraries", {}), 200)
             if "limits" in a.json:
-                raise Fail("libraries carries limits while playback is off (catalog 2, playback 5: only when it is on)")
+                raise Fail("libraries carries limits while playback is off (MSFP Media listing 2, playback 5: only when it is on)")
             return "; libraries carries no limits"
 
         def no_video_titles():
@@ -897,7 +897,7 @@ class Suite(PartChecks, KeyChecks, GroupChecks):
                    part_off("catalog", [("libraries", {}), ("titles", {"libraries": []})]))
         self.check("V5", "core 10.3, 10.4", "media off turns playback off (a dependency): play gets not-supported",
                    part_off("media", [play]))
-        self.check("V6", "catalog 5, core 10.3", "video off: titles holds no video title", part_off("video", [], no_video_titles))
+        self.check("V6", "catalog 5; core 10.3", "video off: titles holds no video title", part_off("video", [], no_video_titles))
 
         def no_core():
             # A hello without core, then one with an empty core: no common

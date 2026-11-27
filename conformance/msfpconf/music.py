@@ -1,7 +1,7 @@
-"""What a caller keeps of a music title and its copies (spec/v0/music.md
-sections 2, 3, 3.1 to 3.3, as revised by proposals 16 and 17), music title keys
-of the mb and local schemes, the queue of a play (music 5.2) and lyrics
-(music 6), with what an owning server got wrong in a music title, and
+"""What a caller keeps of a music title and its copies (MSFP Media music
+2, 3, 3.1 to 3.3, as MSFP's music part carries it), music title keys
+of the mb and local schemes, the queue of a play (MSFP Media music 5.2) and lyrics
+(MSFP Media music 6), with what an owning server got wrong in a music title, and
 the check against vectors/v0/music.json.
 
 The keep_* functions take parsed JSON: from copies.loads (numbers as
@@ -17,24 +17,24 @@ from .copies import OPAQUE, diff, dumps, int_in, loads, media_type, number, plai
 
 MBID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 KINDS = ("artist", "album", "track")
-# MusicBrainz release-group types as music 3 sends them (proposal 17): open.
+# MusicBrainz release-group types as MSFP Media music 3 sends them (proposal 17): open.
 TYPE = re.compile(r"[a-z0-9._/-](?:[a-z0-9 ._/-]{0,30}[a-z0-9._/-])?")
 CODECS = re.compile(r"[A-Za-z0-9.+-]{1,64}")
-# ids on mb titles only (music 3.1, proposal 17): the scheme and the kind it is for.
+# ids on mb titles only (MSFP Media music 3.1, proposal 17): the scheme and the kind it is for.
 IDS = {"mbreleasegroup": "album", "mbrecording": "track"}
 MAX_COPIES = 16
 DELIVERIES = ("file", "remux", "transcode")
-# A track's remux: MPEG-TS or fragmented MP4 segments, audio only (playback 2.7).
+# A track's remux: MPEG-TS or fragmented MP4 segments, audio only (MSFP Media playing 2.7).
 REMUX_TYPES = ("audio/mp2t", "audio/mp4")
 MAX_TRACK_MS = 86400000
 _DATE = re.compile(r"([0-9]{4})(?:-([0-9]{2})(?:-([0-9]{2}))?)?")
 _TICKET = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
-# ---- Keys (music 2) -------------------------------------------------------------
+# ---- Keys (MSFP Media music 2) -------------------------------------------------------------
 
 def parse_music_key(k):
-    """(kind, scheme) of a music title key in canonical form (music 2.1,
+    """(kind, scheme) of a music title key in canonical form (MSFP Media music 2.1,
     2.2); raises ValueError."""
     if not isinstance(k, str):
         raise ValueError("not a string")
@@ -62,7 +62,7 @@ def music_key(k):
         return None
 
 
-# ---- A track's copies (music 3.3) -----------------------------------------------------
+# ---- A track's copies (MSFP Media music 3.3) -----------------------------------------------------
 
 def _round(f, digits):
     """f rounded to digits decimals, to the nearest."""
@@ -85,11 +85,11 @@ def _keep_gain(o):
 
 
 def keep_track_copy(o):
-    """Music 3.3 for one entry of a track's copies: what the caller keeps
+    """MSFP Media music 3.3 for one entry of a track's copies: what the caller keeps
     (a dict in the vectors' order); raises ValueError with why it skips it.
     codecs, required for aac and dts, counts as absent when missing or
     malformed: the copy stays, one the viewer's server doesn't play as it
-    is (core 8.5)."""
+    is (MSFP Media base 3)."""
     if not isinstance(o, dict):
         raise ValueError("not an object")
     cid = o.get("id")
@@ -100,7 +100,7 @@ def keep_track_copy(o):
         raise ValueError("durationMs isn't an integer from 1 to 86,400,000")
     mt, codec = media_type(o.get("mediaType")), token(o.get("codec"))
     if mt is None or codec is None:
-        raise ValueError("mediaType isn't a media type or codec isn't a token (core 8.5)")
+        raise ValueError("mediaType isn't a media type or codec isn't a token (MSFP Media base 3)")
     size = int_in(o.get("size"), 1, 999999999999999)
     if size is None:
         raise ValueError("size isn't an integer from 1 to 999,999,999,999,999")
@@ -123,10 +123,10 @@ def keep_track_copy(o):
     return c
 
 
-# ---- Titles (music 3, 3.1, 3.2; catalog 4.3) -----------------------------------------------
+# ---- Titles (MSFP Media music 3, 3.1, 3.2; MSFP Media listing 4.3) -----------------------------------------------
 
 def _date(s):
-    """(year, text) of a date in one of music 3's three forms, or None."""
+    """(year, text) of a date in one of MSFP Media music 3's three forms, or None."""
     m = _DATE.fullmatch(s) if isinstance(s, str) else None
     if not m:
         return None
@@ -142,12 +142,12 @@ def _date(s):
 
 
 def keep_music_title(o, libraries):
-    """Catalog 3.3 and music 3.2 for one entry of titles: what the caller
+    """MSFP Media listing 3.3 and MSFP Media music 3.2 for one entry of titles: what the caller
     keeps (a dict in the vectors' order); raises ValueError with why it
     skips the title."""
     if not isinstance(o, dict):
         raise ValueError("not an object")
-    # A title carries no kind (catalog 3): its key names it, and a kind
+    # A title carries no kind (MSFP Media listing 3): its key names it, and a kind
     # member is unknown, ignored.
     key, lib = o.get("key"), o.get("library")
     if not all(isinstance(x, str) for x in (key, lib)):
@@ -246,7 +246,7 @@ _TITLE_FIELDS = {"key", "library", "name", "artists", "artistNames", "primaryTyp
 
 
 def music_problems(t, libraries=None):
-    """What an owning server got wrong in a music title it sent (music 2,
+    """What an owning server got wrong in a music title it sent (MSFP Media music 2,
     3, 3.1 to 3.3): anything a caller would skip, drop, clean or change."""
     key = t.get("key") if isinstance(t, dict) else None
     libs = libraries if libraries is not None else [t.get("library")] if isinstance(t, dict) else []
@@ -267,13 +267,15 @@ def music_problems(t, libraries=None):
     return bad + diff(sent, kept, str(key), _TITLE_FIELDS)
 
 
-# ---- The queue (music 5.2) ----------------------------------------------------------------
+# ---- The queue (MSFP Media music 5.2) ----------------------------------------------------------------
 
 class QueueRefused(ValueError):
-    """A queue the owning server refuses: .status 400, or 409 delivery-refused."""
+    """A queue the owning server refuses: .status 400, or 409 with .type
+    delivery-refused or target-refused (MSFP Media playing 2.2 step 7)."""
 
-    def __init__(self, status, why):
-        ValueError.__init__(self, "%d%s: %s" % (status, " delivery-refused" if status == 409 else "", why))
+    def __init__(self, status, why, typ=None):
+        self.type = typ or ("delivery-refused" if status == 409 else "invalid-request")
+        ValueError.__init__(self, "%d%s: %s" % (status, " " + self.type if status == 409 else "", why))
         self.status = status
 
 
@@ -281,8 +283,8 @@ def queue_asked(o):
     """A play request's title and queue as the owning server reads them:
     the entries asked, each (title, versionId or None, the delivery it
     takes: its own, else the request's); raises QueueRefused (400 for a
-    malformed one first, then 409 delivery-refused for a delivery or a
-    remux's media type it doesn't make). The request's own delivery
+    malformed one first, then 409 delivery-refused for a delivery, or
+    target-refused for a remux's media type, it doesn't make). The request's own delivery
     members and an entry's transcode targets are playback's."""
     if not isinstance(o, dict):
         raise QueueRefused(400, "not an object")
@@ -320,7 +322,7 @@ def queue_asked(o):
         if "delivery" in e:
             d = mine = e["delivery"]
             if token(d) is None:
-                raise QueueRefused(400, "queue entry %d: delivery isn't a token (core 8.5)" % i)
+                raise QueueRefused(400, "queue entry %d: delivery isn't a token (MSFP Media base 3)" % i)
             if d not in DELIVERIES and refused is None:
                 refused = QueueRefused(409, "queue entry %d: a delivery the owning server doesn't make" % i)
         if "mediaType" in e:
@@ -328,9 +330,10 @@ def queue_asked(o):
             if mine != "remux":
                 raise QueueRefused(400, "queue entry %d: mediaType without its own delivery remux" % i)
             if media_type(mt) is None:
-                raise QueueRefused(400, "queue entry %d: mediaType isn't a media type (core 8.5)" % i)
+                raise QueueRefused(400, "queue entry %d: mediaType isn't a media type (MSFP Media base 3)" % i)
             if mt not in REMUX_TYPES and refused is None:
-                refused = QueueRefused(409, "queue entry %d: a remux into %s, not audio/mp2t or audio/mp4" % (i, mt))
+                refused = QueueRefused(409, "queue entry %d: a remux into %s, not audio/mp2t or audio/mp4" % (i, mt),
+                                       "target-refused")
         elif mine == "remux":
             raise QueueRefused(400, "queue entry %d: delivery remux without mediaType" % i)
         if "transcode" in e:
@@ -346,7 +349,8 @@ def queue_asked(o):
 
 def check_queue_request(o):
     """None when the owning server accepts a play request's title and
-    queue, else why it refuses them (starting 400, or 409 delivery-refused)."""
+    queue, else why it refuses them (starting 400, or 409 delivery-refused or
+    target-refused)."""
     try:
         queue_asked(o)
     except QueueRefused as e:
@@ -355,7 +359,7 @@ def check_queue_request(o):
 
 
 def keep_queue(request, answer):
-    """Music 5.2: the queue the viewer's server keeps of a play answer (a
+    """MSFP Media music 5.2: the queue the viewer's server keeps of a play answer (a
     list, possibly empty, of title, versionId, method, protocol), the
     request being the play it sent. Entries carry no URL: queue_urls
     builds them from the ticket."""
@@ -391,13 +395,13 @@ DELIVERY_METHOD = {"file": "direct", "remux": "remux", "transcode": "transcode"}
 
 
 def queue_urls(root, ticket, kept):
-    """The URL of each kept queue entry (media 1): <stream root><ticket>/
+    """The URL of each kept queue entry (MSFP Media fetching 1): <stream root><ticket>/
     queue/<n>/file or /master.m3u8, n its place in the request's queue."""
     return ["%s%s/queue/%d/%s" % (root, ticket, e["place"], "file" if e["protocol"] == "file" else "master.m3u8")
             for e in kept]
 
 
-# ---- Lyrics (music 6) ---------------------------------------------------------------------
+# ---- Lyrics (MSFP Media music 6) ---------------------------------------------------------------------
 
 def check_lyrics_request(o):
     """A lyrics request as the owning server reads it: None, or why it
@@ -413,7 +417,7 @@ def check_lyrics_request(o):
 
 
 def keep_lyrics(answer):
-    """Music 6: what the viewer's server keeps of a lyrics answer (bytes,
+    """MSFP Media music 6: what the viewer's server keeps of a lyrics answer (bytes,
     text or parsed JSON): {"structuredLyrics": [sets]}, each set in the
     vectors' order (lang, kind, line); raises ValueError when the fetch
     fails. A set is synced when every line left carries start, plain when

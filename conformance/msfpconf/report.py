@@ -1,5 +1,5 @@
 """Results: each check has an ID, the spec file and section it tests
-("core 6.4", "media 2.1"), a level (MUST or SHOULD, as the section says),
+("core 6.4", "MSFP Media fetching 2.1"), a level (MUST or SHOULD, as the section says),
 whether it needs the server's operator, a result, and why."""
 
 import json

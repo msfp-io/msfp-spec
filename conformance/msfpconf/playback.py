@@ -1,11 +1,12 @@
-"""What a viewer's server keeps of a play answer (spec/v0/playback.md
-section 2.3, as revised by proposals 16 and 17) and the URLs it builds
-from the answer's ticket (media 1), of a libraries answer's limits
-(playback 5), and what it does on a restart (playback 2.7), verified
-against vectors/v0/playback.json (answers, limits, restarts). The
-requests, deliveries, baseline, queueEntries, downloads, scans and
-reports are an owning server's decisions, which the fake makes (fake.py)
-and the live checks test."""
+"""What a viewer's server keeps of a play answer (MSFP Media playing 2.3,
+as MSFP's playback part carries it) and the URLs it builds from the
+answer's ticket (MSFP Media fetching 1), what it does with a play refused
+(MSFP Media playing 2.5, base 4; playback 2), of a libraries answer's
+limits (playback 5), and what it does on a restart (MSFP Media playing
+2.7), verified against vectors/v0/playback.json (answers, refusals,
+limits, restarts). The requests, replaces, deliveries, baseline,
+queueEntries, downloads, scans and reports are an owning server's
+decisions, which the fake makes (fake.py) and the live checks test."""
 
 import json
 import re
@@ -18,14 +19,16 @@ MAX_POSITION = 8640000000
 MAX_KBPS = 10000000
 METHODS = ("direct", "remux", "transcode")
 HLS_TYPE = "application/vnd.apple.mpegurl"
-# delivery asked -> the method the answer must give (playback 2.7)
+# delivery asked -> the method the answer must give (MSFP Media playing 2.7)
 DELIVERY_METHOD = {"file": "direct", "remux": "remux", "transcode": "transcode"}
 SCAN_FLOOR, SCAN_TOP = 4 * 1024 * 1024, 1024 * 1024 * 1024
+PROGRESS_LOW, PROGRESS_HIGH, PROGRESS_DEFAULT = 45, 120, 60   # progressSeconds (MSFP Media playing 2.3, 3)
+DELIVERIES = ("file", "remux", "transcode")
 STREAM_NAME = {"hls": "master.m3u8", "file": "file"}
 
 
 class Refused(ValueError):
-    """The viewer's server sends stop and gives up (playback 2.3)."""
+    """The viewer's server sends stop and gives up (MSFP Media playing 2.3)."""
 
 
 def _show(v):
@@ -38,7 +41,7 @@ def _int(v):
 
 
 def keep_play_answer(o, root, delivery=None, catalog_etag=None, purpose=None, part="video", catalog_subtitles=()):
-    """Playback 2.3 and video 5.3: what the viewer's server keeps of a play
+    """MSFP Media playing 2.3 and MSFP Media video 5.3: what the viewer's server keeps of a play
     answer, and urls, the URLs it builds from the stream root and the
     ticket (the stream; each subtitle track's subtitles/, ass/ or
     pictures/ base; each font), a dict in the vectors' order, with
@@ -103,6 +106,8 @@ def keep_play_answer(o, root, delivery=None, catalog_etag=None, purpose=None, pa
             raise Refused("maxBitrateKbps isn't an integer")
         if 0 <= b <= MAX_KBPS:
             out["maxBitrateKbps"] = b
+    n = _int(o.get("progressSeconds"))
+    out["progressSeconds"] = n if n is not None and PROGRESS_LOW <= n <= PROGRESS_HIGH else PROGRESS_DEFAULT
     if purpose == "scan":
         n = _int(o.get("scanBytes"))
         out["scanBytes"] = n if n is not None and SCAN_FLOOR <= n <= SCAN_TOP else SCAN_FLOOR
@@ -140,6 +145,110 @@ def keep_play_answer(o, root, delivery=None, catalog_etag=None, purpose=None, pa
     return out
 
 
+def progress_seconds(o):
+    """The interval a caller sends progress at, from a play answer
+    (MSFP Media playing 2.3): 45 to 120, else 60. The idle limit is twice it."""
+    n = _int(o.get("progressSeconds")) if isinstance(o, dict) else None
+    return n if n is not None and PROGRESS_LOW <= n <= PROGRESS_HIGH else PROGRESS_DEFAULT
+
+
+# ---- refusals of play (MSFP Media playing 2.5, base 4; playback 2) -----------------
+
+def _targets_formed(t):
+    """A transcode object of the forms of play's step 1 (MSFP Media
+    playing 2.7) and burnSubtitle's of step 4."""
+    from .copies import token
+    if not isinstance(t, dict):
+        return False
+    for f in ("videoCodec", "audioCodec", "range"):
+        if f in t and (not isinstance(t[f], str) or token(t[f]) is None):
+            return False
+    for f, ok in (("maxHeight", lambda v: v in (480, 720, 1080, 1440, 2160, 4320)),
+                  ("maxBitrateKbps", lambda v: 1000 <= v <= MAX_KBPS and v % 1000 == 0),
+                  ("audioChannels", lambda v: v in (2, 6, 8))):
+        if f in t:
+            n = _int(t[f])
+            if n is None or not ok(n):
+                return False
+    if "burnSubtitle" in t and not (isinstance(t["burnSubtitle"], str)
+                                    and re.fullmatch(r"s(0|[1-9][0-9]{0,2})", t["burnSubtitle"])):
+        return False
+    return True
+
+
+def keep_instead(v, purpose="play"):
+    """MSFP Media base 4: the entries of instead a caller may ask for: of
+    the first 4, each object with a delivery whose delivery, mediaType and
+    transcode keep the forms of a play request of that purpose, with only
+    those members."""
+    from .copies import media_type, token
+    if not isinstance(v, list):
+        return []
+    out = []
+    for e in v[:4]:
+        if not isinstance(e, dict):
+            continue
+        d = e.get("delivery")
+        if not isinstance(d, str) or token(d) is None:
+            continue
+        if ("mediaType" in e) != (d == "remux"):
+            continue
+        keep = {"delivery": d}
+        if "mediaType" in e:
+            if not isinstance(e["mediaType"], str) or media_type(e["mediaType"]) is None:
+                continue
+            keep["mediaType"] = e["mediaType"]
+        t = None
+        if "transcode" in e:
+            if d != "transcode" or not _targets_formed(e["transcode"]):
+                continue
+            t = e["transcode"]
+            keep["transcode"] = dict(sorted(t.items()))
+        elif d == "transcode":
+            t = {}
+        if d in DELIVERIES and purpose == "download" and not (
+                d == "file" or d == "transcode" and ("maxHeight" in t or "maxBitrateKbps" in t)):
+            continue
+        if d in DELIVERIES and purpose == "scan" and d != "file":
+            continue
+        out.append(keep)
+    return out
+
+
+def read_refusal(status, signed, body, purpose="play"):
+    """What a viewer's server does with a play refused (MSFP Media playing
+    2.5, base 4; playback 2): tells (asks again, not playable, busy now),
+    instead, retryAfter, dropTitle, in the vectors' member order."""
+    if not signed:
+        return {"tells": "busy now"}
+    try:
+        o = loads(body) if isinstance(body, (str, bytes)) else body
+    except ValueError:
+        o = None
+    o = o if isinstance(o, dict) else {}
+    typ = o.get("type") if isinstance(o.get("type"), str) else ""
+    r = _int(o.get("retryAfter"))
+    busy = {"tells": "busy now"}
+    if r is not None and 1 <= r <= 3600:
+        busy["retryAfter"] = r
+    if status in (429, 503):
+        return busy
+    if status == 409:
+        if typ in ("delivery-refused", "target-refused"):
+            out = {"tells": "asks again"}
+            inst = keep_instead(o.get("instead"), purpose or "play")
+            if inst:
+                out["instead"] = inst
+            return out
+        if typ == "not-playable":
+            return {"tells": "not playable"}
+        return busy
+    out = {"tells": "not playable"}
+    if status == 404 and typ == "gone":
+        out["dropTitle"] = True
+    return out
+
+
 # ---- limits (playback 5, music 5.1) ------------------------------------------------
 
 MAX_STREAMS = 1000
@@ -150,7 +259,7 @@ _ALWAYS = ("downloads", "downloadsPerDay", "downloadKbps", "scansPerDay")
 
 
 def keep_limits(o):
-    """Playback 5: what a caller keeps of limits (downloads, its daily cap
+    """playback 5: what a caller keeps of limits (downloads, its daily cap
     and speed, scansPerDay 0 when absent; then offersDownloads and
     offersScans), or None when it ignores the whole object. scanBytes is
     no member of limits since proposal 17 (a scan's answer states it):
@@ -180,7 +289,7 @@ def keep_limits(o):
     return out
 
 
-# ---- restarts (playback 2.7) --------------------------------------------------------
+# ---- restarts (MSFP Media playing 2.7) --------------------------------------------------------
 
 def restart(reading, request, status, answer, root):
     """What a viewer's server reading reading's file does with the answer
@@ -206,8 +315,8 @@ def restart(reading, request, status, answer, root):
 
 
 def playback_vectors_ok(path):
-    """Checks keep_play_answer, keep_limits and restart against
-    vectors/v0/playback.json: a list of mismatches."""
+    """Checks keep_play_answer, read_refusal, keep_limits and restart
+    against vectors/v0/playback.json: a list of mismatches."""
     v = json.load(open(path))
     root = v["context"]["streamRoot"]
     bad = []
@@ -220,6 +329,10 @@ def playback_vectors_ok(path):
             out, ok = str(e), False
         if ok != c["valid"] or (ok and out != c["output"]):
             bad.append("playback answers %s: %s %s" % (c["name"], ok, out))
+    for c in v["refusals"]:
+        got = dumps(read_refusal(c["status"], c["signed"], c.get("body", ""), c.get("purpose") or "play"))
+        if got != c["output"]:
+            bad.append("playback refusals %s: %s, not %s" % (c["name"], got, c["output"]))
     for c in v["limits"]:
         try:
             o = loads(c["text"])

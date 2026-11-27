@@ -129,7 +129,7 @@ func encode(v any) []byte {
 	return buf.Bytes()
 }
 
-// openToken tells a token (spec/v0/core.md section 8.5): 1 to 32
+// openToken tells a token (MSFP Media base section 3): 1 to 32
 // characters of a-z 0-9 . _ -. The value of an open field is kept when
 // it is a token, known or not; when it isn't, an optional member is
 // dropped alone and a required one takes its holder with it. Every
@@ -168,7 +168,7 @@ func openTokenReason(s string) error {
 	return nil
 }
 
-// openMediaType tells a media type (spec/v0/core.md section 8.5): an
+// openMediaType tells a media type (MSFP Media base section 3): an
 // IANA-form media type, lowercase, exactly one /, no parameters, each
 // half starting with a letter or a digit, at most 127 characters of
 // a-z 0-9 . + - _ /. Fields that take one follow the rules of tokens:
