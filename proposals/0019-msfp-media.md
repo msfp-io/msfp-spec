@@ -1,8 +1,8 @@
 # Proposal 19: MSFP Media
 
-Status: Adopted (2026-11-26). Every choice below is the owner's, taken on
+Status: Adopted (2026-11-26), written (2026-11-27). Every choice below is the owner's, taken on
 2026-11-25 and 2026-11-26; where this text fills a gap the owner left to
-the writing, it says "writing choice". Being written into a new spec,
+the writing, it says "writing choice". Written into a new spec,
 [msfp-media](https://github.com/msfp-io/msfp-media), and into spec/v0.
 
 Touches: every part of spec/v0 except `groups`; the registry moves; the
@@ -16,8 +16,8 @@ MSFP describes media (titles, keys, copies, how a copy is asked for,
 fetched and played) and federates servers (keys, signed calls, pairing,
 groups, what each peer may see). The first half isn't about federation.
 Overfin's players already speak it to their own server: its player API
-uses MSFP's copy object and the `play` exchange (inventory of 2026-11-24,
-claude-files/msfp-client-profile-inventory-20261124.md). Keeping the two
+uses MSFP's copy object and the `play` exchange (an inventory of its
+player API, 2026-11-24). Keeping the two
 halves in one spec means a change for players forces a federation
 change, and a player has to read a federation spec to play a video.
 
