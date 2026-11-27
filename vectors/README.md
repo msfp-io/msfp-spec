@@ -12,7 +12,7 @@ Values for an implementation's tests to check against. They are under
 **No implementation produced the files of version 0, nor test-draft-strict.json.**
 The media and destination cases were checked against Overfin's own
 sanitizer and checks on 2026-11-16: they agree, except for the HLS cases
-that [media section 3.1](../spec/v0/media.md#31-hls-playlists) lists in
+that [fetching section 3.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#31-hls-playlists) lists in
 its Overfin note.
 These files come from the
 generator alone: an independent program written from the specification. When an

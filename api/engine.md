@@ -57,7 +57,7 @@ be empty when the stored record says the server can't be called.
 | `Parts` | nil: all six | `catalog`, `playback`, `media`, `video`, `music`, `groups`. A part without those it needs is left out (`video` and `music` need the other three; `playback` needs `catalog` and `media`; `groups` needs none, but its store must keep groups: [host.md section 1.1](host.md#11-tx)). An empty list: the core alone |
 | `Catalog`, `Playback`, `Media` | absent | absent: nothing offered, every `play` answered `404` |
 | `MaxBitrateKbps` | 0 (none) | this server's cap on what peers play here |
-| `Encoders` | the baseline's: `h264` and `aac`, `sdr`, `wire.DefaultSegments` | what `Playback` makes ([playback 2.7](../spec/v0/playback.md#27-delivery)): the codecs it encodes (registry tokens), the ranges it makes (`sdr`, `keep`), and the codecs each HLS segment format (`mp2t`, `mp4`) carries. A peer's transcode to another codec or range, and a remux or a copied stream a segment format can't carry, are refused `409` `delivery-refused` |
+| `Encoders` | the baseline's: `h264` and `aac`, `sdr`, `wire.DefaultSegments` | what `Playback` makes ([playing 2.7](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#27-delivery)): the codecs it encodes (registry tokens), the ranges it makes (`sdr`, `keep`), and the codecs each HLS segment format (`mp2t`, `mp4`) carries. A peer's transcode to another codec or range, and a remux or a copied stream a segment format can't carry, are refused `409` `delivery-refused` |
 | `LongestPlayback` | 24 hours | a peer's playback longer than this ends |
 | `SyncEvery` | 30 minutes | how often peers' catalogs are read |
 
@@ -199,7 +199,7 @@ base64url, as the views give them). Each one may also fail with
 |--------|---------|--------|
 | `CatalogChanged()` | **sync**, a hint: titles changed | |
 | `LibraryRemoved(hostID)` | offered to nobody from now; playbacks from it end; its public ID kept | |
-| `OpaqueKeyPart(id)` | **sync**: an opaque part of a title key for one of the host's titles, a local title's or an extra's ([catalog 4.2](../spec/v0/catalog.md#42-opaque-parts-of-a-key)), made from the host's own ID of it under the IDs secret: 22 characters, stable, never computable by a peer | |
+| `OpaqueKeyPart(id)` | **sync**: an opaque part of a title key for one of the host's titles, a local title's or an extra's ([listing 4.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#42-opaque-parts-of-a-key)), made from the host's own ID of it under the IDs secret: 22 characters, stable, never computable by a peer | |
 | `StopPlayback(id, why)` | **sync**: the host ends a peer's playback here: `operator` (also for `""`), `expired`, `tooLong`, `notOffered`. Take `id` and the host's handle from `Playbacks()` | `NotFound`, `InvalidReason` (`stopped` and `pairingEnded` are the engine's) |
 
 ## 5. Queries
@@ -309,7 +309,7 @@ ReportOffline(id, OfflineReport)          errors: NotFound, InvalidRequest, Play
 |-------|---------|
 | `Title` | the key, as the peer listed it |
 | `Purpose` | `play` (also `""`), `download` (of delivery `file` or a sized transcode, when the peer's limits allow downloads) or `scan` (of delivery `file`, when they allow scans: for the host's media server to list a file, never to watch it) ([playback 7](../spec/v0/playback.md#7-downloads), [8](../spec/v0/playback.md#8-scan-access)) |
-| `Delivery`, `MediaType`, `Transcode` | `file`, `remux` (into `MediaType`: `video/mp2t` or `video/mp4`, `audio/…` for a copy with no video), `transcode` (to `Transcode`'s targets: registry tokens or `copy`, the range `sdr` or `keep`), or `""` for the baseline every viewer's server plays ([playback 2.7](../spec/v0/playback.md#27-delivery)). The host chooses from the copy's facts and its device: a copy whose media type, codec or `threeD` it doesn't know, or whose `codecs` it can't read (`wire.PlayableAsIs`, `wire.ReadCodecs`), it can't play as it is. On `DeliveryRefused`, ask again with another delivery, or none |
+| `Delivery`, `MediaType`, `Transcode` | `file`, `remux` (into `MediaType`: `video/mp2t` or `video/mp4`, `audio/…` for a copy with no video), `transcode` (to `Transcode`'s targets: registry tokens or `copy`, the range `sdr` or `keep`), or `""` for the baseline every viewer's server plays ([playing 2.7](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#27-delivery)). The host chooses from the copy's facts and its device: a copy whose media type, codec or `threeD` it doesn't know, or whose `codecs` it can't read (`wire.PlayableAsIs`, `wire.ReadCodecs`), it can't play as it is. On `DeliveryRefused`, ask again with another delivery, or none |
 | `AudioRenditions` | for `hls`, every audio track as a rendition, so that switching tracks needs no new playback; the peer may make none |
 | `StartMs`, `MaxBitrateKbps` | where to start; the viewer's cap (0: none) |
 | `VersionID`, `AudioTrack` | the copy (without it, the peer's first) and its audio (without it, the file's default), from the title's copies kept. Subtitles are the host's choice, among the copy's tracks and those served apart; one is named only to burn it in (`Transcode.BurnSubtitle`) |
@@ -321,7 +321,7 @@ ReportOffline(id, OfflineReport)          errors: NotFound, InvalidRequest, Play
 - **Busy now**: `StreamLimitReached`, `ServerBusy` (a `503`, or no
   answer, or an unsigned one), `BackingOff` (a `429`, or calls
   unanswered lately). **Not playable**: `NotPlayable` and the rest
-  ([playback 2.5](../spec/v0/playback.md#25-refusals)). What lasts
+  ([playing 2.5](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#25-refusals)). What lasts
   (`KeyLost`, `Suspended`, `Uncallable`, `NotSupported`, a destination
   or certificate refused) comes as itself, never as `ServerBusy`.
 - An answer that breaks a "must": the engine sends `stop`, then fails
@@ -429,7 +429,7 @@ refusal), `NotPaired`, `Uncallable`, `Suspended`, `NotSupported`,
 |--------|---------|------|
 | `PreviewSheet(peer, key, versionID, n) -> Bytes` | seek-bar preview sheet `n` of a copy, by the catalog's layout, re-encoded. Only for a copy someone opened, never for a whole library. During a live playback of the copy its ticket opens the sheets; otherwise one `previews` call per copy, its ticket shared by every viewer until it expires. Sheets are kept in memory (64 MiB) while the copy's etag and layout hold. Also `CopyChanged`, `ServerBusy` | [video 5.5](../spec/v0/video.md#55-seek-bar-previews), [5.6](../spec/v0/video.md#56-previews) |
 | `TrackLyrics(peer, key, versionID) -> []wire.Lyrics` | a track's copy's lyrics, cleaned; the host keeps them while the copy's etag holds | [music 6](../spec/v0/music.md#6-lyrics) |
-| `TitleImage(peer, key) -> (Bytes, format)` | a local title's image, checked and re-encoded (`wire.ImageJPEG` or `wire.ImagePNG`); the host keeps it, shown as the owner's, and asks again only when the title changes. One at a time per peer | [catalog 4.4](../spec/v0/catalog.md#44-the-image-of-a-local-title-image) |
+| `TitleImage(peer, key) -> (Bytes, format)` | a local title's image, checked and re-encoded (`wire.ImageJPEG` or `wire.ImagePNG`); the host keeps it, shown as the owner's, and asks again only when the title changes. One at a time per peer | [listing 4.4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#44-the-image-of-a-local-title-image) |
 
 ## 7. Events
 
@@ -463,9 +463,9 @@ queries too, so a host that missed one loses nothing.
 | `PeerMoveFailing` | `Address`, `Since` | a peer's new address has failed for a day; once per move | core 13.2 |
 | `InboundChanged` | `Inbound` | a peer can't be called (`no`), can again (`confirming`: its address checked first), or its address answered (`yes`) | [core 7.5](../spec/v0/core.md#75-a-peer-that-cant-be-called) |
 | `CallsFailed` | | a peer's hello answer said our calls fail: suggest "this server can't be called" | core 7.5 |
-| `CatalogReadEnded` | `Titles`, `Changes`, `Err`, `Failure`, `Refusal` | a reading ended: titles kept (new or changed, for changes), or why it failed (what was kept stays: a whole reading is kept only once read to its end); `Failure` and `Refusal` as in `PeerView.Reading` | [catalog 3.2](../spec/v0/catalog.md#32-whole-list-or-changes) |
-| `WantsGone` | `Libraries` | wanted libraries no longer offered; their titles go at the next reading | [catalog 2.2](../spec/v0/catalog.md#22-what-the-caller-keeps) |
-| `PlaybackStarted` | `Playback`, `Title`, `Method`, `Purpose` | a peer's playback here started | [playback 6.1](../spec/v0/playback.md#61-a-playbacks-states) |
+| `CatalogReadEnded` | `Titles`, `Changes`, `Err`, `Failure`, `Refusal` | a reading ended: titles kept (new or changed, for changes), or why it failed (what was kept stays: a whole reading is kept only once read to its end); `Failure` and `Refusal` as in `PeerView.Reading` | [listing 3.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#32-whole-list-or-changes) |
+| `WantsGone` | `Libraries` | wanted libraries no longer offered; their titles go at the next reading | [listing 2.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#22-what-the-caller-keeps) |
+| `PlaybackStarted` | `Playback`, `Title`, `Method`, `Purpose` | a peer's playback here started | [playing 5](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#5-a-playbacks-states-and-endings) |
 | `PlaybackEnded` | `Playback`, `Title`, `Reason` | it ended, and why | [playback 6.3](../spec/v0/playback.md#63-how-a-playback-ends) |
 | `RemotePlaybackEnded` | `Playback`, `Reason` | our playback on a peer ended without `Stop`: `410` (`expired`), the pairing ended, the peer suspended or uncallable (`pairingEnded`) | playback 6.3 |
 | `GroupRequestWaiting` | `Group`, `GroupName`, `Mail`, `Member`, `Name`, `Fingerprint` | a member's request waits for the operator: `AcceptRequest` or `RefuseRequest` with `Mail`. Not for one the server accepts itself | [groups 4.1](../spec/v0/groups.md#41-answering) |

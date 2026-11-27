@@ -29,8 +29,8 @@ it can (a dedicated account limited to the offered libraries).
 Spec: [core 7.2](../spec/v0/core.md#72-what-each-side-stores),
 [core 7.4](../spec/v0/core.md#74-ending-a-pairing),
 [core 13](../spec/v0/core.md#13-changing-a-servers-address),
-[catalog 2.1](../spec/v0/catalog.md#21-library-ids),
-[catalog 3.2](../spec/v0/catalog.md#32-whole-list-or-changes).
+[listing 2.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#21-library-ids),
+[listing 3.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#32-whole-list-or-changes).
 
 ```
 Read(fn: func(Tx) error) error
@@ -217,31 +217,31 @@ a warning in the log).
 - A title its part can't name is keyed under the `local` scheme
   (`movie/local/<opaque>`, `series/local/<opaque>`), with a `Name` (and
   a `Year`, an `Image`) of the host's
-  ([catalog 4.3](../spec/v0/catalog.md#43-titles-no-public-source-knows-the-description)).
+  ([listing 4.3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#43-titles-no-public-source-knows-the-description)).
   Extras are titles of their own, of kind `extra`, keyed under their
   film, series or season (`<key>/x/<opaque>`), with an `ExtraType`
-  ([video 3.9](../spec/v0/video.md#39-extras)). Their opaque parts are
+  ([video 3.9](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#39-extras)). Their opaque parts are
   made with `engine.OpaqueKeyPart(id)`
-  ([catalog 4.2](../spec/v0/catalog.md#42-opaque-parts-of-a-key)). The
+  ([listing 4.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#42-opaque-parts-of-a-key)). The
   operator shares local titles per pairing and per group (`SetLocal`,
   `SetGroupLocal`), off by default.
 - An episode keyed by its TMDB episode ID is looked up at TMDB when the
   media server stores none: its numbers are often not TMDB's
-  ([video 4.1](../spec/v0/video.md#41-episode-order)). The host fills its
+  ([video 4.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#41-episode-order)). The host fills its
   `Place` with TMDB's current season and episode numbers (found by the
   episode's IMDb or TheTVDB ID when the media server's numbers aren't
   TMDB's); an episode without one isn't sent.
 - **Copies.** Films, episodes, extras and tracks carry their copies
   (`VideoTitle.Copies`, `wire.Copy`; `MusicTitle.Copies`,
   `wire.MusicCopy`), described as their files are
-  ([video 3.2](../spec/v0/video.md#32-copies),
-  [music 3.3](../spec/v0/music.md#33-a-tracks-copies)), so that a
+  ([video 3.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#32-copies),
+  [music 3.3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#33-a-tracks-copies)), so that a
   viewer's server lists them before anyone plays. Series and seasons
   carry none; a film, an episode or an extra without a copy isn't sent.
   Each copy's ID is the host's handle: it never leaves; the engine sends
   the version ID instead. The host's order is its preference, best
   first: the first copy is the one played when a peer names none
-  ([video 3.7](../spec/v0/video.md#37-the-order-of-copies)). Facts are
+  ([video 3.7](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#37-the-order-of-copies)). Facts are
   in outside vocabularies or the [registry](../spec/registry.md): the
   file's media type, the registry's codec and subtitle tokens, RFC 6381
   `Codecs` (required for h264, hevc, av1, vp9, aac and dts), H.273
@@ -254,7 +254,7 @@ a warning in the log).
   `wire.SentTag` gives them (`fre` and `fra` as `fr`).
 
 **`Images`**, optional, on a Catalog that shares the images of its local
-titles ([catalog 4.4](../spec/v0/catalog.md#44-the-image-of-a-local-title-image)):
+titles ([listing 4.4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#44-the-image-of-a-local-title-image)):
 `Image(key) -> Bytes`, one JPEG or PNG of at most 1 MiB, 1 to 4,096
 pixels wide and tall; `NotFound` for none. The engine checks it before
 it leaves.
@@ -316,7 +316,7 @@ libraries, and answers `NotFound` when the copy is in none.
 64, served as fonts 0 to `Fonts`-1), `NotApart` (the subtitle tracks the
 host can't serve apart: they get no entry in the answer's `subtitles`),
 `Forms` (by track ID, `text` or `picture`: how the host serves apart a
-track of a format [video 5.4](../spec/v0/video.md#54-choosing-the-subtitles)
+track of a format [video 5.4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#54-choosing-the-subtitles)
 doesn't list). Every other track of a format video 5.4 lists is served
 apart, in its form.
 
@@ -327,7 +327,7 @@ apart, in its form.
 | `Copy`, `Title` | the copy's handle; the key played (an episode's, in a copy holding several) |
 | `AudioOnly` | a music track: serve no video |
 | `Purpose` | `play`, `download` or `scan` ([playback 7](../spec/v0/playback.md#7-downloads), [8](../spec/v0/playback.md#8-scan-access)); a scan is always of delivery `file` |
-| `Delivery`, `MediaType`, `Transcode` | what the viewer's server asked: `file` (the copy as it is), `remux` (into `MediaType`'s segment format, as `hls`), `transcode` (to `Transcode`'s targets: registry tokens, `copy` for a stream left unchanged, a `Range` of `sdr` or `keep`), or empty for the baseline: H.264 High 4.1 8-bit SDR and AAC-LC stereo in complete HLS, each stream already within it left unchanged ([playback 2.7](../spec/v0/playback.md#27-delivery)). With a delivery, serve exactly that or refuse with `DeliveryRefused`; never another |
+| `Delivery`, `MediaType`, `Transcode` | what the viewer's server asked: `file` (the copy as it is), `remux` (into `MediaType`'s segment format, as `hls`), `transcode` (to `Transcode`'s targets: registry tokens, `copy` for a stream left unchanged, a `Range` of `sdr` or `keep`), or empty for the baseline: H.264 High 4.1 8-bit SDR and AAC-LC stereo in complete HLS, each stream already within it left unchanged ([playing 2.7](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#27-delivery)). With a delivery, serve exactly that or refuse with `DeliveryRefused`; never another |
 | `Served` | what the engine decided is served of the copy: the method, `copy` or the codec each stream becomes, a remux's segment format |
 | `AudioRenditions` | for `hls`, every audio track of the copy as a rendition named by its ID; never refused (`Started.AudioRenditions` says whether it was made) |
 | `Parts` | the copy's files, as its description says (1 for one file): several are started as `hls`, never `file` |
@@ -339,8 +339,8 @@ apart, in its form.
 | `Admit` | `func(method) -> (Slot, error)`, below |
 
 The host's duties toward what it serves are in
-[playback 2.7](../spec/v0/playback.md#27-delivery) and
-[media 3.1](../spec/v0/media.md#31-hls-playlists): in fragmented MP4
+[playing 2.7](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#27-delivery) and
+[fetching 3.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#31-hls-playlists): in fragmented MP4
 segments, HEVC written `hvc1`, parameter sets out of band, and Dolby
 Vision as playback 2.7 says (the base's sample entry when the base is
 compatible, `dvh1` or `dav1` when it isn't); each variant of a master playlist with
@@ -416,7 +416,7 @@ Serve(peer: PeerRef, handle, path: MediaPath, rng: *Range, out: ResponseSink)
   once (`length` -1 unknown, `contentRange` empty for none), then write
   the body.
 - Send playlists complete (`VOD`, `#EXT-X-ENDLIST`), in media's subset
-  ([media 3.1](../spec/v0/media.md#31-hls-playlists)), their audio
+  ([fetching 3.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#31-hls-playlists)), their audio
   renditions named by the copy's track IDs: the engine reads each one
   whole and refuses one outside it, with a warning. Subtitles, ASS,
   pictures and fonts are read whole and rebuilt or checked before they

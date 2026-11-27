@@ -100,7 +100,7 @@ document [LukeHagar/plex-api-spec](https://github.com/LukeHagar/plex-api-spec)
   maps), but some episodes were reported without one or with two `tvdb://`
   entries ([same forum thread](https://forums.plex.tv/t/implemented-add-includeguids-url-parameter-to-return-external-guids/735620),
   **(community)**). An episode without one is looked up at TMDB, or left
-  out, as [video section 4.1](../spec/v0/video.md#41-episode-order) says.
+  out, as [video section 4.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#41-episode-order) says.
 - **Numbering.** Plex's TV agent offers four episode orders per library or
   per show: TMDB (aired), TheTVDB (aired), TheTVDB (DVD), TheTVDB
   (absolute) (`showOrdering` in python-plexapi's `video.py`:
@@ -116,7 +116,7 @@ document [LukeHagar/plex-api-spec](https://github.com/LukeHagar/plex-api-spec)
   ([naming guide](https://support.plex.tv/articles/naming-and-organizing-your-tv-show-files/)).
   Work: the implementation groups episodes by part to fill `with`. Plex
   doesn't say where the second episode starts: the copy's start
-  ([video section 5.2](../spec/v0/video.md#52-several-episodes-in-one-copy)
+  ([video section 5.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#52-several-episodes-in-one-copy)
   allows it).
 - **Specials** are season 0 ("Season 00" or "Specials" folder, same
   guide): maps.
@@ -136,7 +136,7 @@ document [LukeHagar/plex-api-spec](https://github.com/LukeHagar/plex-api-spec)
   over HLS, never as `file`. See section 5.1, point 1.
 - **IDs.** `ratingKey` is "an opaque string" (official document); part
   and stream IDs are numbers. The implementation keeps its own public IDs
-  anyway ([catalog section 2.1](../spec/v0/catalog.md#21-library-ids)).
+  anyway ([listing section 2.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#21-library-ids)).
 - **Changes.** Items carry `addedAt` and `updatedAt`, but a removed item
   just disappears: the engine's own change log (`OwnLogTx`,
   [host.md section 1.1](host.md#11-tx)) fits.
@@ -168,7 +168,7 @@ document [LukeHagar/plex-api-spec](https://github.com/LukeHagar/plex-api-spec)
   document). Work: build a profile from MSFP's coarsened capabilities.
   `direct` is the part's own URL; `directStream` with HLS is `remux`.
 - **Height** is the stream's `height` and `width`: maps (the 16:9 rule
-  of [video section 3.2](../spec/v0/video.md#32-the-picture) is computed).
+  of [the order of copies in the notes](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/notes.md#the-order-of-copies) is computed).
 - **HDR.** Plex gives `colorTrc` (`smpte2084` for PQ, `arib-std-b67` for
   HLG) and, for Dolby Vision, `DOVIPresent`, `DOVIProfile`,
   `DOVIBLCompatID` (python-plexapi **(community)**). Work: PQ is `hdr10`,
@@ -184,7 +184,7 @@ document [LukeHagar/plex-api-spec](https://github.com/LukeHagar/plex-api-spec)
   `00000.ts` and so on, or `.m4s` with a header file in recent versions
   ([forum logs](https://forums.plex.tv/t/client-development-universal-transcode-api-help/735388),
   **(community)**). Work: rewrite every playlist to bare names
-  ([media section 3.1](../spec/v0/media.md#31-hls-playlists)), keep a map
+  ([fetching section 3.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#31-hls-playlists)), keep a map
   from each name to Plex's path, and add the Plex token to every fetch.
   TS and fMP4 segments are both in MSFP's subset.
 - **The file.** `GET /library/parts/{partId}/{changestamp}/{filename}`
@@ -214,7 +214,7 @@ document [LukeHagar/plex-api-spec](https://github.com/LukeHagar/plex-api-spec)
   **(unconfirmed: whether either gives a whole WebVTT track, or WebVTT by
   time range)**. No endpoint takes a time range. Work: fetch the track
   whole (or extract it from the file) and cut the 120-second parts of
-  [video section 6.2](../spec/v0/video.md#62-what-is-fetched) itself.
+  [video section 6.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#62-what-is-fetched) itself.
 - **PGS.** Plex's transcoder burns picture subtitles in (`subtitles=burn`);
   no endpoint gives an embedded PGS track's raw data. **Doesn't fit**
   through the API. With read access to the files, the implementation can
@@ -389,7 +389,7 @@ public.
   with `EndPositionTicks` and `CopyTimestamps`
   ([the call](https://dev.emby.media/reference/RestAPI/SubtitleService/getVideosByIdByMediasourceidSubtitlesByIndexByStartpositionticksStreamByFormat.html)):
   WebVTT by time range, which is what MSFP's 120-second parts need: maps
-  (the part is still rebuilt as [video section 6.3](../spec/v0/video.md#63-webvtt) says).
+  (the part is still rebuilt as [video section 6.3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#63-webvtt) says).
 - **PGS**: **(unconfirmed)** whether the same call returns an embedded PGS
   track's raw data (`Stream.sup`), as Jellyfin's does. If not, work with
   the file: a plugin knows each stream's file (`Path`) and can run ffmpeg.
@@ -459,7 +459,7 @@ progress then and built since, its notes `SPEC-GAPS.md`), and Jellyfin's API ([a
   kinds ([catalog section 2](../spec/v0/catalog.md#2-libraries)) are
   Jellyfin's `CollectionType` values; the skip marker kinds `intro`,
   `outro`, `recap`, `preview`, `commercial`
-  ([video section 5.3](../spec/v0/video.md#53-the-answer)) are Jellyfin's
+  ([video section 5.3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#53-the-answer)) are Jellyfin's
   media segment types; the preview layout (tile size, columns, rows,
   interval, count) is Jellyfin's trickplay manifest. None is wrong
   elsewhere; each needs a mapping on Plex and Emby, said above.
@@ -495,7 +495,7 @@ point 11 in [core section 1](../spec/v0/core.md#1-overview-and-terms)).
    `file` protocol is only for a copy of one file; a copy of several parts
    is served as `hls`." Positions, `durationMs` and `segments` are then
    in the whole copy, which nothing else needs to say.
-2. **List only the subtitles that can be served.** [video section 5.4](../spec/v0/video.md#54-choosing-the-subtitles)
+2. **List only the subtitles that can be served.** [video section 5.4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#54-choosing-the-subtitles)
    says "Every text and PGS subtitle track is listed". A Plex
    implementation without file access can't serve PGS raw, and subtitles
    are never burned in, so it would list tracks whose URLs always fail.
@@ -508,7 +508,7 @@ point 11 in [core section 1](../spec/v0/core.md#1-overview-and-terms)).
 
 ### 5.2 Worth stating
 
-3. **Numbers aren't TMDB's by default** ([video section 4.1](../spec/v0/video.md#41-episode-order)).
+3. **Numbers aren't TMDB's by default** ([video section 4.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#41-episode-order)).
    Add: "A media server's season and episode numbers are often not
    TMDB's (Emby and Jellyfin keep the files' numbers, often TheTVDB's;
    Plex follows the order chosen for the show). An owning server should
@@ -517,7 +517,7 @@ point 11 in [core section 1](../spec/v0/core.md#1-overview-and-terms)).
    when it knows they are TMDB's." Add to the security or the
    implementation notes that such lookups need the owning server's own
    TMDB access, kept within TMDB's limits.
-4. **Skip markers from other platforms** ([video section 5.3](../spec/v0/video.md#53-the-answer)).
+4. **Skip markers from other platforms** ([video section 5.3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#53-the-answer)).
    Add: "Credits are `outro`. A marker whose end the owning server doesn't
    know (credits that run to the end) ends at the copy's `durationMs`. An
    owning server that knows only some kinds sends those."
@@ -527,11 +527,11 @@ point 11 in [core section 1](../spec/v0/core.md#1-overview-and-terms)).
    *n*-th image, with `intervalMs` multiplied by *n*, to stay within the
    bounds."
 6. **The default audio is the file's, not a person's**
-   ([playback section 2.6](../spec/v0/playback.md#26-choosing-the-copy-and-the-tracks)).
+   ([playing section 2.6](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#26-choosing-the-copy-and-the-tracks)).
    Plex and Emby keep a per-user chosen track. Add: "The default audio is
    the track the copy's file marks as default, never a choice a person of
    the owning server saved."
-7. **Roles are best effort** ([playback section 2.3](../spec/v0/playback.md#23-the-answer)).
+7. **Roles are best effort** ([video section 3.3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#33-streams-and-tracks)).
    Media servers rarely flag commentary. Add: "`role` is absent when the
    owning server doesn't know it; it may guess from a track's title. A
    viewer's server treats an absent role as the title's own sound." This

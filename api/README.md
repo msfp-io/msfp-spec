@@ -81,7 +81,7 @@ RedeemCode(text) -> PeerView
   rotate). Peers never see them.
 - **Library IDs.** The host names its libraries by its own IDs. Peers
   see only the opaque public IDs the engine makes
-  ([catalog 2.1](../spec/v0/catalog.md#21-library-ids)).
+  ([listing 2.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#21-library-ids)).
 - **Copies** are named by an opaque handle from the host. The engine
   stores it and passes it back, never sends it. A peer sees a version ID:
   `ver_` + the first 16 bytes of HMAC-SHA-256(IDs secret, `"version\n" +
