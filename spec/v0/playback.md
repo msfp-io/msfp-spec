@@ -307,7 +307,8 @@ pairing and per group, with a number of scans a day.
   once (more: `503`), and may pace them as it paces downloads.
 - **The ticket** lasts 10 minutes from the answer, and the idle limit
   holds ([playing section 5](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#5-a-playbacks-states-and-endings)),
-  counted on media requests alone. The viewer's server sends `stop` when
+  counted on media requests alone: twice the scan answer's
+  `progressSeconds` (2 minutes by default), as for any playback. The viewer's server sends `stop` when
   its media server is done reading. It sends no `progress` for a scan.
 - **What reads are for.** A viewer's server uses `scan` only for reads
   to list a file, and a `play` with `purpose` `play` for reads to watch
@@ -484,4 +485,5 @@ items 18, 19 and 30 above read so. Choices of the writing:
     as an unknown member, so that a device is never described to a peer
     (section 2).
 33. **A scan's idle limit** is counted on media requests alone, since
-    a scan has no `progress` (section 8).
+    a scan has no `progress` (section 8). Settled 2026-11-27: still twice
+    `progressSeconds`, though a scan sends no `progress`.
