@@ -45,7 +45,7 @@ summary and spec/v0 differ, spec/v0 wins, except for what is marked
 - **Base**: text and JSON encodings (strict I-JSON), case, language tags,
   the one rule for unknown values (core 8.5), the error format (problem
   documents), media answers (core 8.4). JSON is defined by the language
-  itself, with HTTP compression (gzip, zstd); CBOR set aside.
+  itself, with HTTP compression (**new**: gzip, zstd); CBOR set aside.
 - **Level 1, the title**: kind (film, series, season, episode, extra;
   artist, album, track), outside IDs (TMDB first), names per language,
   year. Out: pictures, overview, cast, genres. Title keys as video
@@ -80,10 +80,10 @@ summary and spec/v0 differ, spec/v0 wins, except for what is marked
     stereo AAC, in HLS.
   - The answer: the delivery, where to fetch, an opaque ticket. Sign-in
     stays outside the language.
-  - Progress: playback ID, position, playing or paused; then `stop` with
-    the last position. The interval is the source's; no report for a
-    while = stopped. A track or delivery change is a new ask naming the
-    playback it replaces. Positions travel; `startPositionMs` too. No
+  - Progress: playback ID, position, **new**: playing or paused; then
+    `stop` with the last position. **New**: the interval is the source's;
+    no report for a while = stopped. **New**: a track or delivery change
+    is a new ask naming the playback it replaces. Positions travel; `startPositionMs` too. No
     carrier may forbid positions.
   - Purposes: `play` and `download` (file or sized transcode, 24-hour
     ticket without the idle rule, stopped when complete, late reports
