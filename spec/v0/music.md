@@ -2,22 +2,24 @@
 
 **Draft.**
 
-The `music` part shares artists, albums and tracks, as music servers
-hold them: albums by edition, tracks by their place on an album. It is a
-content part: it says what the shared parts carry for music: the title
-kinds, keys and descriptions in [catalog](catalog.md), and what
-[playback](playback.md)'s `play` takes and answers for a track. It has
-one call of its own, `lyrics` (section 6), and uses the catalog's `image`
-call ([catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image))
-for the images of `local` artists and albums (section 4). It needs the
-[core](core.md), `catalog`, `playback` and `media`; if any of them is
-off between two servers, `music` is off too
+The `music` part carries
+[MSFP Media version 0's music](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md)
+between paired servers: artists, albums and tracks, their keys, their
+descriptions and copies, how a track plays, and `lyrics`. What music
+titles are, and how they play, is there; this part adds only what MSFP
+decides around it: when `music` is on, which `local` titles a peer
+sees, how audio playbacks count against a server's limits, and how
+`lyrics` reaches a peer. Its section numbers are those of MSFP Media's
+music.
+
+It needs the [core](core.md), `catalog`, `playback` and `media`; if any
+of them is off between two servers, `music` is off too
 ([core section 10](core.md#10-versions-and-parts)). A server lists
 `music` in `hello` only when it shares or plays music. It comes from
 [proposal 11](../../proposals/0011-music.md), revised by
 [proposal 16](../../proposals/0016-version-0-revision.md) and
-[proposal 17](../../proposals/0017-neutrality.md). Notes for implementers,
-not normative, are in [implementers](implementers.md#music).
+[proposal 17](../../proposals/0017-neutrality.md); its language moved
+into MSFP Media by [proposal 19](../../proposals/0019-msfp-media.md).
 
 The words "must", "must not" and "should" carry their usual meaning in
 specifications.
@@ -26,12 +28,7 @@ specifications.
 
 1. [Terms](#1-terms)
 2. [Title keys](#2-title-keys)
-   - [2.1 The `mb` scheme](#21-the-mb-scheme)
-   - [2.2 The `local` scheme](#22-the-local-scheme)
 3. [What a title carries](#3-what-a-title-carries)
-   - [3.1 Other identifiers](#31-other-identifiers)
-   - [3.2 What the caller keeps](#32-what-the-caller-keeps)
-   - [3.3 A track's copies](#33-a-tracks-copies)
 4. [Pictures](#4-pictures)
 5. [Playing a track](#5-playing-a-track)
    - [5.1 Limits](#51-limits)
@@ -43,412 +40,46 @@ specifications.
 
 ## 1. Terms
 
-- **MBID**: a MusicBrainz identifier, the lowercase UUID MusicBrainz
-  gives an artist, a release group, a release, a recording or a release
-  track.
-- **Release**: one edition of an album (a remaster, a country's
-  pressing, a deluxe edition), with its own track list.
-- **Release group**: every release of one album.
-- **Release track**: one place on a release: disc *d*, track *n*.
-- **Recording**: one performance, wherever it appears: the same
-  recording may be a release track of several releases (the album, a
-  compilation, a deluxe edition).
-- **Music title**: an artist, an album or a track.
-- **Album**: a release.
-- **Track**: a release track.
-- **Schemes**: `music` 0 has two: `mb` (MusicBrainz) and `local` (the
-  owning server's own, for untagged music).
-
-A track key takes the release track's MBID, and `ids`' `mbrecording`
-the recording's (sections 2.1 and 3.1). Tags and media servers name the
-two in different ways; [implementers](implementers.md#music) lists some.
+As in [MSFP Media's music, section 1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#1-terms).
+Where MSFP Media says the **source**, MSFP means the owning server;
+where it says the **caller**, the viewer's server.
 
 ## 2. Title keys
 
-Three kinds of title, under two schemes:
-
-| Kind | `mb` key | `local` key |
-|------|----------|-------------|
-| artist | `artist/mb/<artist mbid>` | `artist/local/<opaque>` |
-| album | `album/mb/<release mbid>` | `album/local/<opaque>` |
-| track | `track/mb/<release track mbid>` | `track/local/<opaque>` |
-
-A title's kind is `artist`, `album` or `track`: the kind its key
-names. `play` takes only tracks, of either scheme.
-
-An owning server keys a title under `mb` whenever it has its MBID, under
-`local` otherwise. Each scheme gives one form for each title; a key in
-another form is a different string, and the receiver skips it
-([catalog section 4](catalog.md#4-title-keys)).
-
-Test cases: `keys` in
-[vectors/v0/music.json](../../vectors/v0/music.json).
-
-### 2.1 The `mb` scheme
-
-- **An album is a release**, not a release group: two editions are two
-  albums, each with its own track list, as music servers show them. The
-  release group goes in `ids` (section 3.1), so that a viewer's server
-  can group a release group's editions, and tell that a peer's album is
-  an edition of one it has.
-- **A track is a release track**: its place on one release. A recording
-  on its album and on a compilation is two tracks, one on each album,
-  so neither album's track list has a hole. The recording goes in `ids`
-  (section 3.1), so that a viewer's server can tell that it already has
-  the song.
-- `<mbid>` is 36 characters,
-  `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`,
-  lowercase. Any other form is a different string, and the receiver
-  skips it.
-- A `track/mb` track is on an `album/mb` album: the release its release
-  track belongs to (section 3.2).
-- MusicBrainz sometimes merges two entities into one; files tagged
-  before the merge keep the old MBID. Two servers may then hold one
-  release under two keys. They are two titles: keys are compared byte
-  for byte ([catalog section 4.1](catalog.md#41-same-title-same-key)).
-
-### 2.2 The `local` scheme
-
-For music no public database knows, or that isn't tagged: shop
-downloads, rips without a tagger, self-released or home recordings.
-
-- `<opaque>` is 1 to 64 characters of `A–Z a–z 0–9 _ -`, chosen by the
-  owning server under the rule of library IDs
-  ([catalog section 2.1](catalog.md#21-library-ids)): not derived from
-  its media server's IDs, a file, a path or a name without a key. It is
-  stable as long as the owning server holds the title.
-- A `local` title never matches another server's, not even one with the
-  same opaque part: a viewer's server keeps it under the peer it came
-  from. It carries no `ids` (section 3.1).
-- **The owning server chooses** whether to share `local` titles at all,
-  off by default, per pairing and per group, as
-  [catalog section 5](catalog.md#5-what-is-shared) says.
-- A `local` title carries the same description as an `mb` one
-  (section 3), and may carry `image`, a picture of its own (section 4).
-- Titles of both schemes mix freely: a `local` track may be on an `mb`
-  album (a file with a release MBID but no release track MBID), and an
-  `mb` album may credit a `local` artist (one without an artist MBID).
+The `mb` and `local` schemes are those of
+[MSFP Media's music, section 2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#2-title-keys).
+MSFP adds one rule: **the owning server chooses** whether to share
+`local` titles at all, off by default, per pairing and per group, as
+[catalog section 5](catalog.md#5-what-is-shared) says.
 
 ## 3. What a title carries
 
-Video titles carry keys and copies only: the viewer's server looks names
-and pictures up in TMDB. Music can't work that way. At one request a
-second, a library of 20,000 tracks would take more than five hours of
-MusicBrainz lookups on every peer that reads it, and MusicBrainz would
-be asked the same thing by every server of a federation. So **music
-titles carry their own description**, from the owning server, beside the
-members of [catalog section 3](catalog.md#3-titles):
-
-| Field | Kinds | Type | Content |
-|-------|-------|------|---------|
-| `name` | all | string | the title's name, text, at most 256 characters; required |
-| `artists` | album, track | array of string | the artist keys credited, in order, at most 16 |
-| `artistNames` | album, track | string | the credited names as written (`"Simon & Garfunkel"`), at most 512 characters |
-| `primaryType` | album | string | the release group's MusicBrainz primary type (`album`, `single`, `ep`, `broadcast`, `other`…), open |
-| `secondaryTypes` | album | array of string | its MusicBrainz secondary types (`compilation`, `soundtrack`, `live`, `remix`, `dj-mix`, `audio drama`, `mixtape/street`…), open, at most 8 |
-| `compilation` | album | boolean | `true`: an album of various artists |
-| `date` | album, track | string | the date of this edition: `YYYY`, `YYYY-MM` or `YYYY-MM-DD` |
-| `originalDate` | album, track | string | the date of the album's (or the track's) first edition, in the same form |
-| `genres` | album, track | array of string | at most 8, from the files' tags, each at most 64 characters |
-| `album` | track | string | the album key it is on; required for a `track/mb` track |
-| `disc`, `number` | track | integer | its place on the album: 1 to 999 each |
-| `copies` | track | array of copy | its copies, in the owner's order of preference, at most 16; required (section 3.3) |
-| `image` | `local` artists and albums | boolean | `true`: the owning server has a picture of it (section 4) |
-| `ids` | `mb` albums and tracks | object | other identifiers (section 3.1) |
-
-- **`primaryType`** and **`secondaryTypes`** are the release group's
-  types as MusicBrainz names them, lowercased (`Audio drama` is sent
-  `audio drama`, `Mixtape/Street` `mixtape/street`): each 1 to 32
-  characters of `a–z 0–9 space . _ - /`, with no space at either end.
-  The lists are MusicBrainz's and open; the
-  [registry](../registry.md) lists them, with this class of their own
-  instead of tokens. A value the viewer's server doesn't know is kept
-  as it is ([core section 8.5](core.md#85-unknown-values)), and the
-  viewer's server maps the types to its own.
-- **`compilation`** is the tag of that name: albums of various artists,
-  which music servers file apart. It doesn't follow from
-  `secondaryTypes`: a soundtrack may be one or not.
-- **`date`** and **`originalDate`**: as precise as the owning server
-  knows them. Without `originalDate`, a viewer's server sorts and shows
-  by `date`.
-- **A track's `artists`, `artistNames`, `date`, `originalDate` and
-  `genres`** are sent only when they differ from its album's (a
-  compilation's tracks have their own artists and dates); an absent one
-  is the album's. A track without an album has only its own.
-- There are no sort names: receivers sort by their own rules.
-- An owning server lists, in the same library, the album and the artists
-  its tracks name. A viewer's server shows a track whose album or artist
-  it hasn't got with the names it has.
-
-These are untrusted text, cleaned as
-[core section 9.1](core.md#91-pair) cleans a server's name (with the
-lengths above instead of 80), and never more than a label: two titles are
-the same when their keys are equal, whatever their names
-([catalog section 4.1](catalog.md#41-same-title-same-key)). A viewer's
-server may replace them with its own data for keys it knows.
-
-A change of any of these members, a copy's included, is a change of the
-title: a changes reading sends it again
-([catalog section 3.2](catalog.md#32-whole-list-or-changes)).
-
-Example: an album, and a track on it:
-
-```json
-{"key":"album/mb/0b000000-0000-4000-8000-000000000002","library":"m1","name":"Bridge over Troubled Water","artists":["artist/mb/0a000000-0000-4000-8000-000000000001"],"artistNames":"Simon & Garfunkel","primaryType":"album","date":"2011-03-08","originalDate":"1970-01-26","genres":["Folk rock"],"ids":{"mbreleasegroup":"0d000000-0000-4000-8000-000000000005"}}
-{"key":"track/mb/0c000000-0000-4000-8000-000000000003","library":"m1","name":"The Boxer","album":"album/mb/0b000000-0000-4000-8000-000000000002","disc":1,"number":2,"copies":[{"id":"Vq3kM0aZ7pXc","durationMs":308417,"mediaType":"audio/flac","codec":"flac","size":36214455,"etag":"7f3a9c21","sampleRate":44100,"bitDepth":16,"channels":2,"replayGain":{"trackGain":-4.12,"trackPeak":0.988525,"albumGain":-5.3,"albumPeak":1.0},"lyrics":"synced"}],"ids":{"mbrecording":"0e000000-0000-4000-8000-000000000006"}}
-```
-
-The track carries no `artists`, `artistNames`, dates or genres: its
-album's are its own.
-
-(The MBIDs of this example and of the test vectors are made up.)
-
-### 3.1 Other identifiers
-
-The schemes and their forms are the
-[registry's](../registry.md#ids-schemes); those of music are:
-
-| Scheme | Kinds | Form |
-|--------|-------|------|
-| `mbreleasegroup` | album | the MBID of the release group the release belongs to |
-| `mbrecording` | track | the MBID of the recording the release track holds |
-
-MBIDs here have the form of section 2.1. Only `mb` albums and tracks
-carry `ids`, with these two schemes only: a `local` title is never
-matched through `ids`, so it carries none, and an artist's key is
-already its MBID. Other identifiers a viewer's server can find itself:
-from `mbrecording`, MusicBrainz gives a recording's ISRCs, and the
-AcoustID service its AcoustIDs. As in [video](video.md)'s other
-identifiers, `ids` never replaces the key.
-
-### 3.2 What the caller keeps
-
-Besides the rules of [catalog section 3.3](catalog.md#33-what-the-caller-keeps-of-each-title),
-title by title:
-
-- the key's scheme is one the caller knows (`mb` or `local` in
-  `music` 0), and a `local` key's opaque part has the form of
-  section 2.2;
-- `name`: cleaned as above. A title without a `name`, or whose `name`
-  is empty once cleaned, is skipped.
-- `artistNames`: cleaned as above; empty once cleaned counts as absent.
-- `artists`: each entry a valid artist key (section 2), each once; a bad
-  or repeated entry is skipped; at most 16 kept, the first. Here and in
-  every "at most *N*, the first" of this part, only kept entries count:
-  a skipped entry doesn't use a place.
-- `primaryType`: a string of the form of section 3, kept as it is,
-  known or not; any other counts as absent. The caller doesn't lowercase:
-  `Album` counts as absent.
-- `secondaryTypes`: each entry of the same form, each once; a bad or
-  repeated entry is skipped alone; at most 8 kept, the first; empty once
-  skipped counts as absent.
-- `date`, `originalDate` (on albums and tracks): in one of the three
-  forms, with a year from 1000 to 9999, a month from `01` to `12` and a
-  day that exists in that month (29 February in leap years only); any
-  other counts as absent. An `originalDate` whose year is after `date`'s
-  counts as absent.
-- `genres` (on albums and tracks): each entry cleaned as above, 1 to 64
-  characters once cleaned; an empty, over-long or repeated entry
-  (compared without case) is skipped alone; at most 8 kept, the first.
-- `album`: a valid album key; any other counts as absent. A `track/mb`
-  track whose `album` isn't an `album/mb` key is skipped.
-- `disc`, `number`: integers from 1 to 999; any other counts as absent.
-- `copies`: kept as section 3.3 says. A track with no copy left is
-  skipped.
-- `image`: kept only on a `local` artist or album; on any other title it
-  is ignored.
-- `year`: the description of [catalog section 4.3](catalog.md#43-titles-no-public-source-knows-the-description)
-  gives one, but music titles carry their dates in `date` and
-  `originalDate`: a `year` on a music title, of either scheme, is
-  ignored.
-- `artists`, `artistNames`, `date`, `originalDate`, `genres` on a
-  track: kept as sent, never filled from the album; a track without
-  them takes its album's where the caller shows it (section 3).
-- `ids`: on `mb` albums and tracks only, values of the schemes the
-  table of section 3.1 gives for the title's kind, in their form; others
-  are skipped (`isrc` and `acoustid` among them). On a `local` title,
-  `ids` is ignored.
-- A member the table of section 3 gives for other kinds than the
-  title's (an `album` on an album, `primaryType` on a track, `genres` on
-  an artist) is ignored, as is a member it doesn't give (`releaseType`,
-  `sortName`).
-
-Members of the wrong JSON type ([core section 2.3](core.md#23-json)):
-each counts as absent (a `copies` that isn't an array: the track is
-skipped); an entry of `artists`, `secondaryTypes` or `genres` that
-isn't a string is skipped alone, as is a value of `ids` that isn't a
-string.
-
-Test cases: `titles` in
-[vectors/v0/music.json](../../vectors/v0/music.json), each with what the
-caller keeps.
-
-### 3.3 A track's copies
-
-A track's `copies` follow the common rules of video's copies
-([video section 3.2](video.md#32-copies)): one entry per copy, in the
-owner's order of preference, at most 16; the `id` `play` takes as
-`versionId`; an exact `size`; an `etag` that changes whenever the copy's
-bytes change. `durationMs` is exact, as the owning server knows it,
-never rounded. `mediaType`, `codec` and `codecs` follow video's rules
-([video section 3.5](video.md#35-names)): the file's media
-type, a registry token, and an RFC 6381 string. A track's copy is one
-audio stream, so it carries these:
-
-| Field | Type | Required | Content |
-|-------|------|----------|---------|
-| `id` | string | yes | the version ID, as for video |
-| `durationMs` | integer | yes | its length in milliseconds, exact, 1 to 86,400,000 |
-| `mediaType` | string | yes | the file's media type ([core section 8.5](core.md#85-unknown-values)), as for video: `audio/flac`, `audio/mpeg`, `audio/mp4`, `audio/ogg`, `audio/wave`, `audio/matroska`… |
-| `codec` | string | yes | its audio codec, a token from the [registry](../registry.md) (`flac`, `mp3`, `aac`, `alac`, `opus`, `vorbis`, `pcm_s16le`…) |
-| `codecs` | string | for `aac` and `dts`; else no | its RFC 6381 codecs string (`mp4a.40.2`, `fLaC`, `Opus`, `ec-3`), 1 to 64 characters of `A–Z a–z 0–9 . + -`, registered codes only (video section 3.5) |
-| `size` | integer | yes | its exact size in bytes, as for video |
-| `etag` | string | yes | its identity, as for video |
-| `sampleRate` | integer | no | in Hz, 8,000 to 768,000 |
-| `bitDepth` | integer | no | 8 to 32; absent for lossy codecs |
-| `channels` | integer | no | 1 to 64 |
-| `replayGain` | object | no | its loudness values (below) |
-| `lyrics` | string | no | `plain` or `synced`: the owning server has lyrics for it (section 6), synced ones among them for `synced` |
-
-- **`mediaType`** is `audio/<sub>` when the file has no video stream
-  other than attached pictures (cover art), as video's rule says: a
-  track's file is sent `audio/mp4`, not `video/mp4`.
-- **`codecs`** is required when `codec` is `aac` or `dts`, as on video's
-  audio tracks: there it carries the profile or the flavour players
-  decide on (`mp4a.40.2` for AAC-LC, `mp4a.40.5` for HE-AAC). For other
-  codecs it is optional, and may be left out where the registry gives a
-  fixed code (`fLaC`, `Opus`, `ec-3`). It is the string the stream would
-  have in ISO BMFF, whatever the container; `codec` and `codecs` never
-  disagree, and decisions go by `codecs` when it is present.
-- A copy carries no name, no day it was added and no bitrate: a viewer's
-  server builds its labels from the facts (codec, sample rate, bit
-  depth), and the overall rate is `size` × 8 / `durationMs`.
-
-The members [video section 3.2](video.md#32-copies) gives for video only (`edition`,
-`startMs`, `endMs`, `parts`, `video`, `audioTracks`, `subtitleTracks`,
-`chapters`, `segments`, `previewLayout`, `threeD`) are not sent for a
-track, and the caller ignores them.
-
-**ReplayGain.** `replayGain` holds up to four numbers, each optional,
-from the files' tags, to the ReplayGain 2.0 reference (−18 LUFS):
-
-| Field | Type | Range | Content |
-|-------|------|-------|---------|
-| `trackGain` | number | −64 to 64 | the gain to apply to this track, in dB |
-| `trackPeak` | number | 0 to 10 | its highest sample, as a linear amplitude (1 is full scale; above 1 for lossy codecs) |
-| `albumGain` | number | −64 to 64 | the gain to apply to the whole album, in dB |
-| `albumPeak` | number | 0 to 10 | the album's highest sample, linear |
-
-- An owning server whose files hold other loudness values (EBU R128)
-  converts them to this reference.
-- It serves the audio at its own level, the gain not applied, whatever
-  the delivery: the viewer's player applies it, as for local tracks. A
-  gain stays right after a conversion; a peak may move slightly.
-
-**What the caller keeps** of `copies`, copy by copy:
-
-- the common rules of [video section 3.8](video.md#38-what-the-caller-keeps-of-copies): a copy missing a required
-  member, or whose `id`, `size` or `etag` breaks its form, is skipped
-  alone; at most 16 kept, the first; a repeated `id` skipped;
-- `durationMs` from 1 to 86,400,000, kept exact, else the copy is
-  skipped;
-- `mediaType`: a media type ([core section 8.5](core.md#85-unknown-values)),
-  kept as it is, known or not; a value that isn't one is dropped, and the
-  copy, missing a required member, skipped. The caller doesn't lowercase
-  (`audio/FLAC` skips the copy), and keeps a `video/…` type as sent;
-- `codec`: a token (core section 8.5), kept as it is, known or not,
-  never turned into another value; a value that isn't a token is
-  dropped, and the copy skipped;
-- `codecs`: a string of the form above; any other counts as absent. On
-  an `aac` or `dts` copy, a missing or malformed `codecs` doesn't skip
-  the copy: it is kept without `codecs`, and the viewer's server treats
-  it as one it can't play as it is (core section 8.5): it asks for a
-  remux or a transcode, or doesn't offer it;
-- `sampleRate`, `bitDepth`, `channels`: integers in their ranges; any
-  other counts as absent. A `bitDepth` on a lossy codec, which the owning
-  server shouldn't send, is kept all the same: the caller doesn't judge
-  codecs;
-- `replayGain`: each member a number in its range, the range checked on
-  the number as sent, before rounding; then gains rounded to two
-  decimals and peaks to six, to the nearest (an exact tie may go either
-  way: an owning server that wants one value sends it already rounded);
-  any other counts as absent, and a `replayGain` left empty, or that
-  isn't an object, counts as absent;
-- `lyrics`: `plain` or `synced` exactly; any other counts as absent;
-- `name`, `added`, `bitrateKbps` and `container`, which version 0 had
-  before proposal 17, are ignored, as any member the table doesn't give.
-
-Test cases: tracks with copies in `titles`, in
-[vectors/v0/music.json](../../vectors/v0/music.json).
+As in [MSFP Media's music, section 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#3-what-a-title-carries).
 
 ## 4. Pictures
 
-**Album art** comes from a public source by MusicBrainz ID, such as the
-Cover Art Archive, fetched by the viewer's server itself, as it fetches
-TMDB's pictures for films: by the album key's release, or by its release
-group (`ids`' `mbreleasegroup`) when the edition has no cover of its
-own. A viewer's server caches each cover. The owning server sends no
-picture of an `mb` album: one that no source the viewer's server uses
-has art for shows none.
-
-**Artist images** are the viewer's server's choice: a public source that
-knows artists by MBID (TheAudioDB, fanart.tv…), fetched by the viewer's
-server itself and cached. Nothing in the protocol carries them.
-
-**A `local` artist or album** has no public picture. When its `image` is
-`true`, the viewer's server asks for it with the catalog's `image` call,
-fetches, checks and re-encodes it (JPEG or PNG, at most 1 MiB) as
-[catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)
-says, and shows it as the owner's. The owning server sends pictures of
-`local` titles only.
-
-A track, of either scheme, shows its album's art.
+As in [MSFP Media's music, section 4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#4-pictures).
 
 ## 5. Playing a track
 
-- `play` ([playback](playback.md#2-play)) takes a track key, of either
-  scheme. Everything else stays: copies and `versionId`, `delivery`
-  (the file as it is, a remux, a conversion), limits, ticket,
-  `progress`, `stop`, restarts on an unchanged `etag`, downloads and
-  scan access where the owner allows them.
-- **Audio only.** A track's copy has one audio stream and no track IDs:
-  a request for a track names no `audioTrack` and no subtitle to burn
-  in, and its answer carries no `audioTrack`, `audioRenditions`,
-  `subtitles` or `fontCount`; a viewer's server ignores them in a
-  track's answer. A track's copies carry no chapters, skip markers or
-  `previewLayout` (section 3.3).
-- **The viewer's server chooses.** It has every copy's facts and knows
-  its player: it names the copy with `versionId` and asks for what it
-  wants with `delivery`
-  ([playback section 2.7](playback.md#27-delivery)). With
-  `delivery: file` the owning server serves the copy as it is, by byte
-  ranges: FLAC to a player that plays FLAC is never converted.
-- **Without `delivery`** the owning server serves playback's baseline
-  for a copy with no video ([playback section 2.7](playback.md#27-delivery)):
-  AAC-LC, at most 2 channels, at most 48 kHz, audio only, in complete
-  HLS, which every viewer's server must play. It may leave the stream
-  unchanged only when it is already within that.
-- **A remux** of a track names a `mediaType` of `audio/mp2t` (MPEG-TS
-  segments) or `audio/mp4` (fragmented MP4 segments): the copy has no
-  video. Another well-formed media type, `video/mp4` among them, is
-  refused with `409` `delivery-refused`; a malformed one with `400`
-  ([playback section 2.7](playback.md#27-delivery)).
-- **A transcode** of a track acts through the audio targets of
-  [playback section 2.7](playback.md#27-delivery): `audioCodec` (a
-  registry token, or `copy`), `maxBitrateKbps` and `audioChannels`.
-- **Gapless** playback needs the next track's bytes before the current
-  one ends (section 5.2).
-- A viewer's server that plays an album without a queue calls `play` for
-  each track as it comes, and `stop` for the one before. Skipping fast
-  then reaches the `play` limit of
-  [core section 8.3](core.md#83-limits-and-overload), and is refused
-  with `429`; a queue (section 5.2) avoids that.
+A track plays as
+[MSFP Media's music, section 5](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#5-playing-a-track)
+says, through [playback](playback.md), under its limits, with downloads
+and scan access where the owner allows them. Between servers the ask is
+always explicit: a viewer's server names the delivery it wants and never
+sends a capability list ([playback](playback.md)).
+
+A viewer's server that plays an album without a queue calls `play` for
+each track as it comes, and `stop` for the one before. Skipping fast
+then reaches the `play` limit of
+[core section 8.3](core.md#83-limits-and-overload), and is refused with
+`429`; a queue (section 5.2) avoids that.
 
 ### 5.1 Limits
 
 An audio playback counts as a stream, like a video one. The owning
 server may count audio separately; it says so with two members of
-`limits` ([playback](playback.md#5-limits)):
+`limits` ([playback section 5](playback.md#5-limits)):
 
 | Field | Type | Range | Content |
 |-------|------|-------|---------|
@@ -459,345 +90,42 @@ Absent: audio counts in `streams` and `transcodes`.
 
 ### 5.2 The queue
 
-A `play` of a track may name the tracks that follow it
-([playback section 2.1](playback.md#21-the-request)). The owning server prepares them under the same
-playback, so the viewer's server can go from one to the next with no
-gap and no new `play`. Request member:
-
-| Field | Type | Required | Content |
-|-------|------|----------|---------|
-| `queue` | array of entry | no | the tracks to play after `title`, in order, at most 5 |
-
-Request entry:
-
-| Field | Type | Required | Content |
-|-------|------|----------|---------|
-| `title` | string | yes | a track key, as the owning server sent it in `titles` |
-| `versionId` | string | no | the copy to play, a version ID ([playback section 2.3](playback.md#23-the-answer)); absent: the track's first copy, the owner's preferred |
-| `delivery` | string | no | `file`, `remux` or `transcode`, as the request's; absent: the request's |
-| `mediaType` | string | with the entry's `delivery` `remux` only, and then required | the remux's media type, as the request's (section 5) |
-| `transcode` | transcode object | no; with the entry's `delivery` `transcode` only | the transcode's targets, as the request's |
-
-- **An entry's delivery.** An entry with its own `delivery` takes its
-  own `mediaType` or `transcode` with it, never the request's. An entry
-  without `delivery` takes the request's `delivery`, with the request's
-  `mediaType` or `transcode`; without either, the baseline (section 5).
-  So an album of FLAC files can play as it is, with one track of it,
-  in a codec the player lacks, converted.
-- The owning server refuses the request (`400`) when `queue` isn't an
-  array, holds more than 5 entries, or holds an entry that isn't an
-  object, whose `title` isn't a track key in canonical form (section 2),
-  is `title` itself or a repeat, or whose `versionId`, `delivery`,
-  `mediaType` or `transcode` is malformed or out of its combination, as
-  [playback section 2.2](playback.md#22-what-the-owning-server-does)
-  says of the request's own. An entry's `delivery`, `mediaType` or
-  transcode codec that is well formed but one the owning server doesn't
-  make is refused as the request's would be: `409` `delivery-refused`.
-- A track of the queue the owning server doesn't hold in the libraries
-  it offers the caller, or that it can't play, is left out of the
-  answer; the request isn't refused for it. An entry whose `versionId`
-  names none of the track's copies plays its first copy, as `play`'s own
-  `versionId` does ([playback section 2.6](playback.md#26-choosing-the-copy-and-the-tracks)).
-- **Counting.** The playback, queue included, counts once against
-  `streams` (and `audioStreams`), and once against `transcodes` (and
-  `audioTranscodes`) when any of its tracks is converted. It stays live
-  while any of its tracks is read
-  ([media section 4](media.md#4-how-long-a-ticket-works));
-  `stop` ends it whole.
-- **Prepared** means that the owning server has each entry's first bytes
-  ready before the one before it ends: a converted entry starts
-  converting while the one before plays.
-
-Answer member, beside playback's own:
-
-| Field | Type | Content | What the viewer's server requires or does |
-|-------|------|---------|-------------------------------------------|
-| `queue` | array of entry | the queued tracks prepared, in the request's order | not an array: absent; an entry that fails a check below is dropped alone; at most 5 kept |
-
-Answer entry:
-
-| Field | Type | Content | What the viewer's server requires or does |
-|-------|------|---------|-------------------------------------------|
-| `title` | string | its track key | must be one of the request's `queue` entries, each once, in the request's order |
-| `versionId` | string | the copy playing | the form of version IDs ([playback section 2.3](playback.md#23-the-answer)); when the request's entry named one, that one |
-| `method` | string | `direct`, `remux` or `transcode` | with a delivery for the entry (its own or the request's), the one asked (`direct` for `file`) |
-| `protocol` | string | `hls` or `file` | `file` with the entry's delivery `file` only; else `hls` |
-
-An answer entry carries no URL, no length and no stream: the length is
-the copy's `durationMs` in the catalog, and the viewer's server builds
-the entry's URL from the playback's ticket
-([playback section 2.3](playback.md#23-the-answer)), as for the
-playback's own stream:
-
-- `<stream root><ticket>/queue/<n>/file` for `protocol` `file`, or
-  `<stream root><ticket>/queue/<n>/master.m3u8` for `hls`, with the HLS
-  files it names under `<stream root><ticket>/queue/<n>/`
-  ([media section 1](media.md#1-the-urls)). `<n>` is the entry's place
-  in the request's `queue`, 0 to 4, in decimal without leading zeros: a
-  track the owning server leaves out keeps its place empty, and moves
-  no other entry.
-- The owning server serves exactly these names, and answers `404` for a
-  place it left out. Members an entry carries beyond the table
-  (`stream`, `durationMs`, which version 0 had before proposal 17) are
-  ignored.
-
-- **The track playing.** `progress` and `stop` of a playback with a
-  queue may carry `title`: the key of the track playing, the request's
-  `title` or one of the answer's `queue` entries; `positionMs` is then a
-  position in that track. Absent, it is the request's `title`. Any other
-  `title`, or one that isn't a string, is refused (`400`). A playback
-  without a queue (a film's too) takes only its own `title` there. Test
-  cases: `reports` in
-  [vectors/v0/playback.json](../../vectors/v0/playback.json), those
-  named `music:` and those with a `title`.
-- **Past the queue.** Before the last entry ends, the viewer's server
-  may send a new `play` for the track after it, with its own `queue`,
-  and stops the old playback once the new one's first track plays. The
-  two count as two playbacks in between; when the limits leave no room
-  for that, it stops the old playback first, and the listener may hear
-  a gap there.
-- A skip within the queue reads the next entry's stream; a skip out of
-  it is a new `play`, as above.
-
-Test cases: `queue` in
-[vectors/v0/music.json](../../vectors/v0/music.json): requests the
-owning server refuses or accepts, and answers with what the viewer's
-server keeps.
+The queue is that of
+[MSFP Media's music, section 5.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#52-the-queue).
+The playback, queue included, counts once against `streams` (and
+`audioStreams`), and once against `transcodes` (and `audioTranscodes`)
+when any of its tracks is converted.
 
 ## 6. Lyrics
 
-A copy whose `lyrics` is `plain` or `synced` (section 3.3) has lyrics
-the viewer's server may fetch with `lyrics`, under the peer's base path,
-signed as every call is
-([core section 8](core.md#8-common-rules-for-every-call)); it needs no
-ticket and is no playback. The request names a track and a copy, and
-is answered with lyrics shaped as OpenSubsonic's `structuredLyrics`,
-with times in milliseconds, without the members that repeat a fact said
-elsewhere or that the receiver can work out (below).
-
-Request:
-
-| Field | Type | Required | Content |
-|-------|------|----------|---------|
-| `title` | string | yes | a track key, as the owning server sent it in `titles` |
-| `versionId` | string | yes | the copy's `id` |
-
-Answer `200`, at most 1 MiB of JSON:
-
-| Field | Type | Content |
-|-------|------|---------|
-| `structuredLyrics` | array of lyrics | at most 8: a set per language, kind and timing |
-
-Lyrics:
-
-| Field | Type | Required | Content |
-|-------|------|----------|---------|
-| `lang` | string | no | the language, a tag ([catalog section 3](catalog.md#3-titles)); absent when unknown |
-| `kind` | string | no | OpenSubsonic's `main`, `translation` or `pronunciation`, open; absent means `main` |
-| `line` | array of line | yes | at most 2,000 |
-
-Line:
-
-| Field | Type | Content |
-|-------|------|---------|
-| `start` | integer | synced lyrics only: when the line starts, in milliseconds from the track's start, 0 to 86,400,000 |
-| `value` | string | the line, plain text, at most 512 characters; may be empty (a pause, a break between verses) |
-
-- **Synced or plain.** A set whose every line carries `start` is
-  synced; one where no line does is plain. A set that mixes them is
-  skipped. No `synced` member is sent.
-- **No offset.** An owning server whose lyrics carry an offset (an LRC
-  file's) applies it to every `start` before sending: the times sent
-  are the track's own. No `offset` member is sent.
-- **No display names.** The names to show beside the lyrics are the
-  track's `name` and `artistNames` (or its album's, section 3): no
-  `displayArtist` or `displayTitle` is sent.
-
-An owning server converts what its media server holds (LRC, TTML, SRT,
-or times in other units) to this shape, in milliseconds; word timing is
-not sent.
-
-**What the viewer's server keeps:**
-
-- the answer read whole, refused past 1 MiB (an answer of exactly
-  1,048,576 bytes is read; the vectors leave this bound out, for the
-  size of the file); a `structuredLyrics` that isn't an array fails the
-  fetch;
-- per set: `lang` a valid tag ([catalog section 3](catalog.md#3-titles): exactly the form a
-  server sends, so `fre` and `fr-ca` count as absent), else absent; `kind` a token
-  (core section 8.5), kept as it is, known or not, else `main`; a
-  viewer's server never shows a set of a kind it doesn't know as the
-  main lyrics; `synced`, `offset`, `displayArtist` and `displayTitle`,
-  which version 0 had before proposal 17, ignored, as any member the
-  table doesn't give;
-- per line: a line that isn't an object, or whose `value` isn't a
-  string, is skipped; `value` is cleaned as section 3's names but kept
-  when empty, cut to 512 characters;
-- then per set, among the lines left: when every one carries a `start`
-  member, the set is synced, and a line whose `start` isn't an integer
-  in range, or is before the line before, is skipped; when none does,
-  the set is plain; when some do and some don't, the set is skipped;
-- at most 2,000 lines kept per set, the first, and 8 sets, the first,
-  counting kept lines and sets only; a
-  set with no line left is skipped, and an answer with no set left is a
-  failed fetch;
-- lines are text, never markup.
-
-Refusals: `400` `invalid-request` for a malformed request; `404`
-`not-found` for a track or a copy it doesn't offer the caller, or a copy
-with no lyrics; `404` `not-supported` when `music` is off; `429`
-`rate-limited` when asked too often
-([core section 8.3](core.md#83-limits-and-overload)). A viewer's server
-asks for a copy's lyrics when a viewer wants them, and keeps them while
-the copy's `etag` holds.
-
-Test cases: `lyrics` in
-[vectors/v0/music.json](../../vectors/v0/music.json), each with what
-the viewer's server keeps.
+`lyrics` is the call of
+[MSFP Media's music, section 6](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#6-lyrics).
+Between servers it is made under the peer's base path, signed as every
+call is ([core section 8](core.md#8-common-rules-for-every-call)). Beside
+the refusals MSFP Media lists, the owning server answers `404`
+`not-supported` when `music` is off, and `429` `rate-limited` when asked
+too often ([core section 8.3](core.md#83-limits-and-overload)).
 
 ## 7. Libraries
 
-A `music` library holds artists, albums and tracks. A `mixed` library
-may hold them beside films and series. A receiver that speaks `music`
-reads them from `titles` ([catalog section 3](catalog.md#3-titles)), in
-the same paging and the same changes.
+As in [MSFP Media's music, section 7](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#7-libraries),
+within the libraries one side offers and the other wants
+([catalog section 5](catalog.md#5-what-is-shared)).
 
 ## 8. Security considerations
 
-- **Descriptions and lyrics are untrusted text** from another server:
-  clean them, show them as text, never as markup, and never let a name
-  decide that two titles are the same.
-- **MusicBrainz and picture sources.** A viewer's server fetches covers and artist images itself, never through
-  a URL a peer sent, and caches them, so a peer can't make it fetch
-  anything else, nor learn when a viewer looks. It names itself in its
-  User-Agent and keeps to MusicBrainz's rate of one request a second
-  when it asks MusicBrainz anything.
-- **Pictures of `local` titles are images from another server**: a
-  viewer's server checks and re-encodes them as
-  [catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)
-  says, so that only pixels reach the viewer.
-- **ReplayGain from a peer** sets a volume: a viewer's player applies
-  a gain within the ranges of section 3.3 only, and should not amplify
-  past full scale (it lowers the gain to fit the peak).
-- **The queue** lets one `play` prepare up to 6 tracks: an owning server
-  bounds what it converts ahead under its transcode budget
-  ([playback](playback.md#6-what-the-owning-server-enforces)), and may
-  prepare fewer entries than asked.
-- **A large library.** A compromised peer can send many titles; readers
-  cap what they keep ([catalog section 6](catalog.md#6-security-considerations)).
+Those of
+[MSFP Media's music, section 8](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#8-security-considerations),
+and one of MSFP's: a queue lets one `play` prepare up to 6 tracks, so an
+owning server bounds what it converts ahead under its transcode budget
+([playback section 6](playback.md#6-what-the-owning-server-enforces)).
 
 ## 9. Open questions
 
-Left for later versions of this part:
+The open questions on music are
+[MSFP Media's](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#9-open-questions),
+but one, which goes with the limits of section 5.1:
 
-1. **Album art from the owning server** for `mb` albums, when public
-   sources have none, through `media` as for `local` titles.
-2. **Audiobooks.** `secondaryTypes` has `audiobook`, but a track's
-   copy carries no chapters, which an audiobook file (an `.m4b`) has.
-   Out of scope for now.
-3. **Credits and roles**: one name per artist key
-   (`[{name, key, joinPhrase}]`, MusicBrainz's artist credit), and
-   composers, conductors and performers. Some media servers keep one
-   artist MBID per track ([implementers](implementers.md#music)).
-4. **A queue past 5 tracks without a gap** when the limits leave room for
-   one playback only (section 5.2).
-5. **Music videos**: a track's video, or a film? Left out.
-6. **Watched state** for music is play counts and ratings, not
-   "watched": nothing in this part shares it, as nothing shares it for
-   video either.
-
-Settled by proposal 16: untagged libraries (the `local` scheme), lyrics
-(section 6), gapless playback (section 5.2), and descriptions for video
-(only `local` titles carry one). Settled by proposal 17: sort names
-(none: receivers sort by their own rules), and which copy and delivery
-each queued track takes (section 5.2).
-
-**Choices this draft made, confirmed by the owner on 2026-11-17** (when
-proposal 11 was written into this part), still standing:
-
-7. **A title without a name is skipped** (section 3.2): a viewer's
-   server has nothing else to show for a key it doesn't know.
-8. **What the caller keeps** (section 3.2): a value out of its range or
-   form counts as absent rather than skipping the title; `artists`
-   entries are kept once each, the first 16; members of the wrong JSON
-   type count as absent, as for video titles.
-9. **MBIDs in `ids`** take the lowercase form of keys (section 2.1).
-10. **Limits**: `audioTranscodes` ranges from 0 to `audioStreams`, as
-    `transcodes` to `streams`; absent, audio counts in `transcodes` too,
-    not only in `streams`.
-
-**Choices made when proposal 16 was written into this part** (chosen by
-the writer, not yet confirmed by the owner; proposal 16 gives no bound
-for them):
-
-11. **Names**: music titles of both schemes keep the 256 characters of
-    `name`, not the 128 of the `local` description: a `local` music
-    title carries music's description, which is already longer.
-12. **Dates**: `YYYY`, `YYYY-MM` or `YYYY-MM-DD`, years 1000 to 9999,
-    real days only; an `originalDate` after `date` by year is dropped.
-    `year` and `durationMs` leave the track: dates go to the album,
-    lengths to the copies. (Proposal 17 gives tracks their own dates and
-    genres again, optional.)
-13. ~~**`releaseType`**~~ Replaced by proposal 17 with MusicBrainz's own
-    `primaryType` and `secondaryTypes` (section 3).
-14. **Genres**: 1 to 64 characters each, repeats compared without case.
-15. **`album` required for `track/mb` tracks**, and an `mb` track's
-    album is an `mb` album; a `local` track may have none.
-16. **Copies of a track**: `durationMs` 1 to 86,400,000; `sampleRate` 8,000 to
-    768,000 Hz; `bitDepth` 8 to 32; `channels` 1 to 64; a track with no
-    copy left is skipped.
-17. **ReplayGain**: ReplayGain 2.0's reference; gains in dB from −64
-    to 64, two decimals; peaks linear from 0 to 10, six decimals; other
-    loudness values converted; the owning server never applies the gain.
-18. **Lyrics**: a signed call of its own, `lyrics`, with no ticket (the
-    proposal says only "a call"); the request names a track and a copy; at most 1 MiB,
-    8 sets, 2,000 lines of 512 characters; `kind` from OpenSubsonic's
-    three; empty lines kept; no word timing. (`offset` left with
-    proposal 17.)
-19. **The queue**: the member is `queue` in request and answer; a
-    malformed queue refuses the `play`, a track that can't be played is
-    left out; entries without `versionId` play their first copy; one transcode counted when
-    any entry is converted; past the queue, a new `play` before the
-    last entry ends.
-20. **`image`** on `local` artists and albums only; tracks show their
-    album's. It is fetched with the catalog's own `image` call
-    ([catalog section 4.4](catalog.md#44-the-image-of-a-local-title-image)).
-21. ~~**`acoustid`**~~ Left `ids` with proposal 17, as `isrc` did.
-22. **The track playing in a queue**: `progress` and `stop` carry
-    `title`, the queue entry playing (section 5.2).
-
-**Choices made when proposal 17 was written into this part** (chosen by
-the writer, not yet confirmed by the owner):
-
-23. **Types**: no space at either end of a `primaryType` or a
-    secondary type; the caller doesn't lowercase (a type in another case
-    counts as absent); a repeated secondary type is skipped.
-24. ~~**Copies of a track** at most 8~~ 16, as proposal 17 now says.
-25. ~~**`bitrateKbps`**~~ Dropped by proposal 17.
-26. **`codecs`** on a track's copy, as on video's audio tracks:
-    required for `aac` and `dts`, as proposal 17 says.
-27. **A `mediaType` or `codec` that isn't one** skips the copy: the
-    member is dropped, as core section 8.5 says, and both are required.
-28. ~~**A copy's `name`**~~ Dropped by proposal 17.
-29. **Lyrics `kind`** is open as well: an unknown token is kept, not
-    taken for `main`.
-30. **Lyrics, synced or plain**: a line "carries `start`" when the
-    member is there, whatever its value; whether a set is synced is
-    decided on the lines left once those that aren't objects or have
-    no string `value` are skipped, before the 2,000-line cut. A synced
-    line whose `start` is out of range is then skipped, as before.
-31. **A track's members equal to its album's**: the caller keeps what
-    is sent and fills nothing in; it doesn't check that a track's
-    members differ from its album's.
-32. **`ids` on a `local` title** are ignored whole; on an `mb` title,
-    `isrc`, `acoustid` and other schemes are skipped as unknown.
-33. **Queue entries**: an entry's `delivery`, `mediaType` and
-    `transcode` are checked as the request's own, with the same
-    refusals (`400`, then `409` `delivery-refused`) for the whole
-    `play`; an entry whose `versionId` isn't one of the track's copies
-    is left out. An answer entry's `versionId` must be the one its
-    request entry named, if any; its `protocol` is `file` only for the
-    delivery `file`, else `hls`.
-34. **Audio only**: a track's answer carries no `audioTrack`,
-    `audioRenditions`, `subtitles` or `fontCount`, and a viewer's
-    server ignores them there (section 5).
+- **Limits**: `audioTranscodes` ranges from 0 to `audioStreams`, as
+  `transcodes` to `streams`; absent, audio counts in `transcodes` too,
+  not only in `streams`.

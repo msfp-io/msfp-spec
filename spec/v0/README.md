@@ -15,22 +15,40 @@ parts at different times, and lets the parts change at different speeds:
 the trust part (keys, signatures, pairing) rarely and carefully, the
 media formats more often.
 
+**MSFP carries MSFP Media version 0.** What a title is, what a copy is,
+and how one is listed, asked for, fetched and played is
+[MSFP Media](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/README.md), a language with its own
+version, split out of MSFP by
+[proposal 19](../../proposals/0019-msfp-media.md). MSFP is one of its
+carriers: between paired servers, it decides who sees what, sets the
+limits, signs the calls, and gives the stream root and who may fetch
+under it. Each part that carries MSFP Media says which of its documents
+it carries and what it adds; the part names and `hello` are as they
+were. MSFP adds to the language the purpose `scan` and its ticket kind
+([playback section 8](playback.md#8-scan-access)), and refuses a
+capability list between servers
+([playback section 2](playback.md#2-play)).
+
 ## The documents
 
 | Document | Version | What it holds |
 |----------|---------|---------------|
 | [core.md](core.md) | core 0 | encodings and canonical forms, HTTPS, keys and fingerprints, the pairing code, signed requests and answers, pairing and its states, pairing through a group, relations, `pair`, `hello`, key rotation and revocation (`rotate`, `revoke`), address changes, versions and parts, the discovery document |
-| [catalog.md](catalog.md) | `catalog` 0 | `libraries` and `titles`, pages bounded by size, opaque library IDs, the general rules of title keys and their schemes, copies and extras in `titles`, the description of `local` titles, what is shared |
-| [playback.md](playback.md) | `playback` 0 | `play` (purpose, delivery, transcode targets, restarts), `progress`, `stop`, limits, downloads, scan access, what the owning server enforces |
-| [media.md](media.md) | `media` 0 | what the stream URLs serve: complete HLS, the file by byte ranges, subtitles, fonts, sheets and images, and their sizes; the kinds of ticket and how long each works |
+| [catalog.md](catalog.md) | `catalog` 0 | carries MSFP Media's [listing](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md): offers and wants, a library's name and `limits`, what is shared (`local` titles per pairing and per group), how often a peer reads, whole readings forced by sharing changes |
+| [playback.md](playback.md) | `playback` 0 | carries MSFP Media's [playing](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md): limits per pairing and per group, what the owning server enforces, limits on downloads, scan access, no capability list between servers |
+| [media.md](media.md) | `media` 0 | carries MSFP Media's [fetching](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md): the stream root and its moves, certificates, who may fetch (never a browser), the ticket endings of the federation, the `scan` ticket kind |
 | [groups.md](groups.md) | `groups` 0 | groups of servers: owner, admins and members, the signed list every member keeps, codes for a group, requests and answers encrypted for each member, pairing through a group, offers and limits per group |
-| [video.md](video.md) | `video` 0 | films, series and extras by TMDB, TheTVDB or the owner's own keys: title keys and their identity rules (TMDB's numbering, several episodes in one copy, other identifiers), copies (streams, tracks, chapters, skip markers), the description of `local` titles, `previews`, subtitles (WebVTT, ASS, PGS), fonts, seek-bar previews |
-| [music.md](music.md) | `music` 0 | artists, albums (by release) and tracks (by release track) by MusicBrainz or the owner's own keys: descriptions, copies, cover art, `lyrics`, audio-only playback, queues |
-| [implementers.md](implementers.md) | not normative | notes for implementers: what the parts would say of particular media servers and implementations, suggested numbers, mapping a media server's names to the registry and the outside vocabularies (H.273, RFC 6381), advice to viewer's servers on choosing copies and tracks, decoding safely |
-| [registry.md](../registry.md) | for every version | the MSFP registry: the values of the open fields that describe media (codecs, subtitle formats, container media types, `hdr`, `edition`, `extraType`, segment kinds, roles, `objects`, `threeD`, music types) and the schemes of title keys and of `ids`; a new codec or scheme is an entry there |
+| [video.md](video.md) | `video` 0 | carries MSFP Media's [video](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md): `local` titles off by default, what counts against `streams`, `previews` signed and rate-limited, when sheets may be fetched |
+| [music.md](music.md) | `music` 0 | carries MSFP Media's [music](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md): `audioStreams` and `audioTranscodes`, what a queue counts against, `lyrics` signed and rate-limited, `local` titles off by default |
+| [implementers.md](implementers.md) | not normative | notes for implementers on MSFP's own rules: suggested numbers, limits and retries, certificates and connections, scans, transcode budgets, pairings; the notes on the media language are [MSFP Media's](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/notes.md) |
+
+The values of the open fields that describe media, and the schemes of
+title keys and of `ids`, are in [MSFP Media's registry](https://github.com/msfp-io/msfp-media/blob/main/spec/registry.md);
+[registry.md](../registry.md) here only points to it.
 
 Read the core first. Each part says what it needs from the core, and
-refers to it by section.
+refers to it by section, and what it needs from MSFP Media
+([its README](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/README.md)).
 
 ## Glossary
 
@@ -63,28 +81,33 @@ one place, with where each is defined.
 | *Trusted*, *named* | a certificate a public authority vouches for; one the peer named by its pin | [core 3.2](core.md#32-https-certificates) |
 | Part | a separately versioned set of calls and rules: `catalog`, `playback`, `media`, `video`, `music`, `groups` | [core 10](core.md#10-versions-and-parts) |
 | Content part | a part that names one kind of content's titles and says how they play: `video`, `music` | [core 10.1](core.md#101-the-parts) |
-| Open field, token, media type | a field whose values come from a list that grows; its value, `a–z 0–9 . _ -` or an IANA-form media type, kept when unknown | [core 8.5](core.md#85-unknown-values) |
-| Registry | the lists of the open fields that describe media, and the schemes of keys and `ids` | [registry](../registry.md) |
-| Problem document | the JSON body of a refusal (RFC 9457), with `type`, `title`, `status` | [core 8.2](core.md#82-refusals) |
-| Library | a set of titles a server may offer a peer, by an opaque ID | [catalog 2](catalog.md#2-libraries) |
+| Open field, token, media type | a field whose values come from a list that grows; its value, `a–z 0–9 . _ -` or an IANA-form media type, kept when unknown | [MSFP Media base 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#3-unknown-values) |
+| Registry | the lists of the open fields that describe media, and the schemes of keys and `ids` | [MSFP Media registry](https://github.com/msfp-io/msfp-media/blob/main/spec/registry.md) |
+| Problem document | the JSON body of a refusal (RFC 9457), with `type`, `title`, `status` | [MSFP Media base 4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#4-refusals), [core 8.2](core.md#82-refusals) |
+| Library | a set of titles a server may offer a peer, by an opaque ID | [MSFP Media listing 2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#2-libraries), [catalog 2](catalog.md#2-libraries) |
 | Offer, want | what one side shares; what the other takes of it | [catalog 1](catalog.md#1-terms) |
-| Title key | the identity of a title: a film, series, season, episode or extra from TMDB's or TheTVDB's IDs; an artist, album or track from MusicBrainz's; or, for titles no public source knows, the owner's own (`local`) | [catalog 4](catalog.md#4-title-keys), [video 4](video.md#4-title-keys), [music 2](music.md#2-title-keys) |
-| Owning server | the server that holds a copy and streams it | [playback 1](playback.md#1-terms) |
-| Viewer's server | the server whose person watches; the only one the person's browser talks to | [playback 1](playback.md#1-terms) |
-| Copy, version | one version of a title, one file or several parts, described in the catalog with its length, size, `etag` and tracks; the ID the owning server gives it | [playback 1](playback.md#1-terms), [video 3.2](video.md#32-copies) |
-| Delivery, purpose | what a `play` asks to be served (`file`, `remux`, `transcode`); why it is started (`play`, `download`, `scan`) | [playback 2.7](playback.md#27-delivery) |
-| Playback | one stream the owning server runs for the viewer's server, with an ID and a ticket | [playback 6.1](playback.md#61-a-playbacks-states) |
-| Ticket | the opaque credential in the media URLs, the only one | [media 1](media.md#1-the-urls) |
+| Title key | the identity of a title: a film, series, season, episode or extra from TMDB's or TheTVDB's IDs; an artist, album or track from MusicBrainz's; or, for titles no public source knows, the owner's own (`local`) | [MSFP Media listing 4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#4-title-keys), [video 4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#4-title-keys), [music 2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#2-title-keys) |
+| Owning server | the server that holds a copy and streams it: MSFP Media's source | [playback 1](playback.md#1-terms) |
+| Viewer's server | the server whose person watches; the only one the person's browser talks to: MSFP Media's caller | [playback 1](playback.md#1-terms) |
+| Copy, version | one version of a title, one file or several parts, described in the catalog with its length, size, `etag` and tracks; the ID the owning server gives it | [MSFP Media playing 1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#1-terms), [video 3.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#32-copies) |
+| Delivery, purpose | what a `play` asks to be served (`file`, `remux`, `transcode`); why it is started (`play`, `download`, and MSFP's `scan`) | [MSFP Media playing 2.7](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#27-delivery), [playback 8](playback.md#8-scan-access) |
+| Playback | one stream the owning server runs for the viewer's server, with an ID and a ticket | [MSFP Media playing 5](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#5-a-playbacks-states-and-endings) |
+| Ticket | the opaque credential in the media URLs, the only one; MSFP adds the kind `scan` | [MSFP Media fetching 4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#4-tickets), [media 4](media.md#4-how-long-a-ticket-works) |
 | Stream root | `<address><prefix>/api/v1/stream/`, under which a server's media is | [media 1](media.md#1-the-urls) |
-| Stretch, part | 120 seconds of a subtitle track, fetched on its own | [media 3.4](media.md#34-subtitles-fonts-sheets-and-images) |
-| Sheet | a JPEG of seek-bar preview tiles | [video 5.5](video.md#55-seek-bar-previews) |
+| Stretch, part | 120 seconds of a subtitle track, fetched on its own | [MSFP Media fetching 3.4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#34-subtitles-fonts-sheets-and-images) |
+| Sheet | a JPEG of seek-bar preview tiles; when a peer may fetch them | [MSFP Media video 5.5](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#55-seek-bar-previews), [video 5.5](video.md#55-seek-bar-previews) |
 
 ## Errors
 
-Every status and problem `type` a federation call can answer, in every
-part, is listed with its meaning and what the caller does in
-[core section 8.2](core.md#82-refusals). The statuses of media fetches are
-in [core section 8.4](core.md#84-media-answers). Limits and overload, and
+The refusals of the media language, their problem documents and what
+the caller does, are in
+[MSFP Media's base, section 4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#4-refusals); the statuses
+and problem `type`s MSFP adds (`not-supported`, `rate-limited`,
+`stream-limit-reached`, `rotation-refused`, the `409` on `pair`), and
+what a `404` means between servers, are in
+[core section 8.2](core.md#82-refusals). The statuses of media fetches
+are in [MSFP Media's base, section 5](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#5-media-answers), with
+MSFP's scan `416` in [core section 8.4](core.md#84-media-answers). Limits and overload, and
 how a caller retries, are in
 [core section 8.3](core.md#83-limits-and-overload).
 
@@ -152,6 +175,11 @@ proves nothing, and is off by default
   one for as long as it has a peer that needs it.
 - Corrections that change nothing an honest sender writes may be made to
   an existing version as errata, listed in that version's changes.
+- **MSFP Media has its own version**, under the same rules
+  ([its README](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/README.md#versioning)). Version 0 of each part that
+  carries it carries MSFP Media version 0
+  ([core section 10.1](core.md#101-the-parts)); unknown members and
+  values it adds are handled by its one rule for unknown values.
 
 ## History
 
@@ -168,6 +196,12 @@ whose canonical-form cases hold for this core too.
 This version was first numbered 1, and became version 0 on 2026-11-20
 ([proposal 13](../../proposals/0013-version-0.md)): a draft until it is
 stable.
+
+Its media language was split out into
+[MSFP Media](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/README.md) on 2026-11-26
+([proposal 19](../../proposals/0019-msfp-media.md)): the rules of titles,
+copies, listing, playing and fetching, the registry and the notes on
+them moved there, and the parts of this version carry it.
 
 ### What this version changes from the test draft
 
@@ -247,12 +281,13 @@ discovery document's `base` (`bases`), what a receiver keeps of a
 `hello`'s versions (`helloVersions`), the
 destinations a server
 refuses to connect to (`destinations` in `strict.json`), and WebVTT,
-HLS and PGS cases with their verdicts (`media.json`, media section 3 and
-video section 6), music keys and titles with what a caller keeps
-(`music.json`, music sections 2 and 3), and video titles with what a
-caller keeps (`video.json`, video section 3), `play`, `progress` and
-`stop` requests and answers with deliveries, restarts, downloads and
-scans (`playback.json`, playback sections 2 to 8), and a group's events and
+HLS and PGS cases with their verdicts (`media.json`, MSFP Media's
+fetching section 3 and video section 6), music keys and titles with
+what a caller keeps (`music.json`, MSFP Media's music sections 2 and 3),
+and video titles with what a caller keeps (`video.json`, MSFP Media's
+video section 3), `play`, `progress` and `stop` requests and answers
+with deliveries, restarts, downloads and scans (`playback.json`, MSFP
+Media's playing and playback sections 5 to 8), and a group's events and
 the state they give, a code with a group, `group-join`'s proof and a
 sealed request mail (`groups.json`, groups sections 2, 3, 5 and 8.4).
 They come from the

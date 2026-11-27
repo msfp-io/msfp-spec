@@ -8,13 +8,17 @@ together is in [README.md](README.md).
 The core is what every MSFP server speaks: encodings, transport, keys, the
 pairing code, signed requests and answers, pairing and its states, key
 rotation and revocation, address changes, and how versions are agreed.
-The parts build on it: [catalog](catalog.md) (libraries and titles),
-[playback](playback.md) (starting and stopping a playback) and
-[media](media.md) (what the stream URLs serve) hold the shared
-mechanics; the content parts, [video](video.md) (films and series by
-TMDB) and [music](music.md) (artists, albums and tracks by MusicBrainz),
-say what the titles are and how they play. Every content part is
-optional.
+The parts build on it. Most of them carry
+[MSFP Media version 0](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/README.md),
+the language of titles, copies and playbacks, between servers, and add
+what federation needs (who sees what, limits, the stream root, scans):
+[catalog](catalog.md) carries its listing (libraries and titles),
+[playback](playback.md) its playing (starting and stopping a playback),
+[media](media.md) its fetching (what the stream URLs serve); the
+content parts, [video](video.md) (films and series by TMDB) and
+[music](music.md) (artists, albums and tracks by MusicBrainz), carry
+its content parts of the same names. Every content part is optional.
+[groups](groups.md) is MSFP's own.
 
 The words "must", "must not" and "should" carry their usual meaning in
 specifications. Every example uses `example.org` names and RFC 5737
@@ -76,9 +80,19 @@ trusts only the servers it paired with, by hand or through a group.
 - **A server that can't be called**: one that can connect out but can't
   be connected to, and says so with `inbound: false` (section 7.5). It
   calls its peers; they never call it.
-- **Owning server**, **viewer's server**, **library**, **offer**, **want**,
-  **title key**, **playback**, **ticket**: defined by the parts that use
-  them ([catalog](catalog.md#1-terms), [playback](playback.md#1-terms)).
+- **MSFP Media**: the language the parts carry. MSFP is its carrier
+  between servers
+  ([MSFP Media's base, section 1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#1-terms)).
+  Its words map to MSFP's: the **source** is the owning server, the
+  peer that holds the title; the **caller** is the peer that lists,
+  asks and fetches, the viewer's server; the **carrier** is MSFP. Version
+  0 of each part carries MSFP Media version 0 (section 10.1).
+- **Owning server**, **viewer's server**, **offer**, **want**: defined
+  by the parts that use them ([catalog](catalog.md#1-terms),
+  [playback](playback.md#1-terms)). **Library**, **title key**, **copy**,
+  **playback**, **ticket**: defined by MSFP Media
+  ([listing](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#1-terms),
+  [playing](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#1-terms)).
 
 An implementation may run beside its media server rather than inside it,
 with its own address, or behind the same reverse proxy with a discovery
@@ -91,6 +105,10 @@ answer to a known key is signed by the server answering. The media itself
 is fetched with plain `GET` requests that carry a ticket only
 ([media](media.md)).
 
+The parts' calls follow MSFP Media's rules, and this core's: MSFP Media
+says what a call's body and answer hold, the core how it is carried
+(signed, under the peer's base path, to paired peers only).
+
 ## 2. Encodings and canonical forms
 
 - **base64url**: the URL-safe alphabet of RFC 4648 section 5, **without
@@ -98,8 +116,8 @@ is fetched with plain `GET` requests that carry a ticket only
   pairing proof use it.
 - **hex**: lowercase hexadecimal. The body hash inside a signed message
   uses it.
-- **JSON**: I-JSON (RFC 7493), as below. Fields marked "optional" may be
-  left out.
+- **JSON**: I-JSON (RFC 7493), as section 2.3 says. Fields marked
+  "optional" may be left out.
 - **Times** are Unix seconds, written in decimal ASCII.
 - Text in signed messages and statements is ASCII, and lines are
   separated by a single line feed (`\n`, byte 0x0A). There is never a
@@ -156,52 +174,32 @@ identity (subgroup).
 
 ### 2.2 Text encodings
 
-- **base64url**: only the characters `A–Z a–z 0–9 - _`; no padding, no
-  white space; the unused bits of the last character are zero. A simple
-  test: re-encoding the decoded bytes gives the same text. Lengths are
-  fixed where the value is: 43 characters for 32 bytes, 22 for 16, 86 for
-  64.
-- **hex**: lowercase `0–9 a–f` only. A SHA-256 is 64 characters.
-- **Decimal integers** in headers, signed messages and statements: `0` or
-  `[1-9][0-9]*`, no sign, no white space, at most 9,007,199,254,740,991
-  (2^53 − 1). `MSFP-Date` is a positive integer in this form.
+base64url, hex and decimal integers written as text are as
+[MSFP Media's base, section 2.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#21-text-encodings)
+says. In MSFP:
+
+- **Decimal integers** are those of headers, signed messages and
+  statements. `MSFP-Date` is a positive integer in this form.
 - **Status** in an answer message: the three digits of the status code.
 
 ### 2.3 JSON
 
-- Bodies are I-JSON (RFC 7493): UTF-8 without a byte order mark; no
-  surrogate code points (escaped or not, so no lone surrogates) and no
-  noncharacters; no object with the same member name twice, names being
-  compared after their escapes are decoded.
-- Member names match exactly, case included. A name in another case is
-  an unknown member.
-- Unknown members are ignored. This is not leniency: it is how later
-  versions add fields (section 15).
-- Integers: a JSON number with no fraction, no exponent, not `-0`, from
-  −(2^53 − 1) to 2^53 − 1. Any other number (`2.5`, `1.0`, `1e3`) is
-  valid I-JSON, and is invalid only where an integer is expected. Where
-  a list ignores entries that aren't integers, it ignores such a number
-  too: `"core":[0,2.5]` lists core 0 (section 10.2).
-- `null` is not a valid value for any MSFP member. A sender leaves an
-  empty optional member out, or sends `[]` or `""` where the field says
-  so. A receiver refuses `null` in a known member of a request as an
-  invalid value; in an answer, `null` is a member of the wrong type
-  (below). In an unknown member, or as the value of an unknown part
-  (section 10.2), `null` is ignored like any other value.
-- A member of another JSON type than its field says is an invalid value.
-  That is for requests, and for known members only: unknown ones are
-  ignored, whatever their value. In an answer, a member of the wrong type
-  inside a list skips its entry, or counts as absent, and one at the top
-  of the answer fails the answer, as each call's section says
-  ([catalog](catalog.md) sections 2.2 and 3.3, and the content parts'
-  titles: [video section 3.1](video.md#31-what-the-caller-keeps),
-  [music section 3.2](music.md#32-what-the-caller-keeps)).
-- String values are compared and signed after JSON decoding. Since
-  addresses, keys and IDs are ASCII, a sender has no reason to escape any
-  of them.
-- Insignificant white space between JSON tokens is allowed. Bodies are
-  signed as bytes, never rebuilt, so their layout doesn't matter. Senders
-  should send none.
+Every body, the core's calls included, is JSON as
+[MSFP Media's base, section 2.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#22-json)
+says (I-JSON, exact member names, unknown members ignored, integers,
+`null`, members of the wrong type). MSFP adds:
+
+- An integer list that ignores entries that aren't integers ignores a
+  number like `2.5` too: `"core":[0,2.5]` lists core 0 (section 10.2).
+- `null` as the value of an unknown part (section 10.2) is ignored like
+  any other value.
+- String values are signed, as they are compared, after JSON decoding.
+  Since addresses, keys and IDs are ASCII, a sender has no reason to
+  escape any of them.
+- Bodies are signed as bytes, never rebuilt, so their layout doesn't
+  matter.
+- No compression: MSFP forbids the content codings MSFP Media allows on
+  every signed call and answer (section 3).
 
 ### 2.4 Headers
 
@@ -216,24 +214,17 @@ identity (subgroup).
 
 ### 2.5 Case
 
-Header names are case-insensitive, as in HTTP. Everything else is
-case-sensitive and has one case:
+Case is as
+[MSFP Media's base, section 2.3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#23-case)
+says (header names case-insensitive, everything else with one case:
+hex, enumerated values, title keys, language tags). MSFP adds:
 
 - scheme and host of an address: lowercase;
-- hex: lowercase;
-- enumerated values (`paired`, `movies`, `direct`, `hls`…): exactly as
+- MSFP's enumerated values (`paired`, `waiting`, `ended`…): exactly as
   listed;
-- part names: lowercase, as listed;
-- title keys: exactly as the content parts write them
-  ([video](video.md#4-title-keys), [music](music.md#2-title-keys);
-  [catalog](catalog.md#4-title-keys) gives the general rules);
-- language tags: the case conventions of BCP 47 (RFC 5646 section
-  2.1.1): language lowercase, script title case, region uppercase
-  (`fr-CA`, `zh-Hant-TW`). Receivers compare tags case-insensitively, so
-  `fr-ca` and `fr-CA` count as one tag, but senders write the
-  conventional form.
+- part names: lowercase, as listed.
 
-Cases for all of these, valid and not, are in
+Cases, valid and not, are in
 [vectors/history/test-draft-strict.json](../../vectors/history/test-draft-strict.json) and
 [vectors/v0/strict.json](../../vectors/v0/strict.json) (section 17).
 
@@ -276,10 +267,11 @@ Cases for all of these, valid and not, are in
   cross-site `Sec-Fetch-Site`, or with a content coding (below), is
   refused with the unsigned `404` of a failed check (section 6.4).
 - **Answer bodies.** `application/json` for `200` and `202`. Signed
-  refusals are RFC 9457 problem documents, `application/problem+json`,
-  with `type`, `title` and `status` members (section 8.2). One refusal has
-  an empty body and no `Content-Type` (`409` on `pair`). The answer's
-  media type is signed (section 6.3).
+  refusals are problem documents, as
+  [MSFP Media's base, section 4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#4-refusals)
+  gives their form (section 8.2). One refusal has an empty body and no
+  `Content-Type` (`409` on `pair`). The answer's media type is signed
+  (section 6.3).
 - **Unsigned refusals.** Their body is not specified. A receiver should
   send whatever its host sends for a path that doesn't exist, so that the
   two can't be told apart. Where the host can't do that, it sends the
@@ -292,7 +284,9 @@ Cases for all of these, valid and not, are in
   4 MiB (4,194,304 bytes) of an answer; a longer answer fails its
   signature check.
 - **Timeouts.** A caller should give each call 15 seconds in all.
-- **Content codings: none.** A federation request and its answer carry
+- **Content codings: none.** MSFP forbids the gzip and zstd that
+  [MSFP Media's base, section 2.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#22-json)
+  allows, on every federation call. A federation request and its answer carry
   no `Content-Encoding` other than `identity`, and the signatures of
   section 6 cover the body bytes as sent. A receiver sends its answers
   uncoded, whatever the request's `Accept-Encoding` says: a host that
@@ -498,7 +492,8 @@ connection elsewhere after the check.
 unreachable peer, and nothing is sent: on a code, the redeeming server
 tells its operator that the address can't be reached; on an address
 change, the old address stays (section 13.2, step 3); on a media fetch,
-the fetch fails ([media section 2](media.md#2-requests)). A server may
+the fetch fails
+([MSFP Media's fetching, section 2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#2-requests)). A server may
 also refuse an address when it reads it (a code, a `pair` request), but
 must check again at connection time, since a name's answer can change.
 
@@ -1068,7 +1063,7 @@ section 13.2, step 3 says (at most once an hour). An answer that carries
 `inbound: false` puts the peer back as one that can't be called, and the
 confirmation stops.
 Once it succeeds, the server reads the peer's catalog at once
-([catalog section 3.2](catalog.md#32-whole-list-or-changes)): what it
+([MSFP Media's listing, section 3.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#32-whole-list-or-changes)): what it
 dropped while the peer couldn't be called comes back without waiting
 for the next reading.
 
@@ -1111,7 +1106,7 @@ What stays as it is: its own calls (`pair`, `hello`, `libraries`,
 `titles`, `play`, `progress`, `stop`, the media) and everything the peer
 checks about them; its ending a pairing (it sends `ended`, which it can);
 and the peer ending its playbacks at once when the pairing ends
-([playback section 6.3](playback.md#63-how-a-playback-ends)): its player
+([playback section 6](playback.md#6-what-the-owning-server-enforces)): its player
 then gets `404` on the next fetch, and treats the playback as ended
 (section 8.4).
 
@@ -1188,52 +1183,39 @@ without it, or with an invalid value.
 
 ### 8.2 Refusals
 
-A signed refusal is a problem document. The `404` refusal is, byte for
-byte (53 bytes, then a line feed):
+A signed refusal is a problem document, as
+[MSFP Media's base, section 4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#4-refusals)
+says: its form, `retryAfter`, `instead`, the language's refusals and
+what a caller does with a `type` it doesn't know. The signature covers
+whatever was sent. The language's refusals answer the parts' calls,
+which MSFP carries; the core's calls use them too where they mean the
+same (`invalid-request`, `not-found`, `internal-error`, `server-busy`).
+Media fetches are not federation calls; their statuses are in section
+8.4.
 
-```
-{"type":"not-found","title":"Not found","status":404}
-```
+MSFP adds, as a carrier, the answers and refusals below. Each `type`
+here is MSFP's, and never one of the language's.
 
-followed by `\n`. A receiver must not depend on these exact bytes: the
-signature covers whatever was sent, and only the status matters to the
-protocol, except where the `type` tells refusals apart: `not-supported`
-on `404` (section 10.4), and the `409`s of `rotate` and
-[playback](playback.md#2-play).
+| Status | `type` | `title` | Calls | Final or temporary | Meaning | What the caller does |
+|--------|--------|---------|-------|--------------------|---------|----------------------|
+| 200 | (none) | | every call | | done; the body is the answer | uses it |
+| 202 | (none) | | `rotate` | | accepted, waiting for the receiver's operator (section 9.3) | waits |
+| 400 | `invalid-request` | `Invalid request` | `rotate`, `revoke` | final | the language's bad ask, on the core's calls: a bad body, a signature that doesn't verify, a date out of the window (sections 9.3, 9.4) | gives up |
+| 404 | `not-supported` | `Not supported` | a call of a part that is off; every call but `hello` when no core is common | final until a newer `hello` | the receiver doesn't speak that part, or no core, with the caller (sections 10.3, 10.4) | makes no more calls of that part (or none but `hello`) until a newer `hello` |
+| 409 | (no body) | | `pair` | final | the caller's key is already a peer of the maker (section 9.1) | tells its operator |
+| 409 | `rotation-refused` | `Rotation refused` | `rotate` | final | the new key isn't accepted (section 9.3) | as section 12.4 says |
+| 409 | `stream-limit-reached` | `Too many streams on this account` | `play` | temporary | the limits of the `play`'s purpose are all in use or reached, or the limit is 0: streams for watching, downloads at once or in a day for a download, scans in a day for a scan ([playback section 5](playback.md#5-limits)) | tells the viewer "busy now" |
+| 429 | `rate-limited` | `Too many requests` | every call | temporary | this peer is over its own limit (section 8.3) | waits, as section 8.3 says |
 
-The table below gives the `type` values of version 0. It is the reference
-for every status a federation call can answer, in every part of
-version 0. Media fetches are not federation calls; their statuses are in
-section 8.4.
-
-| Status | `type` | `title` | Calls | Meaning | What the caller does |
-|--------|--------|---------|-------|---------|----------------------|
-| 200 | (none) | | every call | done; the body is the answer | uses it |
-| 202 | (none) | | `rotate` | accepted, waiting for the receiver's operator (section 9.3) | waits |
-| 400 | `invalid-request` | `Invalid request` | `rotate`, `revoke`, `play`, `progress`, `stop`, `previews`, `lyrics`, `image` | the body is malformed, or a value is out of range, or isn't a token where one is due (section 8.5) | gives up; a correct caller never gets it |
-| 404 | `not-found` | `Not found` | every call | not heard, not known, not paired yet, no such code, or no such title for this peer; signed or not tells them apart (section 6.6) | as section 6.6 says |
-| 404 | `not-supported` | `Not supported` | a call of a part that is off; every call but `hello` when no core is common | the receiver doesn't speak that part, or no core, with the caller (sections 10.3, 10.4) | makes no more calls of that part (or none but `hello`) until a newer `hello` |
-| 409 | (no body) | | `pair` | the caller's key is already a peer of the maker (section 9.1) | tells its operator |
-| 409 | `rotation-refused` | `Rotation refused` | `rotate` | the new key isn't accepted (section 9.3) | as section 12.4 says |
-| 409 | `stream-limit-reached` | `Too many streams on this account` | `play` | the limits of the `play`'s purpose are all in use or reached, or the limit is 0: streams for watching, downloads at once or in a day for a download, scans in a day for a scan ([playback section 2.2](playback.md#22-what-the-owning-server-does)) | tells the viewer "busy now" |
-| 409 | `delivery-refused` | `This delivery is refused` | `play` | the owning server won't serve the `delivery` asked, for reasons of its own (bandwidth, policy), or can't make it of that copy (`file` of a copy of several parts, a subtitle it can't burn), or the request names what to serve with a value it doesn't know (section 8.5) | asks again with another delivery, or without `delivery`; when no delivery it can use is left, tells the viewer "not playable" (for a download, "download not available") ([playback section 2.5](playback.md#25-refusals)) |
-| 409 | `not-playable` | `This item can't be played` | `play` | the owning server has no way to play its copy | tells the viewer "not playable" |
-| 410 | `playback-stopped` | `Playback was stopped` | `progress` | the playback isn't live, or isn't this pairing's | stops the viewer's player |
-| 429 | `rate-limited` | `Too many requests` | every call | this peer is over its own limit (section 8.3) | waits, as section 8.3 says |
-| 500 | `internal-error` | `Internal error` | every call | the receiver failed | tries again later, as for no answer |
-| 503 | `server-busy` | `The server is busy; try again shortly` | `play`; every call when the server is full (section 8.3) | the server's transcodes, or its capacity, are all in use | waits, as section 8.3 says; on `play`, tells the viewer "busy now" |
-
-A problem document may carry `retryAfter`, an integer from 1 to 3,600:
-seconds before the caller should try again (section 8.3). A receiver that
-doesn't know a `type` reads the status alone, except for `409` on `play`
-([playback section 2.5](playback.md#25-refusals)).
-
-The `title` texts are examples; any text will do.
+`503` `server-busy` is also sent on every call when the server as a
+whole is full (section 8.3), and a caller waits as section 8.3 says.
+`playback-stopped` names, in MSFP, a playback that isn't live or isn't
+this pairing's.
 
 `404` `not-found` means, on every call: "I don't hear you", "I don't know
 you", "not paired yet", "there's no such code", or "there's no such title
-for you". Signed or not tells them apart (section 6.6). A bad body on
-`pair`, `hello`, `libraries` and `titles` gets a signed `404` too.
+for you". Signed or not tells them apart (section 6.6). A bad body on `pair`, `hello`, `libraries` and `titles` gets a
+signed `404` too.
 
 ### 8.3 Limits and overload
 
@@ -1284,8 +1266,9 @@ machine. Suggested numbers are in the
 - A `play` refused this way isn't retried by itself: the viewer is told
   "busy now" and may try again.
 - A `progress` refused this way waits for its next turn. A `stop` may be
-  retried a few times; the owning server ends an unused playback within
-  2 minutes anyway ([media section 4](media.md#4-how-long-a-ticket-works)).
+  retried a few times; the owning server ends an unused playback at its
+  idle limit anyway
+  ([MSFP Media's playing, section 5](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#5-a-playbacks-states-and-endings)).
 
 **A server that can't be called** (section 7.5) sends its `hello`s on a
 schedule of its own: every 20 seconds while a peer is `theirs` (for 24
@@ -1313,65 +1296,26 @@ none of this.
 ### 8.4 Media answers
 
 Media fetches ([media](media.md)) are plain `GET`s, not signed, and their
-answers aren't signed either. Their statuses:
+answers aren't signed either. Their statuses, and what the viewer's
+server does with each, are as
+[MSFP Media's base, section 5](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#5-media-answers)
+says; the headers MSFP refuses with `404` are the browser headers of
+[media section 1](media.md#1-the-urls).
 
-| Status | Meaning | What the viewer's server does |
-|--------|---------|-------------------------------|
-| 200 | the whole resource | relays it, after the checks of media section 3 |
-| 206 | the range asked for | checks `Content-Range` (media section 2), relays it |
-| 404 | no such file, a query string, browser headers, a ticket that isn't live, or a URL its ticket's kind doesn't open | for a playlist, the file or a segment: treats the playback as ended; for a subtitle part, a font, a sheet or an image: goes without it |
-| 405 | a `HEAD`, or any other method but `GET`, with `Allow: GET`; never `404` (media section 2.2) | not expected: the viewer's server sends `GET` only; it answers its own clients' `HEAD` itself |
-| 416 | the `Range` header is malformed or out of the file; under a scan ticket, a fetch without `Range`, or one that starts once the bytes the scan may read are spent (the scan answer's `scanBytes`, [playback section 8](playback.md#8-scan-access); media section 4.2) | answers `416` to the viewer; for a scan, a failed read of its media server |
-| 503 | the owning server is busy | answers `503` to the viewer, who may try again |
-| anything else | not expected | as a failed fetch: the viewer's server answers `404` to the viewer |
-
-A body that comes with a refusal is not read beyond a few kilobytes, and
-never shown.
+MSFP adds one meaning, on its scan tickets: `416` also answers a fetch
+without `Range`, or one that starts once the bytes the scan may read are
+spent (the scan answer's `scanBytes`,
+[playback section 8](playback.md#8-scan-access);
+[media section 4](media.md#4-how-long-a-ticket-works)). For a scan, the
+viewer's server takes it as a failed read of its media server.
 
 ### 8.5 Unknown values
 
-Many fields take a value from a list that grows: a codec, a container's
-media type, an edition. The fields a part calls **open** follow one
-rule, in every part, so that a new value needs no new version and no
-change of the specification.
-
-- A **token** is 1 to 32 characters of `a–z 0–9 . _ -`. An open field
-  takes a token, unless its part says otherwise (a few take a class of
-  their own, with a bound of their own).
-- A **media type** is an IANA-form media type: lowercase, exactly one
-  `/`, no parameters, each half starting with a letter or a digit, at
-  most 127 characters (the bound of RFC 6838) of `a–z 0–9 . + - _ /`:
-  `video/mp4`, `application/ttml+xml`. Fields that take a media type
-  follow the rules below, as tokens do.
-- **In a fact** (what `titles` says of a title, what an answer says): a
-  token or a media type the receiver doesn't know is **kept** as it is.
-  It is never turned into another value, and never dropped. A malformed
-  value (of another JSON type, empty, too long, with other characters)
-  is handled as any malformed member is: an optional member is dropped
-  alone, and the entry that holds it stays; a required member is
-  dropped with the entry that holds it (a copy, a stream, a track, an
-  extra), as when it is missing.
-- **In a request**: a value the receiver doesn't know is ignored where
-  the field is a hint, and refused with a signed `409`
-  `delivery-refused` where it names what to serve (a remux's media
-  type, a transcode's codec). Only a malformed value gets `400`.
-- A viewer's server that doesn't know a copy's `mediaType`, a stream's
-  `codec` or its `threeD`, or can't parse a `codecs` string, treats the
-  copy as one it can't play as it is: it asks for a `remux` or a
-  `transcode` ([playback section 2.7](playback.md#27-delivery)), or
-  doesn't offer the copy. An unknown subtitle `format` affects that
-  track only. Other unknown values (`edition`, `role`, an `hdr` token,
-  `objects`, `extraType`, a segment `kind`) don't stop the copy from
-  playing as it is; the content parts say how some are shown.
-- No list has a value meaning "other". A sender with no value for an
-  optional field leaves it out.
-- The values a part gives beside an open field are examples, not the
-  list. The lists are the [registry](../registry.md)'s, or an outside
-  vocabulary's (IANA media types, RFC 6381, ITU-T H.273, the DASH role
-  scheme, MusicBrainz), which the part names.
-
-Test cases: `openTokens` and `openMediaTypes` in
-[vectors/v0/strict.json](../../vectors/v0/strict.json).
+Open fields, tokens, media types, and what a receiver does with a value
+it doesn't know are as
+[MSFP Media's base, section 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#3-unknown-values)
+says, in every part. Its refusals of an unknown value that names what to
+serve are signed, as every refusal to a peer is (section 6.6).
 
 ## 9. The core's calls
 
@@ -1436,16 +1380,10 @@ proof first, then whether the key is known. A known key gets `409` only
 with a valid code and proof; otherwise it gets a signed `404`. A `409`
 leaves the code live.
 
-Names, on both sides, are cleaned before they are stored, in this order:
-
-1. every run of characters with the Unicode `White_Space` property
-   becomes one space;
-2. other control and format characters (Unicode Cc and Cf) are removed;
-3. both ends are trimmed;
-4. the result is cut to 80 code points, and trimmed again.
-
-An empty name becomes the host of the peer's address, with its port, as
-in the request message (section 6.2).
+Names, on both sides, are cleaned before they are stored, as
+[MSFP Media's base, section 2.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#21-text-encodings)
+cleans names, to 80 code points. An empty name becomes the host of the
+peer's address, with its port, as in the request message (section 6.2).
 
 ### 9.2 hello
 
@@ -1620,17 +1558,22 @@ suspended, since its current key is the new one.
 | Name | What it holds | Calls | Needs |
 |------|---------------|-------|-------|
 | core | encodings, transport, keys, the code, signatures, pairing, states, rotation, addresses, versions | `pair`, `hello`, `rotate`, `revoke` | — |
-| `catalog` | libraries, titles, the general rules of title keys, the description and image of `local` titles | `libraries`, `titles`, `image` | the core |
-| `playback` | starting, keeping and stopping a playback; limits | `play`, `progress`, `stop` | `catalog` and `media` |
-| `media` | what the stream URLs serve: HLS, the file by byte ranges, subtitles, fonts, sheets and images; the kinds of ticket | plain `GET`s under the stream root | the core |
-| `video` | films, series and extras by TMDB, TheTVDB or the owner's own keys: title keys, episode order, copies, subtitles (WebVTT, ASS, PGS), fonts, skip markers, previews | `previews`; it adds to `titles`, `play` and the media | `catalog`, `playback` and `media` |
-| `music` | artists, albums and tracks by MusicBrainz or the owner's own keys: keys, descriptions, copies, cover art, lyrics, audio-only playback, queues | `lyrics`; it adds to `titles`, `play`, `progress`, `stop` and `limits` | `catalog`, `playback` and `media` |
-| `groups` | groups of servers: events, mail, pairing through a group | `group-sync`, `group-push`, `group-pair`, `group-join` | the core |
+| `catalog` | carries MSFP Media's [listing](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md); adds offers and wants, what is shared, the server's name and `limits` in `libraries` | `libraries`, `titles`, `image` | the core |
+| `playback` | carries MSFP Media's [playing](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md); adds limits, what the owning server enforces, scan access | `play`, `progress`, `stop` | `catalog` and `media` |
+| `media` | carries MSFP Media's [fetching](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md); adds the stream root, its certificates, who may fetch, the scan ticket | plain `GET`s under the stream root | the core |
+| `video` | carries MSFP Media's [video](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md) (films, series and extras); adds who sees `local` titles, how extras and previews count, when sheets may be fetched | `previews`; it adds to `titles`, `play` and the media | `catalog`, `playback` and `media` |
+| `music` | carries MSFP Media's [music](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md) (artists, albums and tracks); adds its limits and how they count | `lyrics`; it adds to `titles`, `play`, `progress`, `stop` and `limits` | `catalog`, `playback` and `media` |
+| `groups` | MSFP's own: groups of servers, events, mail, pairing through a group | `group-sync`, `group-push`, `group-pair`, `group-join` | the core |
 
 The core and each part have their own version, an integer. Version 0 of
 each is this document and [catalog.md](catalog.md),
 [playback.md](playback.md), [media.md](media.md), [video.md](video.md),
-[music.md](music.md) and [groups.md](groups.md).
+[music.md](music.md) and [groups.md](groups.md). Version 0 of `catalog`,
+`playback`, `media`, `video` and `music` carries
+[MSFP Media version 0](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/README.md). A later version of a part may carry
+a later version of MSFP Media; the part's version says which, and two
+servers that agree on a part's version agree on the MSFP Media version it
+carries.
 
 Rotation and revocation (`rotate`, `revoke`, section 12) are part of
 the core, not a part: a server without them doesn't speak core 0. Every
@@ -1646,7 +1589,7 @@ optional: a server lists in `hello` the ones it handles, and two servers share o
 content parts both list
 ([catalog section 5](catalog.md#5-what-is-shared)). A receiver skips
 keys of a content part it doesn't speak
-([catalog section 3.3](catalog.md#33-what-the-caller-keeps-of-each-title)).
+([MSFP Media's listing, section 3.3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#33-what-the-caller-keeps-of-each-title)).
 
 ### 10.2 Announcing versions
 
@@ -1717,13 +1660,14 @@ A server may serve, at `GET /.well-known/msfp` on its address (RFC 8615),
 an `application/json` document:
 
 ```json
-{"core":[0],"parts":{"catalog":[0],"playback":[0],"media":[0],"video":[0]},"base":"/srv/media/api/v1/federation/"}
+{"core":[0],"parts":{"catalog":[0],"playback":[0],"media":[0],"video":[0]},"msfpMedia":[0],"base":"/srv/media/api/v1/federation/"}
 ```
 
 | Field | Type | Content |
 |-------|------|---------|
 | `core` | array of integer, optional | as in `hello` |
 | `parts` | object, optional | as in `hello` |
+| `msfpMedia` | array of integer, optional | the versions of MSFP Media that the listed part versions carry (section 10.1), at most 8, as a list of `hello` is read (section 10.2); for information only: the part versions decide |
 | `base` | string, optional | where the federation calls are, as an absolute path; absent: `/api/v1/federation/` |
 
 - **Off by default.** A server serves the document only when its operator
@@ -2223,7 +2167,7 @@ people, and kept longer, than the secrets they could hold. A server must
 never write any of these into them, whole or in part:
 
 - a ticket, or a URL that holds one, such as a media URL
-  ([media section 1](media.md#1-the-urls)). HTTP clients' error messages
+  ([MSFP Media's fetching, section 1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#1-the-urls)). HTTP clients' error messages
   often quote the URL: remove it first;
 - a pairing code, its secret, the secret's hash, or the pairing proof
   (section 5);
@@ -2246,6 +2190,11 @@ and of the parts, and what needs one, is in
 signatures, the code or pairing is a new core version, with new labels; a
 new optional member needs no new version as long as its absence keeps
 the old behaviour.
+
+MSFP Media has its own versions, under the same rules
+([MSFP Media's README](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/README.md#versioning)). Each part version states
+the MSFP Media version it carries (section 10.1): version 0 of the parts
+carries MSFP Media version 0.
 
 The strings `msfp-0` and `msfp-pair-0.` contain a `0`: they are core 0's
 labels. The statements' labels `msfp-key-rotation-1` and
@@ -2274,16 +2223,16 @@ generator also checks them.
 | `strict.json` | addresses and codes with their verdicts under core 0 (`https` only) |
 | `strict.json`, `destinations` | IP addresses a server connects to for a peer by default, or refuses (section 3.3) |
 | `strict.json`, `uncallableAddresses` | addresses of a server that can't be called, `https://msfp-<26>.invalid`, with their verdicts (section 5.2) |
-| `strict.json`, `languageCodes` | media servers' language codes and the tag sent for each, or none ([catalog section 3](catalog.md#3-titles)) |
-| `strict.json`, `openTokens` | values of open fields, kept as tokens or dropped as malformed (section 8.5) |
-| `strict.json`, `openMediaTypes` | values of media-type fields, kept as media types or dropped as malformed (section 8.5) |
+| `strict.json`, `languageCodes` | media servers' language codes and the tag sent for each, or none ([MSFP Media's base, section 2.4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#24-language-tags)) |
+| `strict.json`, `openTokens` | values of open fields, kept as tokens or dropped as malformed ([MSFP Media's base, section 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#3-unknown-values)) |
+| `strict.json`, `openMediaTypes` | values of media-type fields, kept as media types or dropped as malformed ([MSFP Media's base, section 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#3-unknown-values)) |
 | `strict.json`, `helloVersions` | `hello` bodies and the versions a receiver keeps of them, or a bad body: `"core":[0,2.5]` lists core 0, and an unknown member or part of `null` is ignored (sections 2.3 and 10.2) |
-| `strict.json`, `mediaNames` | file and track names in media URLs, with their verdicts ([media section 1](media.md#1-the-urls)) |
+| `strict.json`, `mediaNames` | file and track names in media URLs, with their verdicts ([MSFP Media's fetching, section 1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#1-the-urls)) |
 | `strict.json`, `bases` | values of the discovery document's `base`, with their verdicts (section 11) |
-| `playback.json` | `play`, `progress` and `stop` requests and answers, with deliveries, restarts, downloads and scans ([playback](playback.md)) |
-| `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([media section 3](media.md#3-what-is-fetched), [video section 6](video.md#6-media)) |
-| `music.json` | music title keys and music titles, with their verdicts and what the caller keeps of each title ([music sections 2 and 3](music.md#2-title-keys)) |
-| `video.json` | video titles, with their verdicts and what the caller keeps of each, `video` included ([video section 3](video.md#3-titles)) |
+| `playback.json` | `play`, `progress` and `stop` requests and answers, with deliveries, restarts, downloads and scans ([MSFP Media's playing](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md); scans: [playback section 8](playback.md#8-scan-access)) |
+| `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([MSFP Media's fetching, section 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#3-what-is-fetched), [MSFP Media's video, section 6](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#6-media)) |
+| `music.json` | music title keys and music titles, with their verdicts and what the caller keeps of each title ([MSFP Media's music, sections 2 and 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#2-title-keys)) |
+| `video.json` | video titles, with their verdicts and what the caller keeps of each, `video` included ([MSFP Media's video, section 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#3-titles)) |
 | `groups.json` | a group's events, valid and not, with their reasons and the state a copy computes; a code with a group; a request mail sealed with HPKE, with the recipient's key to open it ([groups](groups.md)) |
 
 The cases of [vectors/history/test-draft-strict.json](../../vectors/history/test-draft-strict.json)
@@ -2406,6 +2355,16 @@ Where a proposal of 2026-11-16 left a point open, the text above
 follows the proposal's own default, and the point is listed here, with
 its source in [proposals/](../../proposals/README.md). Points 1 to 16
 were settled by the owner on 2026-11-17; each says how.
+
+The points below stay listed here for the rules that have since moved to
+MSFP Media ([proposal 19](../../proposals/0019-msfp-media.md)); their
+links go to where those rules are now. Two of those rules have changed
+there since: a target the source doesn't make is refused with `409`
+`target-refused`, `delivery-refused` being for the delivery as such
+([MSFP Media's base, section 4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#4-refusals));
+and the interval of `progress` and the idle limit are the source's
+([MSFP Media's playing, section 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#3-progress)).
+Points 43, 45, 46 and 47 read so.
 
 **Rules and checks**
 
@@ -2544,8 +2503,8 @@ the owner on 2026-11-17; they may still change as implementations show)
     2. Optional descriptions for video titles (name, year), as music
        titles carry ([proposal 11](../../proposals/0011-music.md), open
        point 2, now settled in
-       [video open question 4](video.md#8-open-questions) and
-       [music's open questions](music.md#9-open-questions)), so that
+       [MSFP Media's video open question 4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#8-open-questions) and
+       [MSFP Media's music open questions](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#9-open-questions)), so that
        a viewer's server can list a peer's titles without TMDB.
        Proposal 16 took this answer for `local` titles only (a name, a
        year, one image); titles of a public database still carry keys
@@ -2626,12 +2585,12 @@ question above; they settle points the text left unclear or got wrong.
 40. The rest: no common core (sections 8.2, 10.3, 10.4); content codings
     (section 3); integers and other numbers (section 2.3, with
     `helloVersions` in section 17); and, in the parts, refusals of `play`
-    ([playback section 2.5](playback.md#25-refusals)), track IDs
-    ([playback section 2.1](playback.md#21-the-request)), changes of a
-    title ([catalog section 3.2](catalog.md#32-whole-list-or-changes)),
-    the relayed media type ([media section 3](media.md#3-what-is-fetched)),
+    ([MSFP Media's playing, section 2.5](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#25-refusals)), track IDs
+    ([MSFP Media's playing, section 2.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#21-the-request)), changes of a
+    title ([MSFP Media's listing, section 3.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#32-whole-list-or-changes)),
+    the relayed media type ([MSFP Media's fetching, section 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#3-what-is-fetched)),
     empty PGS parts, progress in a copy of several episodes, and `ids`
-    ([video sections 4.3, 5.2, 6.2 and 6.5](video.md#65-picture-subtitles)).
+    ([MSFP Media's video, sections 4.3, 5.2, 6.2 and 6.5](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#65-picture-subtitles)).
 
 **Also decided by the owner on 2026-11-18**, points the text left
 unclear while the engine's API was written down:
@@ -2655,19 +2614,19 @@ unclear while the engine's API was written down:
     "fetched again when calls fail" now has a rule.
 42. Catalog and playback: a change of offers, or of the parts on, forces
     a whole reading, numbered in the change log
-    ([catalog section 3.2](catalog.md#32-whole-list-or-changes)); a whole
+    ([MSFP Media's listing, section 3.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#32-whole-list-or-changes)); a whole
     reading that fails halfway keeps the last complete list, its pages
     dropped (the same section); track IDs have only the forms `a<n>` and
-    `s<n>` ([catalog section 2.1](catalog.md#21-library-ids)); a
+    `s<n>` ([MSFP Media's listing, section 2.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/listing.md#21-library-ids)); a
     negative or out-of-range `maxAudioChannels` or `maxHeight` gets
-    `400` ([playback section 2.2](playback.md#22-what-the-owning-server-does),
-    [video section 5.1](video.md#51-the-request)); a `subtitleLanguage`
+    `400` ([MSFP Media's playing, section 2.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#22-what-the-source-does),
+    [MSFP Media's video, section 5.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#51-the-request)); a `subtitleLanguage`
     matching a regular and a forced track chooses the regular one
-    ([video section 5.4](video.md#54-choosing-the-subtitles)); a music
+    ([MSFP Media's video, section 5.4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#54-choosing-the-subtitles)); a music
     `durationMs` of 0 counts as absent
-    ([music section 3.2](music.md#32-what-the-caller-keeps)); the
+    ([MSFP Media's music, section 3.2](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#32-what-the-caller-keeps)); the
     viewer's server may pass a peer's `416` for a range the viewer asked
-    for ([media section 2.3](media.md#23-statuses)).
+    for ([MSFP Media's fetching, section 2.3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#23-statuses)).
 
 **Platform neutrality, decided by the owner on 2026-11-18**, from the
 check of how Plex and Emby map onto MSFP
@@ -2676,43 +2635,43 @@ check of how Plex and Emby map onto MSFP
 43. Two changes. A copy may be several files played one after the other
     as one (parts); `file` is only for a copy of one file, and a copy of
     several parts is served as `hls`
-    ([playback section 1](playback.md#1-terms),
-    [media section 1](media.md#1-the-urls)). Only the subtitle tracks the
+    ([MSFP Media's playing, section 1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#1-terms),
+    [MSFP Media's fetching, section 1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#1-the-urls)). Only the subtitle tracks the
     owning server can serve are listed, and a title's `subtitles` follow
-    the same rule ([video sections 3 and 5.4](video.md#54-choosing-the-subtitles)).
+    the same rule ([MSFP Media's video, sections 3 and 5.4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#54-choosing-the-subtitles)).
     Revised by proposal 16: a `delivery` `file` of a copy of several
     parts is refused (`409` `delivery-refused`); a copy lists all its
     subtitle tracks, giving URLs to those the owning server can serve
     apart; the title summary `subtitles` is gone
-    ([video section 3.3](video.md#33-streams-and-tracks)).
+    ([MSFP Media's video, section 3.3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#33-streams-and-tracks)).
 44. Nine points stated: episodes keyed by their TMDB episode ID, looked
     up with the owning server's own TMDB access, a media server's numbers
-    not being TMDB's by default ([video sections 4.1 and 7](video.md#41-episode-order));
+    not being TMDB's by default ([MSFP Media's video, sections 4.1 and 7](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#41-episode-order));
     credits are `outro`, a marker with no known end ends at `durationMs`
-    ([video section 5.3](video.md#53-the-answer)); previews kept one image
+    ([MSFP Media's video, section 5.3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#53-the-answer)); previews kept one image
     per interval are tiled into sheets, every *n*-th image allowed
-    ([video section 5.5](video.md#55-seek-bar-previews)); the default
+    ([MSFP Media's video, section 5.5](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#55-seek-bar-previews)); the default
     audio is the file's, never a person's saved choice, and `role` is best
     effort, absent meaning the title's own sound
-    ([playback sections 2.3 and 2.6](playback.md#26-choosing-the-copy-and-the-tracks));
+    ([MSFP Media's playing, sections 2.3 and 2.6](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#26-choosing-the-copy-and-the-tracks));
     ISO 639-2 codes sent as ISO 639-1
-    ([catalog section 3](catalog.md#3-titles), vectors `languageCodes`);
+    ([MSFP Media's base, section 2.4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#24-language-tags), vectors `languageCodes`);
     the tag "MusicBrainz Track Id" holds the recording MBID
-    ([music section 1](music.md#1-terms)); with `file`, the viewer's
+    ([MSFP Media's music, section 1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#1-terms)); with `file`, the viewer's
     player selects `audioTrack` itself
-    ([media section 1](media.md#1-the-urls)); an implementation may run
+    ([MSFP Media's fetching, section 1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#1-the-urls)); an implementation may run
     as a separate service, holding the narrowest credential (section 1).
 45. Six points stated, from the Jellyfin plugin, decided by the owner on
     2026-11-20: a track's position is the owning server's own stable
     number for it in the copy
-    ([playback section 2.3](playback.md#23-the-answer)); a server whose
+    ([MSFP Media's playing, section 2.3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#23-the-answer)); a server whose
     media server has no transcode budget makes one, and a remux found to
     re-encode counts as a transcode when the owning server can tell
-    (playback section 6.2), ending when none is left (playback section
-    6.3); a server under a base path has its discovery document served at
+    (playback section 6.2), ending when none is left (MSFP Media's
+    playing, section 5); a server under a base path has its discovery document served at
     its address's root (section 11); a viewer's server sends `progress`
     no more often than every 45 seconds but never lets 2 minutes pass
-    without one, paused too ([playback section 3](playback.md#3-progress)).
+    without one, paused too ([MSFP Media's playing, section 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#3-progress)).
 
 **Neutrality, decided by the owner on 2026-11-22**
 ([proposal 17](../../proposals/0017-neutrality.md)):
@@ -2724,13 +2683,13 @@ check of how Plex and Emby map onto MSFP
     of Overfin, Jellyfin, Plex and Kodi, and its suggested numbers, moved
     to the non-normative [implementers' notes](implementers.md). The
     schemes of title keys and of `ids` are listed in a
-    [registry](../registry.md); a new scheme is an entry there, not a
+    [registry](https://github.com/msfp-io/msfp-media/blob/main/spec/registry.md); a new scheme is an entry there, not a
     new version.
 47. The whole of proposal 17, as frozen: media types join tokens as a
     class of open value (section 8.5), kept in a fact and refused with
     `409` `delivery-refused` where they name what to serve; a viewer's
     server that doesn't know a copy's `mediaType`, `codec` or `threeD`,
     or can't parse its `codecs`, doesn't play it as it is; the lists are
-    the [registry](../registry.md)'s or an outside vocabulary's, and
+    the [registry](https://github.com/msfp-io/msfp-media/blob/main/spec/registry.md)'s or an outside vocabulary's, and
     ffmpeg is no longer one. A scan's read cap is the `scanBytes` of the
     scan's answer (section 8.4).
