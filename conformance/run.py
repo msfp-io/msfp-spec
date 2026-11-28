@@ -13,10 +13,12 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+if "--media" in sys.argv[:-1]:        # read before msfpconf looks for msfp-media's package
+    os.environ["MSFP_MEDIA"] = sys.argv[sys.argv.index("--media") + 1]
 
 from msfpconf import __version__  # noqa: E402
 from msfpconf.checks import Suite  # noqa: E402
-from msfpconf.report import Report  # noqa: E402
+from msfpmedia.report import Report  # noqa: E402
 
 
 def parser():
@@ -64,6 +66,8 @@ def parser():
     ap.add_argument("--load-count", type=int, default=1000, help="how many calls the burst sends (default 1000)")
     ap.add_argument("--end", action="store_true", help="end the pairing at the end (core 7.4): the server forgets the suite")
     ap.add_argument("--skip", default="", help="check IDs or ID prefixes to skip, comma-separated (for example AD,X1,U)")
+    ap.add_argument("--media", help="msfp-media's checkout, whose conformance/msfpmedia holds MSFP Media's checks "
+                                    "(default: ../msfp-media, beside this repository)")
     ap.add_argument("--json", help="also write the results to this file")
     ap.add_argument("-v", "--verbose", action="store_true", help="show the whole detail of passing checks too")
     return ap

@@ -7,17 +7,18 @@ import hashlib
 import hmac
 import http.client
 import ipaddress
-import json
 import os
 import re
 import socket
 import ssl
 import struct
 import time
-import unicodedata
 import urllib.parse
 
 from . import ed25519
+# The encodings and JSON of MSFP Media's base (core 2.2, 2.3 name them).
+from msfpmedia.base import (MAX_INT, WHITE_SPACE, NegativeZero, NonInteger, NotIJSON, b64u, check_media_name,  # noqa: F401
+                            clean_name, decimal, dumps, has_null, is_int, parse_ijson, unb64u)
 
 VERSION = 0  # the core and every part this suite speaks (core 10)
 REQUEST_LABEL = "msfp-0 request"
@@ -28,34 +29,7 @@ ROTATION_LABEL = "msfp-key-rotation-1"
 REVOCATION_LABEL = "msfp-key-revocation-1"
 FED = "/api/v1/federation/"
 STREAM = "/api/v1/stream/"
-MAX_INT = 2**53 - 1
 H_KEY, H_DATE, H_NONCE, H_SIG = "MSFP-Key", "MSFP-Date", "MSFP-Nonce", "MSFP-Signature"
-
-# Unicode's White_Space property (core 5.1, 9.1).
-WHITE_SPACE = set("\t\n\x0b\x0c\r \x85\xa0\u1680\u2028\u2029\u202f\u205f\u3000") | {chr(c) for c in range(0x2000, 0x200B)}
-
-
-# ---- Encodings (core 2) ---------------------------------------------------------
-
-_B64U = re.compile(r"[A-Za-z0-9_-]*")
-
-
-def b64u(b):
-    return base64.urlsafe_b64encode(b).rstrip(b"=").decode("ascii")
-
-
-def unb64u(text, size=None):
-    """Strict base64url (core 2.2): the URL-safe alphabet only, no padding,
-    unused bits zero. None when invalid, or not `size` bytes."""
-    if not isinstance(text, str) or not _B64U.fullmatch(text) or len(text) % 4 == 1:
-        return None
-    try:
-        b = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
-    except (ValueError, TypeError):
-        return None
-    if b64u(b) != text or (size is not None and len(b) != size):
-        return None
-    return b
 
 
 def sha256hex(b):
@@ -65,118 +39,6 @@ def sha256hex(b):
 def commitment(pub):
     """The next key commitment to a key (core 12.5)."""
     return b64u(hashlib.sha256(pub).digest())
-
-
-def decimal(text):
-    """A decimal integer of core 2.2, or None."""
-    if not isinstance(text, str) or not re.fullmatch(r"0|[1-9][0-9]*", text) or int(text) > MAX_INT:
-        return None
-    return int(text)
-
-
-class NotIJSON(ValueError):
-    pass
-
-
-class NonInteger(float):
-    """A JSON number with a fraction or an exponent."""
-
-
-class NegativeZero(int):
-    """-0, which core 2.3 doesn't allow as an integer."""
-
-
-def _clean_text(s):
-    for ch in s:
-        o = ord(ch)
-        if 0xD800 <= o <= 0xDFFF or 0xFDD0 <= o <= 0xFDEF or (o & 0xFFFE) == 0xFFFE:
-            return False
-    return True
-
-
-def parse_ijson(raw):
-    """A body as core 2.3 reads it (I-JSON, RFC 7493). Numbers with a
-    fraction or an exponent come back as NonInteger, -0 as NegativeZero;
-    is_int() says whether a value is an integer of core 2.3. Raises
-    NotIJSON."""
-    if raw.startswith(b"\xef\xbb\xbf"):
-        raise NotIJSON("a byte order mark")
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        raise NotIJSON("invalid UTF-8")
-
-    def pairs(ps):
-        seen = set()
-        for k, _ in ps:
-            if k in seen:
-                raise NotIJSON("member %r twice" % k)
-            if not _clean_text(k):
-                raise NotIJSON("a surrogate or noncharacter in a name")
-            seen.add(k)
-        return dict(ps)
-
-    def integer(t):
-        return NegativeZero(0) if t == "-0" else int(t)
-
-    def constant(t):
-        raise NotIJSON("%s isn't JSON" % t)
-
-    try:
-        value = json.loads(text, object_pairs_hook=pairs, parse_int=integer,
-                           parse_float=NonInteger, parse_constant=constant)
-    except NotIJSON:
-        raise
-    except (ValueError, RecursionError) as e:
-        raise NotIJSON("not JSON: %s" % e)
-
-    def walk(v):
-        if isinstance(v, str):
-            if not _clean_text(v):
-                raise NotIJSON("a surrogate or noncharacter in a string")
-        elif isinstance(v, dict):
-            for x in v.values():
-                walk(x)
-        elif isinstance(v, list):
-            for x in v:
-                walk(x)
-
-    walk(value)
-    return value
-
-
-def is_int(v):
-    """An integer of core 2.3: no fraction or exponent, not -0, within 2^53 - 1."""
-    return isinstance(v, int) and not isinstance(v, (bool, NegativeZero)) and abs(v) <= MAX_INT
-
-
-def has_null(v):
-    if v is None:
-        return True
-    if isinstance(v, dict):
-        return any(has_null(x) for x in v.values())
-    if isinstance(v, list):
-        return any(has_null(x) for x in v)
-    return False
-
-
-def dumps(obj):
-    return json.dumps(obj, separators=(",", ":"), ensure_ascii=True).encode("ascii")
-
-
-def clean_name(s, limit=80):
-    """Core 9.1's cleaning of a name."""
-    out, space = [], False
-    for ch in s:
-        if ch in WHITE_SPACE:
-            if not space:
-                out.append(" ")
-            space = True
-            continue
-        space = False
-        out.append(ch)
-    t = "".join(ch for ch in "".join(out) if unicodedata.category(ch) not in ("Cc", "Cf")).strip(" ")
-    return t[:limit].strip(" ")
 
 
 # ---- Addresses (core 5.2, 3.3, 11) ------------------------------------------------
@@ -276,11 +138,6 @@ def check_base(s):
     return None
 
 
-def check_media_name(s):
-    """A file or track name of MSFP Media fetching 1, or None when valid."""
-    if not isinstance(s, str) or s in (".", "..") or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", s):
-        return "not 1 to 64 characters of A-Z a-z 0-9 . _ - (or . or ..)"
-    return None
 
 
 _REFUSED = [ipaddress.ip_network(n) for n in ("127.0.0.0/8", "::1/128", "169.254.0.0/16", "fe80::/10", "0.0.0.0/8",

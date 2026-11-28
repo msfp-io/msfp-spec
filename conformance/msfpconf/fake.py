@@ -1,7 +1,8 @@
 """A minimal MSFP version 0 server, in process, for selftest.py: the suite
 runs against it and must pass. It is built from spec/v0/, MSFP Media's text it carries, and from the
 vectors (its keys are vectors/v0/keys.json's "a", "a2", "a3"; its
-playlists, subtitles and PGS come from vectors/v0/media.json), and does
+playlists come from MSFP Media's vectors/v0/fetching.json, its subtitles,
+PGS and fonts from its video.json), and does
 only what the suite needs. Test code: never a server for real use."""
 
 import hashlib
@@ -18,18 +19,21 @@ import threading
 import time
 import urllib.parse
 
+from msfpmedia import load_vectors
+from msfpmedia.copies import check_previews_request, media_type, token, video_key
+from msfpmedia.media import serves
+from msfpmedia.listing import Malformed, kind_of, list_titles
+from msfpmedia.playback import progress_seconds
+from msfpmedia.music import check_lyrics_request, check_queue_request, music_key
+
 from . import ed25519
+from .carrier import TICKETS, scan_cap
 from .tls import Certificate
 from .wire import (CODE_PREFIX, VERSION, FED, H_DATE, H_KEY, H_NONCE, H_SIG, Answer, Key, NotIJSON, answer_message, b64u,
                    check_address, check_destination, check_uncallable_address, clean_name, commitment, decimal,
                    dumps, has_null, host_of, is_int, make_code, make_revocation, make_rotation,
                    parse_ijson, proof, read_pins, read_revocation, read_rotation, request_message,
                    split_hostport, spki_pin, unb64u)
-from .copies import check_previews_request, media_type, token, video_key
-from .media import scan_cap, serves
-from .listing import Malformed, kind_of, list_titles
-from .playback import progress_seconds
-from .music import check_lyrics_request, check_queue_request, music_key
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VEC = os.path.join(HERE, "..", "..", "vectors", "v0")
@@ -86,7 +90,8 @@ class FakeServer:
     def __init__(self, resolve, allow_http=False, faults=()):
         self.faults = set(faults)       # deliberate faults, for the self-test's second pass
         keys = json.load(open(os.path.join(VEC, "keys.json")))["keys"]
-        self.media = json.load(open(os.path.join(VEC, "media.json")))
+        self.media = load_vectors("fetching")     # MSFP Media's vectors: HLS (fetching), subtitles and fonts (video)
+        self.video = load_vectors("video")
         self.key = Key(bytes.fromhex(keys["a"]["seed"]))
         self.next = [Key(bytes.fromhex(keys["a2"]["seed"])), Key(bytes.fromhex(keys["a3"]["seed"]))] + [Key() for _ in range(4)]
         self.resolve = resolve          # names the operator lets this server reach, -> IP
@@ -1318,7 +1323,7 @@ class FakeServer:
         names = ["v0.m3u8", "init.mp4", "seg0.mp4", "seg-1.mp4"] + ["a%d.m3u8" % i for i in range(41)]
         ticket = {"kind": kind, "protocol": proto, "subtitles": p.get("subtitles", []), "fontCount": p.get("fontCount", 0),
                   "sheetCount": p.get("sheetCount", 0), "queue": p.get("queueProto", []), "names": names}
-        why = serves(ticket, name)
+        why = serves(ticket, name, TICKETS)
         if why and "pastcount" in self.faults and name == "fonts/%d" % ticket["fontCount"] and ticket["fontCount"]:
             why = None      # a built name served past its count (MSFP Media video 6.1: 404)
         if why:
@@ -1342,15 +1347,15 @@ class FakeServer:
         elif name == "file":
             return self._file(h, p)
         elif m and m.group(1) == "subtitles":
-            body, ctype = self.media["webvtt"][0]["output"].encode(), "text/vtt; charset=utf-8"
+            body, ctype = self.video["webvtt"][0]["output"].encode(), "text/vtt; charset=utf-8"
             if "vtt" in self.faults:
-                body = self.media["webvtt"][1]["text"].encode()
+                body = self.video["webvtt"][1]["text"].encode()
         elif m and m.group(1) == "ass":
-            body, ctype = next(c for c in self.media["ass"] if c["valid"])["output"].encode(), "text/x-ass; charset=utf-8"
+            body, ctype = next(c for c in self.video["ass"] if c["valid"])["output"].encode(), "text/x-ass; charset=utf-8"
         elif m and m.group(1) == "pictures":
-            body = bytes.fromhex(self.media["pgs"][0]["hex"])
+            body = bytes.fromhex(self.video["pgs"][0]["hex"])
         elif name.startswith("fonts/"):
-            body, ctype = bytes.fromhex(self.media["fonts"][0]["hex"]), "font/ttf"
+            body, ctype = bytes.fromhex(self.video["fonts"][0]["hex"]), "font/ttf"
         if body is None:
             return self.send(h, 404, b"")
         rng = h.headers.get_all("Range") or []

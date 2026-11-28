@@ -2,11 +2,14 @@
 """The suite's self-test. Needs no server.
 
 1. The suite's readers against the vectors: vectors/v0/*.json (keys,
-   code, exchanges, rotation, revocation, strict, media, video, playback,
-   music, groups; with strict.json's titleRequests, the owning server's
-   reading of a titles request that the fake answers with) and the
-   cases of vectors/history/test-draft-strict.json that core 0 section 17 says hold for
-   core 0 (keys, signatures, base64url, dates, integers, JSON).
+   code, exchanges, rotation, revocation, strict, groups; and MSFP's
+   carrier vectors, playback.json and media.json), the cases of
+   vectors/history/test-draft-strict.json that core 0 section 17 says
+   hold for core 0 (keys, signatures, base64url, dates, integers, JSON),
+   and MSFP Media's readers against msfp-media's vectors, as
+   msfp-media's conformance/selftest.py checks them (with listing.json's
+   titleRequests, the source's reading of a titles request that the
+   fake answers with).
 2. The whole suite against an in-process fake version 0 server
    (msfpconf/fake.py, built from the specification and the vectors),
    over HTTPS both ways, with the self-test playing the server's
@@ -16,9 +19,10 @@
    then CHOICE in a pass of its own): the checks aimed at each fault must
    fail, so the suite is seen to catch what it checks.
 
-    python3 conformance/selftest.py [-v] [--vectors-only] [--quick]
+    python3 conformance/selftest.py [-v] [--vectors-only] [--quick] [--media DIR]
 
---quick skips part 3. Exit 0 when every part passes."""
+--quick skips part 3. --media names msfp-media's checkout (default:
+../msfp-media, beside this repository). Exit 0 when every part passes."""
 
 import io
 import json
@@ -30,16 +34,16 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+if "--media" in sys.argv[:-1]:
+    os.environ["MSFP_MEDIA"] = sys.argv[sys.argv.index("--media") + 1]
 
 from msfpconf import ed25519  # noqa: E402
-from msfpconf import copies, media as mediarules  # noqa: E402
-from msfpconf.media import Refused, check_pgs, check_playlist, rebuild_vtt  # noqa: E402
-from msfpconf.music import music_vectors_ok  # noqa: E402
-from msfpconf.playback import playback_vectors_ok  # noqa: E402
+from msfpconf.carrier import carrier_vectors_ok  # noqa: E402
 from msfpconf.wire import (Answer, Key, NotIJSON, answer_message, b64u, check_address, check_base,  # noqa: E402
-                           check_destination, check_media_name, check_uncallable_address, commitment, decimal,
+                           check_destination, check_uncallable_address, commitment, decimal,
                            fingerprint, is_int, make_rotation, parse_code, parse_ijson, proof, read_revocation,
                            parse_code_group, read_rotation, request_message, unb64u)
+from msfpmedia.vectorcheck import vectors_ok as media_vectors_ok  # noqa: E402
 
 VEC = os.path.join(HERE, "..", "vectors")
 
@@ -149,8 +153,6 @@ def vectors():
         except ValueError:
             ok = False
         expect("codes", c["name"], c["valid"], ok)
-    for c in st["mediaNames"]:
-        expect("mediaNames", c.get("text", ""), c["valid"], check_media_name(c.get("text", "")) is None)
     for c in st["bases"]:
         expect("bases", c.get("text", ""), c["valid"], check_base(c.get("text", "")) is None)
     for c in st["destinations"]:
@@ -158,14 +160,6 @@ def vectors():
     for c in st["uncallableAddresses"]:
         expect("uncallableAddresses", c.get("text", ""), c["valid"], check_uncallable_address(c.get("text", "")) is None)
 
-    for c in st["openTokens"]:
-        expect("openTokens", c.get("text", ""), c["valid"], copies.token(c.get("text")) is not None)
-    for c in st["languageCodes"]:
-        expect("languageCodes", c["text"], c.get("output") if c["valid"] else None, copies.sent_tag(c["text"]))
-    for c in st["opaqueKeyParts"]:
-        expect("opaqueKeyParts", c.get("text", ""), c["valid"], copies.OPAQUE.fullmatch(c.get("text", "")) is not None)
-    for c in st["openMediaTypes"]:
-        expect("openMediaTypes", c.get("text", ""), c["valid"], copies.media_type(c.get("text")) is not None)
 
     keys = load("v0", "keys.json")
     K = {}
@@ -218,124 +212,8 @@ def vectors():
     rev = load("v0", "revocation.json")["revocation"]
     read_revocation(K["a"].pub, {"date": rev["date"], "signature": rev["signature"]}, now=rev["date"])
 
-    media = load("v0", "media.json")
-    for c in media["webvtt"]:
-        raw = bytes.fromhex(c["hex"]) if "hex" in c else c.get("text", "").encode("utf-8", "surrogatepass")
-        try:
-            out, ok = rebuild_vtt(raw).decode(), True
-        except Refused:
-            out, ok = None, False
-        expect("webvtt", c["name"], (c["valid"], c.get("output")), (ok, out if ok else None))
-    for c in media["ass"]:
-        raw = bytes.fromhex(c["hex"]) if "hex" in c else c.get("text", "").encode("utf-8", "surrogatepass")
-        try:
-            out, ok = mediarules.rebuild_ass(raw).decode(), True
-        except Refused:
-            out, ok = None, False
-        expect("ass", c["name"], (c["valid"], c.get("output")), (ok, out if ok else None))
-    audio_ids = ["a%d" % i for i in range(1, 41)]
-    for c in media["hls"]:
-        expect("hls", c["name"], c["valid"], check_playlist(c.get("text", "").encode(), audio_ids)[0] is None)
-    for c in media["pgs"]:
-        try:
-            check_pgs(bytes.fromhex(c.get("hex", "")))
-            ok = True
-        except Refused:
-            ok = False
-        expect("pgs", c["name"], c["valid"], ok)
-    for c in media["fonts"]:
-        try:
-            got = mediarules.check_font(bytes.fromhex(c["hex"]))
-        except Refused:
-            got = None
-        expect("fonts", c["name"], c.get("type") if c["valid"] else None, got)
-    for c in media["ranges"]:
-        try:
-            got = mediarules.check_range(c["text"], c["size"])
-        except Refused:
-            got = None
-        expect("ranges", c["name"], (c["start"], c["end"]) if c["valid"] else None, got)
-    for c in media["fileAnswers"]:
-        why = mediarules.check_file_answer(c.get("range"), c["size"], c["etag"], c["status"], c.get("etagHeader"),
-                                           c.get("contentRange"), c.get("contentLength"))
-        expect("fileAnswers", c["name"], c["valid"], why is None)
-    for c in media["names"]:
-        expect("names", c["name"], c["valid"], mediarules.serves(c["ticket"], c["text"]) is None)
-    for c in media["relayTypes"]:
-        expect("relayTypes", c["name"], c["output"], mediarules.relay_type(c["what"], c["value"]))
-    for c in st["localImages"]:
-        if c["side"] == "answer":
-            try:
-                t = mediarules.image_answer(parse_ijson(c["body"].encode()))
-                got = (True, t, mediarules.image_url(c["streamRoot"], t))
-            except (Refused, ValueError, NotIJSON):
-                got = (False, None, None)
-            expect("localImages", c["name"], (c["valid"], c.get("ticket"), c.get("url")), got)
-        elif c["side"] == "image":
-            try:
-                got = mediarules.image_kind(bytes.fromhex(c.get("hex", "")), c.get("size", 0))[0]
-            except Refused:
-                got = None
-            expect("localImages", c["name"], c.get("format") if c["valid"] else None, got)
-    for c in media["scans"]:
-        expect("scans", c["name"], (c["status"], c["contentRange"]), mediarules.scan_answer(c["sent"], c.get("range"), c["size"],
-                                                                                        c.get("scanBytes")))
-
-    video = load("v0", "video.json")
-    for group in ("titles", "extras", "localTitles"):
-        for c in video[group]:
-            try:
-                out, ok = copies.dumps(copies.keep_video_title(copies.loads(c["text"]), video["libraries"])), True
-            except ValueError:
-                out, ok = None, False
-            expect("video " + group, c["name"], (c["valid"], c.get("output")), (ok, out))
-    for c in video["copies"]:
-        try:
-            out, ok = copies.dumps(copies.keep_video_copy(copies.loads(c["text"]))), True
-        except ValueError:
-            out, ok = None, False
-        expect("video copies", c["name"], (c["valid"], c.get("output")), (ok, out))
-    for group in ("localKeys", "tvdbKeys"):
-        for c in video[group]:
-            k = copies.video_key(c["text"])
-            expect("video " + group, c["name"], c.get("kind") if c["valid"] else None, k.kind if k else None)
-    for c in video["previews"]:
-        if c["side"] == "request":
-            try:
-                o = copies.loads(c["text"])
-            except ValueError:
-                o = None
-            expect("video previews", c["name"], c["valid"], copies.check_previews_request(o) is None)
-            continue
-        try:
-            out, ok = copies.dumps(copies.keep_previews_answer(copies.loads(c["text"]))), True
-        except ValueError:
-            out, ok = None, False
-        expect("video previews", c["name"], (c["valid"], c.get("output")), (ok, out))
-    for c in video["codecs"]:
-        try:
-            out, ok = copies.dumps(copies.read_codecs(copies.loads(c["text"]))), True
-        except ValueError:
-            out, ok = None, False
-        expect("video codecs", c["name"], (c["valid"], c.get("output")), (ok, out))
-    answer_copy = copies.keep_video_copy(copies.loads(video["answerCopy"]))
-    for c in video["answers"]:
-        try:
-            out, ok = copies.dumps(copies.keep_video_answer(copies.loads(c["text"]), answer_copy, video["streamRoot"])), True
-        except ValueError:
-            out, ok = None, False
-        expect("video answers", c["name"], (c["valid"], c.get("output")), (ok, out))
-    for c in video["fontSets"]:
-        try:
-            n, total = copies.check_font_set(copies.loads(c["text"]))
-            out, ok = '{"fonts":%d,"bytes":%d}' % (n, total), True
-        except ValueError:
-            out, ok = None, False
-        expect("video fontSets", c["name"], (c["valid"], c.get("output")), (ok, out))
-    bad += playback_vectors_ok(os.path.join(VEC, "v0", "playback.json"))
-    from msfpconf.listing import vectors_ok as listing_vectors_ok
-    bad += listing_vectors_ok(os.path.join(VEC, "v0", "strict.json"))
-    bad += music_vectors_ok(os.path.join(VEC, "v0", "music.json"))
+    bad += carrier_vectors_ok(os.path.join(VEC, "v0"))
+    bad += media_vectors_ok()
 
     # Groups: envelopes kept or not (section 3.2), the code's group, the
     # join proof, and the mail opened with HPKE (section 5).
@@ -389,7 +267,7 @@ def end_to_end(verbose, faults=()):
     import run
     from msfpconf.checks import Suite
     from msfpconf.fake import FakeServer
-    from msfpconf.report import FAIL, SKIP, Report
+    from msfpmedia.report import FAIL, SKIP, Report
     fake = FakeServer({"suite.example.org": "127.0.0.1"}, faults=faults)
     port = free_ports(3)
     args = run.parser().parse_args([
@@ -426,7 +304,8 @@ def main():
         print("\n".join(bad))
         print("vectors: %d case(s) wrong" % len(bad))
         return 1
-    print("vectors: every case of vectors/v0/ and of test-draft-strict.json (as core 0 section 17 says) decides as the files say")
+    print("vectors: every case of vectors/v0/, of test-draft-strict.json (as core 0 section 17 says) and of msfp-media's "
+          "vectors/v0/ decides as the files say")
     if "--vectors-only" in sys.argv:
         return 0
     bad, n, took, report, suite = end_to_end(verbose)

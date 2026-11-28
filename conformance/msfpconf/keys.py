@@ -8,7 +8,8 @@ import os
 import socket
 import time
 
-from .report import PASS
+from msfpmedia.report import PASS
+
 from .wire import (Client, Key, b64u, commitment, dumps, fingerprint, host_of, is_int, make_rotation,
                    make_revocation, make_uncallable_address, read_revocation, read_rotation, split_hostport)
 

@@ -1,46 +1,20 @@
-"""The parts' checks: catalog (libraries, titles, extras, local titles and
-their image), playback (play, progress, stop, limits, the choice of copy
-and tracks), as revised by proposal 16. Deliveries, downloads, scans,
-previews and music are in revision.py; the media in streams.py."""
+"""MSFP's checks of the parts that carry MSFP Media (spec/v0/catalog.md,
+playback.md, media.md): a libraries answer's limits (playback 5), the
+owner's switch of local titles (catalog 5), a race for the last stream
+(playback 6.2) and the purpose scan (playback 8, media 4.2). MSFP
+Media's checks are msfp-media's (msfpmedia.checks); the carrier
+(carrier.py) runs these in their place among them."""
 
 import concurrent.futures
-import json
-import os
-import re
-import time
 
-from .content import LIBRARY_ID, copies_order_problems, kind_of, title_notes, title_problems
-from .copies import SERVED_FORM, sheet_count, video_key
-from .media import Refused as MediaRefused, image_answer, image_kind, image_url
-from .music import music_key
-from .playback import STREAM_NAME, Refused, keep_limits, keep_play_answer
-from .report import PASS
-from .revision import RevisionChecks
-from .streams import StreamChecks
-from .wire import STREAM, dumps, is_int
+from msfpmedia.base import dumps, is_int
+from msfpmedia.checks import MediaChecks
+from msfpmedia.report import PASS
 
-PAGE_BYTES = 3 * 1024 * 1024
-TEXT_FORMATS = ("subrip", "webvtt", "mov_text", "ttml", "ass", "ssa")
-PICTURE_FORMATS = ("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle")   # ffmpeg names (MSFP Media video 3.5)
-VECTORS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "vectors", "v0")
+from .carrier import NO_LIMITS, READ_AT_MOST, SCAN_FLOOR, keep_limits, scan_answer
+
 LIMIT_FIELDS = ("streams", "transcodes", "bitrateKbps", "downloads", "downloadsPerDay", "downloadKbps", "scansPerDay",
                 "audioStreams", "audioTranscodes")
-MAX = 2**53 - 1
-# Members of play's answer proposal 17 dropped (MSFP Media playing 2.3, MSFP Media video 5.3):
-# unknown to a viewer's server, which ignores them.
-DROPPED_ANSWER = ("stream", "durationMs", "audioTracks", "subtitleTracks", "subtitleTrack", "forcedTrack",
-                  "forcedTracks", "burnedTrack", "fonts", "trickplay", "versions", "info")
-
-
-def _urls(v):
-    """Every string in a JSON value that is an http or https URL."""
-    if isinstance(v, str):
-        return [v] if re.match(r"(?i)https?://", v) else []
-    if isinstance(v, list):
-        return [u for x in v for u in _urls(x)]
-    if isinstance(v, dict):
-        return [u for x in v.values() for u in _urls(x)]
-    return []
 
 
 def _x():
@@ -48,116 +22,17 @@ def _x():
     return Fail, Skip
 
 
-def _avc_within(codecs):
-    """An avc1 or avc3 string of a profile up to High (66, 77, 100) and a
-    level up to 4.1 (MSFP Media playing 2.7's baseline)."""
-    m = re.fullmatch(r"(avc1|avc3)\.([0-9A-Fa-f]{2})[0-9A-Fa-f]{2}([0-9A-Fa-f]{2})", codecs or "")
-    return bool(m) and int(m.group(2), 16) in (66, 77, 100) and 10 <= int(m.group(3), 16) <= 41
+def _h(hdrs, name):
+    return dict((k.lower(), v) for k, v in hdrs).get(name.lower())
 
 
-def baseline_outside(cp, audio_id, video):
-    """MSFP Media playing 2.7: why the copy's streams aren't within the baseline (H.264
-    at most High and level 4.1, 8-bit, progressive, H.273 1/1/1; AAC-LC, at
-    most 2 channels and 48 kHz), or "" when they are. A fact the copy
-    doesn't state isn't known to be within."""
-    why = []
-    v = cp.get("video") if isinstance(cp.get("video"), dict) else None
-    if video and v:
-        col = v.get("colour") if isinstance(v.get("colour"), dict) else {}
-        if v.get("codec") != "h264" or not _avc_within(v.get("codecs")):
-            why.append("video %s %s" % (v.get("codec"), v.get("codecs") or "(no codecs)"))
-        elif v.get("bitDepth") != 8 or v.get("interlaced") is True:
-            why.append("video of %s bits%s" % (v.get("bitDepth"), ", interlaced" if v.get("interlaced") else ""))
-        elif (col.get("primaries"), col.get("transfer"), col.get("matrix")) != (1, 1, 1):
-            why.append("video colour %s, not BT.709 (1/1/1)" % dumps(col).decode())
-    tracks = [t for t in cp.get("audioTracks") or [] if isinstance(t, dict)]
-    t = next((x for x in tracks if x.get("id") == audio_id), None) or next(
-        (x for x in tracks if x.get("default") is True), tracks[0] if tracks else None)
-    if t is not None and not (t.get("codec") == "aac" and t.get("codecs") == "mp4a.40.2"
-                              and is_int(t.get("channels")) and 1 <= t["channels"] <= 2
-                              and is_int(t.get("sampleRate")) and 1 <= t["sampleRate"] <= 48000):
-        why.append("audio %s %s, %s channel(s), %s Hz" % (t.get("id"), t.get("codecs") or t.get("codec"),
-                                                         t.get("channels"), t.get("sampleRate")))
-    return "; ".join(why)
+class PartChecks(MediaChecks):
 
+    # ---- the libraries' limits (playback 5, music 5.1) ----------------------------------
 
-def parts_of(cp):
-    """The number of files a copy is made of (MSFP Media video 3.2: parts, absent for one)."""
-    n = cp.get("parts") if isinstance(cp, dict) else None
-    return n if is_int(n) and n >= 2 else 1
-
-
-def scheme_of(key):
-    """A title key's scheme (tmdb, tvdb, mb, local), or None."""
-    p = key.split("/") if isinstance(key, str) else []
-    return p[1] if len(p) > 2 else None
-
-
-class PartChecks(StreamChecks, RevisionChecks):
-
-    def need(self, part):
-        _, Skip = _x()
-        if part not in self.parts_on():
-            raise Skip("%s isn't on between the server and this suite (core 10.3)" % part)
-
-    @property
-    def root(self):
-        """The server's stream root (MSFP Media fetching 1)."""
-        return self.target + self.client.base[:-len("/api/v1/federation/")] + STREAM
-
-    # ---- the catalog's view of a title ---------------------------------------------
-
-    def title_of(self, key):
-        return next((t for t in self.whole or [] if t.get("key") == key), None)
-
-    def copies_of(self, key):
-        t = self.title_of(key)
-        cs = t.get("copies") if isinstance(t, dict) else None
-        return [c for c in cs if isinstance(c, dict)] if isinstance(cs, list) else []
-
-    def copy_of(self, key, vid=None):
-        """The copy of key the catalog lists as vid (the first without it)."""
-        cs = self.copies_of(key)
-        if vid is None:
-            return cs[0] if cs else None
-        return next((c for c in cs if c.get("id") == vid), None)
-
-    # ---- catalog: libraries (MSFP Media listing 2) -------------------------------------------
-
-    def catalog_checks(self):
+    def limits_checks(self):
         Fail, Skip = _x()
-        c = self.client
-
-        def libs():
-            self.need("catalog")
-            a = self.signed(c.call("libraries", {}), 200)
-            j = a.json
-            if "name" in j and not isinstance(j["name"], str):
-                raise Fail("name isn't a string (a caller fails the answer)")
-            ls = j.get("libraries")
-            if not isinstance(ls, list):
-                raise Fail("libraries isn't an array (a caller fails the answer)")
-            ids = []
-            for lib in ls:
-                if not isinstance(lib, dict):
-                    raise Fail("a library that isn't an object: %r" % lib)
-                i = lib.get("id")
-                if not isinstance(i, str) or not LIBRARY_ID.fullmatch(i):
-                    raise Fail("an ID outside 1 to 64 characters of A-Z a-z 0-9 _ -: %r" % i)
-                if i in ids:
-                    raise Fail("the ID %r twice" % i)
-                ids.append(i)
-                if not isinstance(lib.get("name"), str):
-                    raise Fail("library %s: name isn't a string" % i)
-                if "kind" in lib:
-                    self.note_default("MSFP Media listing 2", "library %s carries kind, dropped by proposal 17 (the titles' keys say "
-                                      "what it holds; ignored by a caller)" % i)
-            if len(ls) > 200:
-                raise Fail("%d libraries: a caller keeps 200" % len(ls))
-            self.libraries = ls
-            self.limits = j.get("limits")
-            return "%d librar%s: %s" % (len(ls), "y" if len(ls) == 1 else "ies", ", ".join(x["id"] for x in ls) or "none offered")
-        self.check("L1", "MSFP Media listing 2", "libraries: 200 signed, IDs in their form, no ID twice", libs)
+        self.limits = (self.libraries_answer or {}).get("limits")
 
         def limits():
             self.need("catalog")
@@ -186,517 +61,8 @@ class PartChecks(StreamChecks, RevisionChecks):
         self.check("L2", "playback 5; music 5.1", "libraries' limits: only with playback on, each in its range "
                    "(streams and downloads to 1,000, scans)", limits)
 
-        def opaque():
-            self.need("catalog")
-            if not self.libraries:
-                raise Skip("nothing offered to this suite")
-            looks = [x["id"] for x in self.libraries if re.fullmatch(
-                r"[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", x["id"])]
-            if looks:
-                raise Fail("IDs shaped like a media server's item IDs (32 hex digits, a GUID): %s; MSFP Media listing 2.1 says "
-                           "they must not be one (a heuristic: a random value may look so)" % looks)
-            return "none looks like a media server's ID"
-        self.check("L3", "MSFP Media listing 2.1", "library IDs don't look like the media server's own IDs", opaque, "SHOULD")
 
-        def stable():
-            self.need("catalog")
-            a = self.signed(c.call("libraries", {}), 200)
-            again = [x.get("id") for x in a.json.get("libraries", []) if isinstance(x, dict)]
-            if again != [x["id"] for x in self.libraries]:
-                raise Fail("two readings a moment apart give other IDs: %s, then %s" % ([x["id"] for x in self.libraries], again))
-            return "the same IDs twice"
-        self.check("L4", "MSFP Media listing 2.1", "library IDs are stable between two readings", stable)
-
-        def bad_body():
-            self.need("catalog")
-            out = []
-            for name, body in (("an array", b"[]"), ("not JSON", b"libraries"), ("a member twice", b'{"a":1,"a":2}'),
-                               ("a lone surrogate", b'{"x":"\\udc00"}')):
-                a = c.raw(c.base + "libraries", body, c.headers(c.base + "libraries", body))
-                self.signed(a, 404)
-                out.append(name)
-            return "signed 404 for " + ", ".join(out)
-        self.check("L5", "MSFP Media listing 2; core 2.3", "a libraries body that isn't an I-JSON object gets a signed 404", bad_body)
-        self.titles_checks()
-
-    # ---- catalog: titles (MSFP Media listing 3, MSFP Media video 3-4, MSFP Media music 2-3) ------------------------------
-
-    def read_titles(self, libs, since=None, after="", limit_pages=400, **filters):
-        """A reading: its pages, each with "_bytes", the size of its body.
-        libs None: no libraries member (every library the suite may see);
-        filters: kind, under (MSFP Media listing 3.6)."""
-        Fail, _ = _x()
-        pages = []
-        while len(pages) < limit_pages:
-            req = dict(filters, after=after)
-            if libs is not None:
-                req["libraries"] = libs
-            if since is not None:
-                req["since"] = since
-            a = self.signed(self.client.call("titles", req), 200)
-            j = a.json
-            for f, t in (("titles", list), ("gone", list), ("next", str), ("changes", bool)):
-                if f in j and not isinstance(j[f], t):
-                    raise Fail("%s isn't a%s %s: a caller fails the whole answer (MSFP Media listing 3.3)" % (f, "n" if t is list else "", t.__name__))
-            if "seq" in j and not is_int(j["seq"]):
-                raise Fail("seq isn't an integer: a caller fails the answer (MSFP Media listing 3.3)")
-            j = dict(j, _bytes=len(a.body))
-            pages.append(j)
-            nxt = j.get("next")
-            if not isinstance(nxt, str) or nxt == "" or nxt <= after:
-                break
-            after = nxt
-        if len({bool(p.get("changes")) for p in pages}) > 1:
-            raise Fail("a reading mixes changes and whole-list pages (MSFP Media listing 3.2)")
-        return pages
-
-    def validate_page(self, j, libs, after, whole):
-        bad = []
-        titles = j.get("titles") or []
-        keys = []
-        on = self.parts_on()
-        for t in titles:
-            _, probs = title_problems(t, libs, on)
-            bad += probs
-            if isinstance(t, dict) and isinstance(t.get("copies"), list):
-                for x in copies_order_problems(t.get("key"), t["copies"]):
-                    self.note_default("MSFP Media video 3.7", x)
-            for x in title_notes(t):
-                self.note_default("proposal 17", x)
-            if isinstance(t, dict) and isinstance(t.get("key"), str):
-                keys.append(t["key"])
-        bk = [k.encode() for k in keys]
-        if bk != sorted(bk) or len(set(bk)) != len(bk):
-            bad.append("keys not in strictly ascending byte order (MSFP Media listing 3.1)")
-        if any(k.encode() <= after.encode() for k in keys):
-            bad.append("keys not after %r" % after)
-        gone = j.get("gone") or []
-        if len(titles) + len(gone) > 5000:
-            bad.append("more than 5,000 keys in a page (MSFP Media listing 3.1)")
-        if j.get("_bytes", 0) > PAGE_BYTES:
-            bad.append("a page of %d bytes, over 3 MiB of JSON (MSFP Media listing 3.1)" % j["_bytes"])
-        if whole and j.get("next") and keys and j["next"] != keys[-1]:
-            bad.append("next isn't the page's last key (MSFP Media listing 3.1)")
-        if isinstance(j.get("next"), str) and len(j["next"].encode()) > 512:
-            bad.append("a next over 512 bytes (MSFP Media listing 3.1)")
-        if "seq" in j and not j["seq"] > 0:
-            bad.append("seq %r isn't positive" % j["seq"])
-        if not whole and any(not isinstance(g, str) or len(g.encode()) > 128 for g in gone):
-            bad.append("a gone entry that isn't a key of at most 128 bytes")
-        return bad
-
-    def titles_checks(self):
-        Fail, Skip = _x()
-        c = self.client
-        libs = sorted(x["id"] for x in self.libraries)
-
-        def need():
-            self.need("catalog")
-            if not libs:
-                raise Skip("the server offers this suite no library: offer one on the server, then run again")
-
-        def whole():
-            need()
-            pages = self.read_titles(libs)
-            bad, after = [], ""
-            for j in pages:
-                if j.get("changes") is True:
-                    bad.append("a reading without since answered with changes")
-                bad += self.validate_page(j, libs, after, True)
-                ks = [t["key"] for t in (j.get("titles") or []) if isinstance(t, dict) and isinstance(t.get("key"), str)]
-                if ks:
-                    after = ks[-1]
-            self.pages = pages
-            self.whole = [t for j in pages for t in (j.get("titles") or []) if isinstance(t, dict)]
-            self.seq = pages[0].get("seq")
-            if bad:
-                raise Fail("\n".join(sorted(set(bad))[:25]))
-            kinds = {}
-            for t in self.whole:
-                kinds[kind_of(t)] = kinds.get(kind_of(t), 0) + 1
-            ncopies = sum(len(t.get("copies") or []) for t in self.whole)
-            return "%d titles in %d page(s) (%s), %d copies, seq %s" % (
-                len(self.whole), len(pages), ", ".join("%d %s" % (v, k) for k, v in sorted(kinds.items())), ncopies, self.seq)
-        self.check("T1", "MSFP Media listing 3, 3.1, 3.3, 3.4, 4; MSFP Media video 3, 3.1 to 3.10, 4; MSFP Media music 2, 3", "titles, the whole list: keys, "
-                   "kinds, libraries, copies in their forms and order, extras, local descriptions, paging", whole)
-
-        def paging():
-            need()
-            if not self.whole or len(self.whole) < 2:
-                raise Skip("fewer than 2 titles offered")
-            after = self.whole[0]["key"]
-            got = [t["key"] for j in self.read_titles(libs, after=after) for t in (j.get("titles") or [])]
-            want = [t["key"] for t in self.whole[1:]]
-            if got != want:
-                raise Fail("after %r gave %d titles; the whole list has %d after it" % (after, len(got), len(want)))
-            return "after %r gives the rest of the list" % after
-        self.check("T2", "MSFP Media listing 3.1", "a page starts strictly after `after`", paging)
-
-        def changes():
-            need()
-            if not self.seq:
-                raise Skip("the server sends no seq: it is asked for the whole list every time (allowed)")
-            pages = self.read_titles(libs, since=self.seq)
-            j = pages[0]
-            if j.get("changes") is not True:
-                return (PASS, "the whole list (allowed: MSFP Media listing 3.2 lets a receiver without the log answer so)")
-            bad = sum((self.validate_page(p, libs, "", False) for p in pages), [])
-            if bad:
-                raise Fail("\n".join(bad))
-            return "changes: %d new or changed, %d gone, seq %s" % (len(j.get("titles") or []), len(j.get("gone") or []), j.get("seq"))
-        self.check("T3", "MSFP Media listing 3.2", "titles since the current seq: a changes answer (or the whole list)", changes)
-
-        def above():
-            need()
-            if not self.seq:
-                raise Skip("no seq")
-            if self.read_titles(libs, since=self.seq + 1000000)[0].get("changes") is True:
-                raise Fail("since above the current seq was answered with changes; MSFP Media listing 3.2: the whole list")
-            return "the whole list"
-        self.check("T4", "MSFP Media listing 3.2", "since above the current seq: the whole list", above)
-
-        def negative():
-            need()
-            if self.read_titles(libs, since=-1)[0].get("changes") is True:
-                raise Fail("a negative since was answered with changes")
-            return "the whole list"
-        self.check("T5", "MSFP Media listing 3", "a negative since is answered like 0", negative)
-
-        def bad_requests():
-            need()
-            L = dumps(libs)
-            forms = [("since as a string", dumps({"libraries": libs, "since": "5"})),
-                     ("since 1.0", b'{"libraries":%s,"since":1.0}' % L), ("since 1e1", b'{"libraries":%s,"since":1e1}' % L),
-                     ("since 2^53", b'{"libraries":%s,"since":9007199254740992}' % L),
-                     ("since -0", b'{"libraries":%s,"since":-0}' % L), ("since null", b'{"libraries":%s,"since":null}' % L),
-                     ("after over 512 bytes", dumps({"libraries": libs, "after": "a" * 513})),
-                     ("after not a string", dumps({"libraries": libs, "after": 5})),
-                     ("after null", b'{"libraries":%s,"after":null}' % L),
-                     ("a library ID that isn't a string", dumps({"libraries": libs + [7]})),
-                     ("libraries null", b'{"libraries":null}'),
-                     ("libraries a string", dumps({"libraries": libs[0]}))]
-            bad = []
-            for name, body in forms:
-                a = c.raw(c.base + "titles", body, c.headers(c.base + "titles", body))
-                self.answers.append(a)
-                if not (a.status == 404 and a.signed):
-                    bad.append("%s: %s" % (name, a.short()))
-            if bad:
-                raise Fail("expected a signed 404 for:\n" + "\n".join(bad))
-            return "%d bad requests refused with a signed 404" % len(forms)
-        self.check("T6", "MSFP Media listing 3; core 2.3", "bad titles requests (since, after, libraries; null) get a signed 404", bad_requests)
-
-        def unknown_library():
-            need()
-            j = self.read_titles(["lib_conformance_not_offered"])[0]
-            if j.get("titles"):
-                raise Fail("titles for a library that isn't offered: %r" % j["titles"][:2])
-            return "ignored"
-        self.check("T7", "MSFP Media listing 3; catalog 5", "a library ID that isn't offered is ignored", unknown_library)
-
-        def first_library():
-            need()
-            if len(libs) < 2:
-                raise Skip("one library offered")
-            holders = {}
-            for lib in libs:
-                for p in self.read_titles([lib]):
-                    for t in p.get("titles") or []:
-                        if isinstance(t, dict):
-                            holders.setdefault(t.get("key"), []).append(lib)
-            shared = {k: v for k, v in holders.items() if len(v) > 1}
-            if not shared:
-                return (PASS, "no title is in two libraries; nothing to tell")
-            got = {t["key"]: t.get("library") for t in self.whole}
-            bad = ["%s: library %r, the first by bytes of %s is %r" % (k, got.get(k), v, min(v, key=str.encode))
-                   for k, v in shared.items() if got.get(k) != min(v, key=str.encode)]
-            if bad:
-                raise Fail("\n".join(bad[:10]))
-            return "%d titles in several libraries name the first by bytes" % len(shared)
-        self.check("T8", "MSFP Media listing 3", "a title in several asked libraries names the first in byte order", first_library)
-
-        def watch():
-            need()
-            ok, why = self.can_ask_operator()
-            if not ok:
-                raise Skip(why)
-            if not self.a.watch_changes:
-                raise Skip("run with --watch-changes to have the operator add and remove a title")
-            if not self.seq:
-                raise Skip("the server sends no seq")
-            old = {t["key"] for t in self.whole}
-            seen = {}
-
-            def changed():
-                pages = self.read_titles(libs, since=self.seq)
-                if pages[0].get("changes") is True and any((p.get("titles") or p.get("gone")) for p in pages):
-                    seen["pages"] = pages
-                    return True
-                return False
-            self.ask_operator("change", "add one title to an offered library and remove one", changed, self.a.watch_changes)
-            if "pages" not in seen:
-                raise Skip("no change seen")
-            pages = seen["pages"]
-            new = [t["key"] for p in pages for t in (p.get("titles") or [])]
-            gone = [k for p in pages for k in (p.get("gone") or [])]
-            after = [t for p in self.read_titles(libs) for t in (p.get("titles") or []) if isinstance(t, dict)]
-            now = {t["key"] for t in after}
-            # The titles the checks after this one take (play among them):
-            # the list as it is now, not as it was before the change.
-            self.whole = after
-            self.gone_keys = [x for x in gone if isinstance(x, str) and x not in now]
-            expect = (old - set(gone)) | set(new)
-            if now != expect:
-                raise Fail("the changes don't add up to the new whole list: differ on %s" % sorted(expect ^ now)[:10])
-            return "%s new or changed, %s gone, and they add up to the whole list" % (new, gone)
-        self.check("T9", "MSFP Media listing 3.2", "after a change on the server: titles and gone add up to the new whole list", watch,
-                   operator=True)
-
-        def bounds():
-            need()
-            if not getattr(self, "pages", None):
-                raise Skip("no whole reading")
-            sizes = [p["_bytes"] for p in self.pages]
-            bad = ["page %d: %d titles, %d bytes" % (i, len(p.get("titles") or []), p["_bytes"]) for i, p in enumerate(self.pages)
-                   if len(p.get("titles") or []) > 5000 or p["_bytes"] > PAGE_BYTES]
-            keys = [t["key"] for t in self.whole if isinstance(t.get("key"), str)]
-            if keys and not self.pages[-1].get("next"):
-                rest = self.read_titles(libs, after=keys[-1])
-                more = [t.get("key") for p in rest for t in (p.get("titles") or []) if isinstance(t, dict)]
-                if more:
-                    bad.append("the last page had no next, yet %d title(s) remain after %r: %s (MSFP Media listing 3.1: next "
-                               "is set whenever titles remain)" % (len(more), keys[-1], more[:3]))
-            if bad:
-                raise Fail("\n".join(bad))
-            return "%d page(s) of at most 5,000 titles and 3 MiB (the largest %d bytes); nothing after the last" % (
-                len(sizes), max(sizes))
-        self.check("T10", "MSFP Media listing 3.1", "pages within 5,000 titles and 3 MiB of JSON; next whenever titles remain", bounds)
-
-        def extras():
-            need()
-            xs = [t for t in self.whole or [] if kind_of(t) == "extra"]
-            if not xs:
-                raise Skip("no extra offered (a film's or a series' trailer or featurette, say)")
-            by = {t["key"]: t for t in self.whole}
-            bad = []
-            for x in xs:
-                vk = video_key(x["key"])
-                parent = vk.parent if vk else None
-                p = by.get(parent)
-                if p is None:
-                    bad.append("%s: its title %s isn't in the list (MSFP Media listing 3.5: an extra only with its title)" % (x["key"], parent))
-                elif p.get("library") != x.get("library"):
-                    bad.append("%s: library %r, its title's is %r (MSFP Media listing 3.5: in the same library)" % (
-                        x["key"], x.get("library"), p.get("library")))
-            if bad:
-                raise Fail("\n".join(bad[:10]))
-            return "%d extra(s), each with its title, in its library" % len(xs)
-        self.check("T11", "MSFP Media listing 3.5; MSFP Media video 3.9, 4.6", "extras only with their title, in the same library", extras)
-        self.filter_checks(libs)
-        self.image_checks()
-        self.local_switch(libs)
-
-    # ---- the image of a local title (MSFP Media listing 4.4, MSFP Media fetching 3.4) ----------------------------
-
-    # ---- the titles request's filters (MSFP Media listing 3, 3.6) ----------------------------
-
-    def filter_checks(self, libs):
-        """libraries left out, kind and under, as MSFP Media listing 3 and
-        3.6 add them: each answer against what the whole list (T1) says
-        the server must list."""
-        Fail, Skip = _x()
-        c = self.client
-        from .listing import kind_of as key_kind, under as is_under
-
-        def need():
-            self.need("catalog")
-            if not self.whole:
-                raise Skip("no titles offered (T1)")
-
-        def held(t):
-            place = t.get("place") if isinstance(t.get("place"), dict) else {}
-            return {"key": t["key"], "season": place.get("season"), "album": t.get("album"),
-                    "artists": t.get("artists") if isinstance(t.get("artists"), list) else []}
-
-        def keys(pages):
-            return [(t.get("key"), t.get("library")) for p in pages for t in (p.get("titles") or []) if isinstance(t, dict)]
-
-        def refused(forms):
-            bad = []
-            for name, body in forms:
-                a = c.raw(c.base + "titles", body, c.headers(c.base + "titles", body))
-                self.answers.append(a)
-                if not (a.status == 404 and a.signed):
-                    bad.append("%s: %s, not a signed 404 (MSFP Media listing 3.3)" % (name, a.short()))
-            return bad
-
-        def no_libraries():
-            need()
-            got = keys(self.read_titles(None))
-            want = [(t["key"], t.get("library")) for t in self.whole]
-            if got != want:
-                diff = sorted(set(got) ^ set(want))
-                raise Fail("without libraries, %d titles; with every library offered (T1), %d; they differ on %s "
-                           "(MSFP Media listing 3: absent, every library the caller may see)" % (len(got), len(want), diff[:6]))
-            return "without libraries: the %d titles of every library offered, with the same library each" % len(got)
-        self.check("T13", "MSFP Media listing 3", "titles without libraries: every library the suite may see", no_libraries)
-
-        def kinds():
-            need()
-            present = []
-            for t in self.whole:
-                k = key_kind(t["key"])[0]
-                if k and k not in present:
-                    present.append(k)
-            bad, out = [], []
-            for k in present[:6]:
-                got = [x for x, _ in keys(self.read_titles(libs, kind=k))]
-                want = [t["key"] for t in self.whole if key_kind(t["key"])[0] == k]
-                if got != want:
-                    bad.append("kind %s: %d titles, the whole list has %d of that kind; they differ on %s" % (
-                        k, len(got), len(want), sorted(set(got) ^ set(want))[:4]))
-                else:
-                    out.append("%d %s" % (len(got), k))
-            got = keys(self.read_titles(libs, kind="conformance-kind"))
-            if got:
-                bad.append("kind conformance-kind, a token that is no kind: %d titles, not none" % len(got))
-            bad += refused([("kind in capitals", dumps({"libraries": libs, "kind": "Movie"})),
-                            ("an empty kind", dumps({"libraries": libs, "kind": ""})),
-                            ("kind an array", dumps({"libraries": libs, "kind": ["movie"]}))])
-            if bad:
-                raise Fail("\n".join(bad))
-            return "kind lists that kind alone (%s); a token that is no kind, none; malformed kinds a signed 404" % ", ".join(out)
-        self.check("T14", "MSFP Media listing 3.6, 3.3", "titles with kind: the titles of that kind only; malformed, 404", kinds)
-
-        def under():
-            need()
-            whole = [held(t) for t in self.whole]
-            picked = []
-            for want in ("movie", "series", "season", "album", "artist"):
-                cands = [t["key"] for t in self.whole if key_kind(t["key"])[0] == want]
-                rich = [u for u in cands if any(is_under(u, t) for t in whole)]
-                if rich or cands:
-                    picked.append((rich or cands)[0])
-            if not picked:
-                raise Skip("no film, series, season, album or artist offered")
-            bad, out = [], []
-            for u in picked:
-                got = [x for x, _ in keys(self.read_titles(libs, under=u))]
-                want = [t["key"] for t in whole if is_under(u, t)]
-                if got != want:
-                    bad.append("under %s: %s; MSFP Media listing 3.6 says %s" % (u, got[:6], want[:6]))
-                else:
-                    out.append("%s: %d" % (u, len(got)))
-            if self.seq:
-                p = self.read_titles(libs, since=self.seq, under=picked[0])
-                if p[0].get("changes") is True:
-                    bad.append("under with since: a changes answer (MSFP Media listing 3.2: with under, always the whole list)")
-            if keys(self.read_titles(libs, under="movie/tmdb/9999999999")):
-                bad.append("under a key the server doesn't hold: titles, not none")
-            bad += refused([("under a number", dumps({"libraries": libs, "under": 7})),
-                            ("under over 512 bytes", dumps({"libraries": libs, "under": "movie/tmdb/" + "9" * 502}))])
-            if bad:
-                raise Fail("\n".join(bad))
-            return "under lists the titles directly under it (%s); with since, the whole list; under a key not held, " \
-                   "none; malformed, a signed 404" % "; ".join(out)
-        self.check("T15", "MSFP Media listing 3.6, 3.2, 3.3", "titles with under: the titles directly under that key; "
-                   "always the whole list; malformed, 404", under)
-
-    def local_titles(self):
-        return [t for t in self.whole or [] if scheme_of(t.get("key")) == "local"]
-
-    def image_checks(self):
-        Fail, Skip = _x()
-        c = self.client
-        st = {}
-
-        def on():
-            self.need("catalog")
-            if not ({"video", "music"} & self.parts_on()):
-                raise Skip("neither video nor music is on: no local titles, no image call")
-
-        def image():
-            on()
-            with_image = [t for t in self.local_titles() if t.get("image") is True and kind_of(t) in ("movie", "series",
-                                                                                                      "artist", "album")]
-            if not with_image:
-                raise Skip("no local title with an image offered (share local titles with this peer, one with an image)")
-            t = with_image[0]
-            a = self.signed(c.call("image", {"title": t["key"]}), 200)
-            try:
-                ticket = image_answer(a.json)
-            except MediaRefused as e:
-                raise Fail("the answer: %s (MSFP Media listing 4.4: {\"ticket\"})" % e)
-            if _urls(a.json):
-                raise Fail("the answer carries a URL (MSFP Media listing 4.4, MSFP Media fetching 1: answers carry no URLs): %s" % _urls(a.json)[0])
-            if len(ticket) < 22:
-                raise Fail("a ticket of %d characters can't hold 128 random bits (MSFP Media fetching 1)" % len(ticket))
-            url = image_url(self.root, ticket)
-            status, hdrs, body = c.get(url, limit=1024 * 1024 + 1)
-            if status != 200:
-                raise Fail("the image: %d" % status)
-            try:
-                fmt, w, h = image_kind(body)
-            except MediaRefused as e:
-                raise Fail("the image of %s: %s (MSFP Media listing 4.4)" % (t["key"], e))
-            ct = dict((k.lower(), v) for k, v in hdrs).get("content-type", "")
-            if ct.split(";")[0].strip().lower() != "image/" + fmt:
-                raise Fail("a %s served as %r" % (fmt, ct))
-            st["url"] = url
-            return "%s: a %dx%d %s of %d bytes, at <stream root><ticket>/image built from the answer's ticket" % (
-                t["key"], w, h, fmt.upper(), len(body))
-        self.check("I1", "MSFP Media listing 4.4; MSFP Media fetching 1, 3.4", "image: 200 signed, the ticket and no URL; <stream root><ticket>/image "
-                   "a JPEG or PNG within 1 MiB and 4,096 pixels", image)
-
-        def scope():
-            if "url" not in st:
-                raise Skip("no image fetched")
-            base = st["url"][:-len("image")]
-            bad = []
-            for name in ("file", "master.m3u8", "trickplay/0", "subtitles/s0/0"):
-                status, _, _ = c.get(base + name)
-                if status != 404:
-                    bad.append("%s under the image ticket: %d, not 404 (MSFP Media fetching 4.2: it opens the image only)" % (name, status))
-            bad += self.head_405([st["url"]])
-            status, _, _ = c.get(st["url"] + "?x=1")
-            if status != 404:
-                bad.append("the image with a query: %d" % status)
-            if bad:
-                raise Fail("\n".join(bad))
-            return "the image ticket opens nothing else (404); HEAD 405 with Allow: GET; a query 404"
-        self.check("I2", "MSFP Media fetching 4.2, 2.2; MSFP Media listing 4.4", "an image ticket opens only its image; HEAD 405", scope)
-
-        def refusals():
-            on()
-            bad = []
-            for name, body, want in (("an array", b"[]", 400), ("no title", b"{}", 400),
-                                     ("a title that isn't a string", b'{"title":7}', 400),
-                                     ("a key not offered", dumps({"title": "movie/local/conformanceNoSuchTitle"}), 404),
-                                     ("a key in no canonical form", dumps({"title": "movie/tmdb/0949"}), 404)):
-                a = c.call("image", body)
-                self.answers.append(a)
-                if not (a.status == want and a.signed):
-                    bad.append("%s: %s, not a signed %d" % (name, a.short(), want))
-            public = next((t for t in self.whole or [] if scheme_of(t.get("key")) in ("tmdb", "tvdb", "mb")), None)
-            if public:
-                a = c.call("image", {"title": public["key"]})
-                self.answers.append(a)
-                if not (a.status == 404 and a.signed):
-                    bad.append("%s, not a local title: %s, not a signed 404" % (public["key"], a.short()))
-            others = [t for t in self.local_titles() if t.get("image") is not True or kind_of(t) not in (
-                "movie", "series", "artist", "album")]
-            if others:
-                a = c.call("image", {"title": others[0]["key"]})
-                self.answers.append(a)
-                if not (a.status == 404 and a.signed):
-                    bad.append("%s (%s, image %r): %s, not a signed 404" % (others[0]["key"], kind_of(others[0]),
-                                                                          others[0].get("image"), a.short()))
-            if bad:
-                raise Fail("\n".join(bad))
-            return "400 for bodies that aren't {title}; 404 for a key not offered%s%s" % (
-                ", a public title" if public else "", ", a local title without an image" if others else "")
-        self.check("I3", "MSFP Media listing 4.4", "image refusals: a signed 400 for a malformed body, 404 for a title without "
-                   "an image to give", refusals)
+    # ---- local titles (catalog 5) ---------------------------------------------------------
 
     def local_switch(self, libs):
         """T12 (with --watch-local): the operator turns the sharing of local
@@ -748,474 +114,11 @@ class PartChecks(StreamChecks, RevisionChecks):
         self.check("T12", "catalog 5; MSFP Media video 4.5", "local titles follow the owner's switch, which forces a whole reading",
                    run, operator=True)
 
-    # ---- playback (MSFP Media playing 2-6, MSFP Media video 5, MSFP Media music 5) -------------------------------------
+    # ---- the last stream (playback 6.2) -----------------------------------------------------
 
-    def play(self, body):
-        """A play, paced below the suggested play limit (core 8.3: 30 a
-        minute, bursts of 20), and waiting out a signed retryAfter once."""
-        now = time.time()
-        self._plays = [t for t in getattr(self, "_plays", []) if t > now - 60]
-        if len(self._plays) >= 15:
-            time.sleep(2.2)
-        self._plays.append(time.time())
-        a = self.client.call("play", body)
-        if a.status == 429 and a.signed:
-            ra = a.json.get("retryAfter") if isinstance(a.json, dict) else None
-            wait = ra if is_int(ra) and 0 < ra <= 120 else 10
-            self.r.note("play answered 429 rate-limited: waiting %d s and trying again once" % wait)
-            time.sleep(wait)
-            a = self.client.call("play", body)
-        return a
-
-    def stop(self, pb):
-        if isinstance(pb, dict) and isinstance(pb.get("id"), str):
-            try:
-                self.client.call("stop", {"id": pb["id"]})
-            except OSError:
-                pass
-
-    def playable(self):
-        """A title play takes, with a copy: a film, an episode or an extra
-        (MSFP Media video 5), else a track (MSFP Media music 5)."""
-        _, Skip = _x()
-        on = self.parts_on()
-        if "playback" not in on:
-            raise Skip("playback isn't on between the server and this suite")
-        if not self.whole:
-            raise Skip("no titles read (offer a library with a film or an episode)")
-        def score(t):
-            """The title that exercises most: a film before an episode, an
-            extra and a track; then a copy of one file, with subtitles,
-            previews, several audio tracks; a public key before a local one."""
-            cp = self.copies_of(t["key"])[0]
-            return (("movie", "episode", "extra", "track").index(kind_of(t)), parts_of(cp) > 1,
-                    -len(cp.get("subtitleTracks") or []), not isinstance(cp.get("previewLayout"), dict),
-                    -len(cp.get("audioTracks") or []), scheme_of(t["key"]) == "local")
-        found = [t for t in self.whole if kind_of(t) in ("movie", "episode", "extra", "track")
-                 and ("music" if kind_of(t) == "track" else "video") in on
-                 and (video_key(t["key"]) or music_key(t["key"])) and self.copies_of(t["key"])]
-        if not found:
-            raise Skip("no film, episode, extra or track with copies among the titles offered")
-        return min(found, key=score)["key"]
-
-    def view(self, j, title, delivery=None, purpose=None):
-        """What a viewer's server keeps of a play answer (MSFP Media playing 2.3,
-        MSFP Media video 5.3), with "url", the stream's URL, and "base", <stream
-        root><ticket>/, built from the ticket (MSFP Media fetching 1); raises Refused."""
-        vid = j.get("versionId") if isinstance(j, dict) and isinstance(j.get("versionId"), str) else None
-        cat = self.copy_of(title, vid) or {}
-        subs = [t.get("id") for t in cat.get("subtitleTracks") or [] if isinstance(t, dict)]
-        kept = keep_play_answer(j, self.root, delivery, cat.get("etag"), purpose,
-                                "video" if video_key(title) else "music", subs)
-        kept["base"] = self.root + kept["ticket"] + "/"
-        kept["url"] = kept["base"] + STREAM_NAME[kept["protocol"]]
-        return kept
-
-    def check_playback(self, j, title, delivery=None, purpose=None):
-        """MSFP Media playing 2.3, MSFP Media fetching 1, MSFP Media video 5.3 and 5.4, MSFP Media music 5: the problems
-        of a play answer, and what a viewer's server keeps of it (view), or
-        None when it refuses it."""
-        bad = []
-        try:
-            pb = self.view(j, title, delivery, purpose)
-        except Refused as e:
-            return ["refused by the viewer's server (it sends stop and gives up): %s" % e], None
-        if len(pb["ticket"]) < 22:
-            bad.append("a ticket of %d characters can't hold 128 random bits (MSFP Media fetching 1)" % len(pb["ticket"]))
-        if len(pb["id"]) < 22:
-            bad.append("a playback ID of %d characters can't hold 128 random bits (MSFP Media playing 2.3)" % len(pb["id"]))
-        urls = sorted(set(_urls(j)))
-        if urls:
-            bad.append("the answer carries URLs (MSFP Media playing 2.3, MSFP Media fetching 1: answers carry no URLs, the viewer's server "
-                       "builds them from the ticket): %s" % ", ".join(u[:80] for u in urls[:3]))
-        for f in ("audioTrack", "maxBitrateKbps"):
-            if f in j and pb.get(f) != j[f]:
-                bad.append("%s %s: a viewer's server cleans it to %s (MSFP Media playing 2.3)" % (
-                    f, dumps(j[f]).decode()[:120], dumps(pb[f]).decode()[:120] if f in pb else "nothing"))
-        gone = [f for f in DROPPED_ANSWER if f in j]
-        if gone:
-            self.note_default("MSFP Media playing 2.3, MSFP Media video 5.3", "%s: play's answer still sends %s, dropped by proposal 17 "
-                              "(ignored by a viewer's server)" % (title, ", ".join(gone)))
-        if purpose == "scan":
-            sb = j.get("scanBytes")
-            if not (is_int(sb) and 4194304 <= sb <= 1073741824):
-                bad.append("scanBytes %s: a scan's answer must state it, 4,194,304 to 1,073,741,824 (MSFP Media playing 2.3; playback 8; a "
-                           "caller counts on 4 MiB)" % (dumps(sb).decode() if "scanBytes" in j else "missing"))
-        cat = self.copy_of(title, pb["versionId"])
-        if cat is None:
-            bad.append("versionId %r is none of the title's copies in the catalog (MSFP Media playing 2.3: version IDs are the "
-                       "copies' ids)" % pb["versionId"])
-        else:
-            if pb.get("readTitleAgain"):
-                bad.append("etag %r; the catalog's copy %s has %r, and nothing changed on the server (MSFP Media playing 2.3, "
-                           "MSFP Media fetching 3.2: the copy's etag, as the catalog gives it)" % (pb["etag"], cat.get("id"), cat.get("etag")))
-            ids = {t.get("id") for t in cat.get("audioTracks") or [] if isinstance(t, dict)}
-            if pb.get("audioTrack") and ids and pb["audioTrack"] not in ids:
-                bad.append("audioTrack %s isn't one of the copy's in the catalog %s" % (pb["audioTrack"], sorted(ids)))
-        if video_key(title):
-            sent = j.get("subtitles")
-            if sent is not None and not isinstance(sent, list):
-                bad.append("subtitles isn't an array (MSFP Media video 5.3)")
-            elif isinstance(sent, list):
-                if len(sent) > 64:
-                    bad.append("subtitles holds %d entries; a viewer's server keeps 64 (MSFP Media video 5.3)" % len(sent))
-                kept = {x["id"]: x for x in pb.get("subtitles", [])}
-                for e in sent:
-                    if not isinstance(e, dict) or e.get("id") not in kept:
-                        bad.append("subtitles entry %s: dropped by a viewer's server (MSFP Media video 5.3: a track of the copy, "
-                                   "once, form text or picture)" % dumps(e).decode()[:80])
-                    elif "ass" in e and not (e["ass"] is True and e.get("form") == "text"):
-                        bad.append("subtitles entry %s: ass %s counts as absent (MSFP Media video 5.3: true, with text only)"
-                                   % (e["id"], dumps(e["ass"]).decode()))
-            formats = {t.get("id"): t.get("format") for t in (cat or {}).get("subtitleTracks") or [] if isinstance(t, dict)}
-            served = {x["id"]: x for x in pb.get("subtitles", [])}
-            for sid, fmt in sorted(formats.items(), key=lambda x: str(x[0])):
-                want = SERVED_FORM.get(fmt)
-                if want is None or delivery == "file":
-                    continue
-                got = served.get(sid)
-                have = (got["form"], bool(got.get("ass"))) if got else None
-                if have != want:
-                    bad.append("subtitle track %s (%s): served %s; MSFP Media video 5.4's table: %s%s, a must for the formats it "
-                               "lists" % (sid, fmt, "%s%s" % (have[0], ", ass" if have[1] else "") if have else "not at all",
-                                          want[0], ", ass: true" if want[1] else ""))
-            if "fontCount" in j and pb.get("fontCount", 0) != j["fontCount"]:
-                bad.append("fontCount %s: a viewer's server takes 0 (MSFP Media video 5.3: 0 to 64)" % dumps(j["fontCount"]).decode())
-        else:
-            for f in ("subtitles", "fontCount"):
-                if j.get(f):
-                    bad.append("%s in the answer for a track (MSFP Media music 5: audio only; a viewer's server ignores it)" % f)
-        return bad, pb
-
-    @staticmethod
-    def bad_plays(k):
-        """The malformed play requests of vectors/v0/playback.json (those
-        answered 400), for title k instead of the vectors' film."""
-        v = json.load(open(os.path.join(VECTORS, "playback.json")))
-        out = []
-        for g in ("requests", "replaces", "deliveries", "downloads", "scans"):
-            for c in v[g]:
-                if c.get("call") != "play" or c["valid"] or c["status"] != 400:
-                    continue
-                text = c["text"]
-                if any('"%s"' % u in text for u in v["context"].get("unreachable") or []):
-                    continue    # a 400 at step 4 of a title the vectors' owning server holds, not this one
-                if not video_key(k) and re.search(r"subtitle|burnSubtitle|videoCodec|maxHeight|range", text):
-                    continue
-                out.append((c["name"], text.replace('"movie/tmdb/949"', json.dumps(k)).encode()))
-        return out
-
-    def playback_checks(self):
-        Fail, Skip = _x()
-        c = self.client
-        st = {}
-
-        def title():
-            if "key" not in st:
-                st["key"] = self.playable()
-            return st["key"]
-
-        def bad_bodies():
-            k = title()
-            forms = self.bad_plays(k)
-            bad = []
-            for name, b in forms:
-                a = self.play(b)
-                self.answers.append(a)
-                if a.status == 200:
-                    self.stop(a.json)
-                if not (a.status == 400 and a.signed and a.problem_type() == "invalid-request"):
-                    bad.append("%s: %s" % (name, a.short()))
-            if bad:
-                raise Fail("expected a signed 400 invalid-request for:\n" + "\n".join(bad))
-            return "%d malformed plays (the 400s of vectors/v0/playback.json, for %s) refused with a signed 400" % (len(forms), k)
-        self.check("PB1", "MSFP Media playing 2.1, 2.2, 2.7, 6; MSFP Media video 5.1; playback 2, 8", "play with a malformed member, delivery or purpose: "
-                   "the signed 400 invalid-request", bad_bodies)
-
-        def not_held():
-            title()
-            k = "movie/tmdb/9999999999" if "video" in self.parts_on() else "track/mb/00000000-0000-4000-8000-000000000000"
-            a = self.play({"title": k})
-            if a.status == 200:
-                self.stop(a.json)
-            self.signed(a, 404, "not-found")
-            return "signed 404 not-found for %s" % k
-        self.check("PB2", "MSFP Media playing 2.2", "play of a key the server doesn't offer: a signed 404", not_held)
-
-        def plain():
-            k = title()
-            a = self.play({"title": k})
-            if a.status != 200:
-                raise Fail("play %s: %s (offer a playable copy; limits may be 0)" % (k, a.short()))
-            self.signed(a, 200)
-            bad, pb = self.check_playback(a.json, k)
-            st["raw"], st["pb"] = a.json, pb or {}
-            if bad:
-                raise Fail("\n".join(bad))
-            return "%s: %s over %s, etag %s as the catalog's, %d subtitle track(s) served apart, %d font(s); no URL, " \
-                   "every URL built from the ticket" % (pb["id"], pb["method"], pb["protocol"], pb["etag"],
-                                                        len(pb.get("subtitles", [])), pb.get("fontCount", 0))
-        if not self.check("PB3", "MSFP Media playing 2.3; MSFP Media fetching 1; MSFP Media video 5.3, 5.4", "play: 200 signed, the playback object in its "
-                          "forms, no URLs (built from the ticket), its etag and tracks the catalog's, MSFP Media video 5.4's "
-                          "formats in their forms", plain) and "url" not in st.get("pb", {}):
-            self.stop(st.get("pb"))
-            return
-
-        def nothing_said():
-            # PB3's answer, then a play of its own (from the start, still
-            # without delivery), both the baseline.
-            # PB3's playback is still live: a transcode the second needs may
-            # be busy (503), which is allowed.
-            a = self.play({"title": st["key"], "startPositionMs": 0})
-            if a.status == 200 and isinstance(a.json, dict):
-                self.stop(a.json)
-            out = [one(st["pb"])]
-            if a.status == 503 and a.signed and a.problem_type() == "server-busy":
-                return "%s (a second play: 503 server-busy, PB3's transcode still live)" % out[0]
-            self.signed(a, 200)
-            out.append(one(a.json))
-            return "; ".join(out)
-
-        def one(j):
-            if j.get("protocol") != "hls":
-                raise Fail("without delivery, %s over %s: the baseline is complete HLS, never the file (MSFP Media playing 2.7)"
-                           % (j.get("method"), j.get("protocol")))
-            cp = self.copy_of(st["key"], j.get("versionId")) or {}
-            why = baseline_outside(cp, j.get("audioTrack"), bool(video_key(st["key"])))
-            if j.get("method") != "transcode" and why:
-                raise Fail("without delivery, method %s of a copy whose %s (MSFP Media playing 2.6, 2.7: left unchanged only when "
-                           "already within the baseline, H.264 High 4.1 8-bit SDR BT.709 and AAC-LC stereo 48 kHz; a "
-                           "transcode otherwise)" % (j.get("method"), why))
-            return "%s over hls (%s)" % (j.get("method"), "the copy is outside the baseline: %s" % why if why
-                                         else "the copy is within the baseline")
-        self.check("PB4", "MSFP Media playing 2.6, 2.7; MSFP Media video 5.1; MSFP Media music 5", "play without delivery: the baseline, complete HLS, "
-                   "its picture defined (left as it is only when already within it)", nothing_said)
-
-        def interval():
-            raw = st.get("raw") if isinstance(st.get("raw"), dict) else {}
-            if "progressSeconds" not in raw:
-                return "no progressSeconds: the caller reports every 60 s, its idle limit 2 minutes"
-            n = raw["progressSeconds"]
-            if not is_int(n) or not 45 <= n <= 120:
-                raise Fail("progressSeconds %r, not an integer from 45 to 120 (MSFP Media playing 2.3, 3; a caller "
-                           "counts on 60 then)" % (n,))
-            return "progressSeconds %d: reports about every %d s, the idle limit %d s" % (n, n, 2 * n)
-        self.check("PB25", "MSFP Media playing 2.3, 3, 5", "play's answer: progressSeconds, when sent, an integer from 45 "
-                   "to 120 (the idle limit twice it)", interval)
-
-        def gone():
-            keys = [x for x in getattr(self, "gone_keys", []) if (video_key(x) and video_key(x).kind in ("movie", "episode",
-                                                                                                          "extra"))
-                    or music_key(x) == "track"]
-            if not keys:
-                raise Skip("no title seen gone (T9, with --watch-changes, removes one)")
-            a = self.play({"title": keys[0]})
-            if a.status == 200:
-                self.stop(a.json)
-            self.signed(a, 404)
-            if a.problem_type() != "gone":
-                raise Fail("%s, gone in T9: a signed 404 %s, not gone (MSFP Media playing 2.2 step 3, base 4: gone for "
-                           "a title it held for this caller)" % (keys[0], a.problem_type()))
-            return "%s, gone in T9: a signed 404 gone" % keys[0]
-        self.check("PB27", "MSFP Media playing 2.2, base 4", "play of a title the server no longer holds: 404 gone", gone,
-                   level="SHOULD")
-
-        self.media_checks(st["pb"], st["key"], "M")
-
-        def progress():
-            j = st["pb"]
-            now = int(time.time())
-            for b in ({"id": j["id"], "positionMs": 1000}, {"id": j["id"], "positionMs": 2000, "paused": True},
-                      {"id": j["id"], "positionMs": 2000, "paused": False}, {"id": j["id"]},
-                      {"id": j["id"], "positionMs": 2500, "at": now - 60}):
-                a = self.signed(c.call("progress", b), 200)
-                if a.json != {}:
-                    raise Fail("progress answered %r, not {}" % a.body[:80])
-            bad = []
-            for name, b in (("an id of another form", {"id": "play.x"}), ("no id", {}),
-                            ("positionMs -1", {"id": j["id"], "positionMs": -1}),
-                            ("positionMs over 100 days", {"id": j["id"], "positionMs": 8640000001}),
-                            ("positionMs null", {"id": j["id"], "positionMs": None}),
-                            ("at over 30 days ago", {"id": j["id"], "at": now - 30 * 86400 - 600}),
-                            ("at over 5 minutes ahead", {"id": j["id"], "at": now + 900}),
-                            ("at in milliseconds", {"id": j["id"], "at": now * 1000}),
-                            ("at as a string", {"id": j["id"], "at": str(now)}),
-                            ("at null", {"id": j["id"], "at": None}),
-                            ("paused as a string", {"id": j["id"], "paused": "yes"}),
-                            ("paused as a number", {"id": j["id"], "paused": 1}),
-                            ("paused null", {"id": j["id"], "paused": None}),
-                            ("another title than the playback's", {"id": j["id"], "title": "movie/tmdb/9999999998"})):
-                a = c.call("progress", b)
-                self.answers.append(a)
-                if not (a.status == 400 and a.signed):
-                    bad.append("%s: %s" % (name, a.short()))
-            a = c.call("progress", {"id": "play_" + "a" * 26})
-            try:
-                self.signed(a, 410, "playback-stopped")
-            except Fail as e:
-                bad.append("a playback ID never given: %s" % e)
-            if bad:
-                raise Fail("\n".join(bad))
-            return "200 {} five times (one with at a minute ago, with paused true and false); 400 for malformed bodies, " \
-                   "at out of its bounds and a paused that isn't a boolean; 410 playback-stopped for an ID never given"
-        self.check("PB5", "MSFP Media playing 3, 5; MSFP Media music 5.2", "progress: 200 {} (paused a boolean), 400 for a bad body, at "
-                   "or paused, 410 for a playback that isn't live", progress)
-
-        def stop():
-            j = st["pb"]
-            a = self.signed(c.call("stop", {"id": j["id"], "positionMs": 3000, "at": int(time.time()) - 5}), 200)
-            if a.json != {}:
-                raise Fail("stop answered %r" % a.body[:80])
-            self.signed(c.call("stop", {"id": j["id"]}), 200)
-            self.signed(c.call("stop", {"id": "play_" + "b" * 26}), 200)
-            bad = []
-            a = c.call("progress", {"id": j["id"]})
-            try:
-                self.signed(a, 410, "playback-stopped")
-            except Fail as e:
-                bad.append("progress after stop: %s" % e)
-            for name, b in (("positionMs -1", {"id": j["id"], "positionMs": -1}), ("no id", {}),
-                            ("at over 5 minutes ahead", {"id": j["id"], "at": int(time.time()) + 900})):
-                a = c.call("stop", b)
-                self.answers.append(a)
-                if not (a.status == 400 and a.signed):
-                    bad.append("stop with %s: %s" % (name, a.short()))
-            status, _, _ = c.get(j["url"])
-            if status != 404:
-                bad.append("the ticket still works after stop: %d for %s (MSFP Media fetching 4.2: it stops at once)" % (status, "the stream"))
-            if bad:
-                raise Fail("\n".join(bad))
-            return "200 {} (with at, again, and for an ID never given); 400 for at out of its bounds; then progress 410 " \
-                   "and the media 404"
-        self.check("PB6", "MSFP Media playing 4, 5; MSFP Media fetching 4.2", "stop: 200 {} even when repeated; the playback ends at once", stop)
-        self.stop(st["pb"])
-        for later in getattr(self, "_subs_later", []):
-            self.check(*later)
-        self._subs_later = []
-
-        self.track_checks(st["key"], st["pb"])
-        self.limit_checks(st["key"])
-        self.revision_checks(st["key"])
-
-    def track_checks(self, k, pb):
-        """MSFP Media playing 2.6 since proposal 17: the viewer's server chooses; the
-        owning server plays what it is asked. Only that minimum is checked:
-        a copy or an audio track named wins; without one, the first copy and
-        the file's default audio (the track marked default, else the first)."""
-        Fail, Skip = _x()
-
-        def run(body):
-            a = self.play(dict(body, title=k))
-            self.signed(a, 200)
-            self.stop(a.json)
-            return a.json
-
-        def audio_rules():
-            out = []
-            first = self.copy_of(k) or {}
-            audio = [t for t in first.get("audioTracks") or [] if isinstance(t, dict)]
-            if not audio:
-                raise Skip("the catalog's first copy lists no audio track")
-            j = run({"versionId": first.get("id")})
-            want = next((t["id"] for t in audio if t.get("default") is True), audio[0].get("id"))
-            if j.get("audioTrack") != want:
-                raise Fail("without audioTrack, %r played; the file's default audio is %s (MSFP Media playing 2.6: the track the "
-                           "file marks default, else its first)" % (j.get("audioTrack"), want))
-            out.append("without audioTrack, %s (the file's default)" % want)
-            others = [t for t in audio if t.get("id") != want]
-            if others:
-                t = others[-1]
-                j = run({"versionId": first.get("id"), "audioTrack": t["id"]})
-                if j.get("audioTrack") != t["id"]:
-                    raise Fail("audioTrack %s, a track of the copy, gave %r (MSFP Media playing 2.6: a track named wins)"
-                               % (t["id"], j.get("audioTrack")))
-                out.append("%s named, played" % t["id"])
-            else:
-                out.append("one audio track only")
-            return "; ".join(out)
-        self.check("PB7", "MSFP Media playing 2.6", "the audio: a track named wins; without one, the file's default audio",
-                   audio_rules)
-
-        def version_rules():
-            out = []
-            first = self.copies_of(k)[0].get("id") if self.copies_of(k) else None
-            if pb.get("versionId") != first:
-                raise Fail("without versionId, %r played; the catalog's first copy is %r (MSFP Media playing 2.6: without one, "
-                           "the first copy plays)" % (pb.get("versionId"), first))
-            out.append("without versionId, the first copy %s" % first)
-            j = run({"versionId": "conformance-no-such-version"})
-            if j.get("versionId") != first:
-                raise Fail("a versionId naming none of the copies gave %r; the first is %r (MSFP Media playing 2.6)"
-                           % (j.get("versionId"), first))
-            out.append("an unknown versionId, the first copy too")
-            vs = [x["id"] for x in self.copies_of(k) if x.get("id") != first]
-            if vs:
-                j = run({"versionId": vs[-1]})
-                if j.get("versionId") != vs[-1]:
-                    raise Fail("versionId %s (a copy in the catalog) gave %r (MSFP Media playing 2.6: a copy named wins)"
-                               % (vs[-1], j.get("versionId")))
-                out.append("%s named, played" % vs[-1])
-            else:
-                out.append("one copy only")
-            return "; ".join(out)
-        self.check("PB9", "MSFP Media playing 2.6; MSFP Media video 3.7", "the copy: a copy named wins; without one, or with an unknown one, "
-                   "the first", version_rules)
-
-    def stream_body(self, k):
-        """A play that needs no transcode, as a viewer's server asks one
-        when its device plays the copy (MSFP Media playing 2.7): delivery file of a
-        copy of one file, else remux to mp4 or mp2t segments, else none
-        (the baseline). The first the owning server answers 200 is kept."""
-        cache = self.__dict__.setdefault("_stream_bodies", {})
-        if k in cache:
-            return cache[k]
-        tries = []
-        one = next((c for c in self.copies_of(k) if parts_of(c) < 2), None)
-        if one:
-            tries.append({"title": k, "delivery": "file", "versionId": one["id"]})
-        cp = (self.copies_of(k) or [{}])[0]
-        top = "video" if cp.get("video") else "audio"
-        for sub in ("mp4", "mp2t"):
-            tries.append(dict({"title": k, "delivery": "remux", "mediaType": "%s/%s" % (top, sub)},
-                              **({"versionId": cp["id"]} if cp.get("id") else {})))
-        for b in tries:
-            a = self.play(b)
-            if a.status == 200 and isinstance(a.json, dict):
-                self.stop(a.json)
-                cache[k] = b
-                return b
-        cache[k] = {"title": k}
-        return cache[k]
-
-    def limit_checks(self, k):
+    def race_checks(self, k):
         Fail, Skip = _x()
         lim = self.limits if isinstance(self.limits, dict) else None
-
-        def over():
-            if lim is None or not is_int(lim.get("streams")):
-                raise Skip("the server sends no limits")
-            n = lim["streams"]
-            if n > 4:
-                raise Skip("streams is %d: the suite starts at most 4 playbacks" % n)
-            live = []
-            try:
-                for i in range(n):
-                    a = self.play(self.stream_body(k))
-                    self.signed(a, 200)
-                    live.append(a.json)
-                a = self.play(self.stream_body(k))
-                if a.status == 200:
-                    live.append(a.json)
-                    raise Fail("play number %d of a pairing whose streams is %d was answered 200" % (n + 1, n))
-                if a.status == 503:
-                    self.signed(a, 503, "server-busy")
-                    return (PASS, "the %d+1th play: 503 server-busy (it needed a transcode)" % n)
-                self.signed(a, 409, "stream-limit-reached")
-                return "streams %d: the next play gets 409 stream-limit-reached" % n
-            finally:
-                for j in live:
-                    self.stop(j)
-        self.check("PB10", "MSFP Media playing 2.2, 2.5; playback 2, 6", "past the pairing's streams: 409 stream-limit-reached", over)
 
         def race():
             if lim is None or not is_int(lim.get("streams")) or not 1 <= lim["streams"] <= 4:
@@ -1240,57 +143,103 @@ class PartChecks(StreamChecks, RevisionChecks):
                     self.stop(j)
         self.check("PB11", "playback 6.2", "two plays at once for the last stream: exactly one starts", race)
 
-        def replaced():
-            c = self.client
-            body = self.stream_body(k)
-            n = lim.get("streams") if lim is not None and is_int(lim.get("streams")) and 1 <= lim["streams"] <= 4 else None
-            live = []
+    # ---- scan access (playback 8, media 4.2) --------------------------------------------
+
+    def scan_checks(self, k):
+        Fail, Skip = _x()
+        lim = keep_limits(self.limits) if isinstance(self.limits, dict) else dict(NO_LIMITS)
+        st = {}
+
+        def limits():
+            cp = self.one_file_copy(k)
+            if cp is None:
+                raise Skip("no copy of one file to scan")
+            b = {"title": k, "purpose": "scan", "delivery": "file", "versionId": cp["id"]}
+            if lim["scansPerDay"] == 0:
+                a = self.play(b)
+                if a.status == 200:
+                    self.stop(a.json)
+                self.signed(a, 409, "stream-limit-reached")
+                return "scansPerDay 0 (no scan access): 409 stream-limit-reached"
+            extra = []
             try:
-                a = self.play(body)
+                n = lim.get("streams")
+                if isinstance(n, int) and 1 <= n <= 4:
+                    for _ in range(n):
+                        j, a2 = self.started(self.stream_body(k))
+                        if j is None:
+                            raise Fail("play %d of %d streams: %s" % (len(extra) + 1, n, a2.short()))
+                        extra.append(j)
+                a = self.play(b)
                 self.signed(a, 200)
-                first = self.view(a.json, k, body.get("delivery"))
-                live.append(a.json)
-                for _ in range((n or 1) - 1):
-                    a2 = self.play(body)
-                    self.signed(a2, 200)
-                    live.append(a2.json)
-                a = self.play(dict(body, replaces=first["id"]))
-                if a.status != 200:
-                    raise Fail("a play replacing %s%s: %s (MSFP Media playing 2.2 step 8; playback 6: the two count as "
-                               "one)" % (first["id"], ", the pairing's %d streams all in use" % n if n else "", a.short()))
-                self.signed(a, 200)
-                live.append(a.json)
-                bad = []
-                r = c.call("progress", {"id": first["id"]})
-                self.answers.append(r)
-                if r.status != 410 or not r.signed:
-                    bad.append("progress of the replaced playback: %s, not a signed 410 (MSFP Media playing 2.3, 5: it "
-                               "ends when the new one is answered 200)" % r.short())
-                s, _, _ = c.get(first["url"], [("Range", "bytes=0-0")] if first["protocol"] == "file" else ())
-                if s != 404:
-                    bad.append("the replaced playback's ticket: %d, not 404 (MSFP Media playing 5: it stops at once)" % s)
-                r = c.call("progress", {"id": a.json["id"]})
-                if r.status != 200:
-                    bad.append("progress of the new playback: %s" % r.short())
-                other = "play_" + "".join("abcdefghijklmnopqrstuvwxyz"[b % 26] for b in os.urandom(26))
-                a3 = self.play(dict(body, replaces=other))
-                if a3.status == 200:
-                    live.append(a3.json)
-                    if n:
-                        bad.append("a play whose replaces names no live playback, the streams all in use: 200 (MSFP "
-                                   "Media playing 2.3: such a replaces is ignored)")
-                elif not n or not (a3.status == 409 and a3.signed and a3.problem_type() == "stream-limit-reached"):
-                    bad.append("a play whose replaces names no live playback: %s" % a3.short())
-                r = c.call("progress", {"id": a.json["id"]})
-                if r.status != 200:
-                    bad.append("after a replaces naming no live playback, the new playback: %s (nothing else ends)"
-                               % r.short())
+                bad, pb = self.check_playback(a.json, k, "file", "scan")
+                if pb is not None:
+                    st["pb"], st["copy"] = pb, cp
                 if bad:
                     raise Fail("\n".join(bad))
-                return "the replaced playback ended with the new one's 200%s; a replaces naming none ignored" % (
-                    ", within the pairing's %d streams" % n if n else "")
+                return "a scan: 200, the file, scanBytes %d%s" % (pb["scanBytes"], ", with every stream in use (playback 8: "
+                                                                  "it uses none)" if extra else "")
             finally:
-                for j in live:
+                for j in extra:
                     self.stop(j)
-        self.check("PB26", "MSFP Media playing 2.1, 2.2, 2.3, 5; playback 6", "replaces: the old playback ends when the "
-                   "new one is answered 200, the two counting as one stream; one naming none is ignored", replaced)
+        self.check("PB21", "playback 8, 5, 2; MSFP Media playing 2.2", "scans: 409 stream-limit-reached when off; else 200 the file, "
+                   "scanBytes in the answer, using no stream", limits)
+
+        def cap():
+            if "pb" not in st:
+                raise Skip("no scan started")
+            u, size = st["pb"]["url"], st["copy"]["size"]
+            cut = st["pb"]["scanBytes"]
+            c = self.client
+            bad, sent, n = [], 0, 0
+            s, h, _ = c.get(u)
+            if s != 416:
+                bad.append("a fetch without Range: %d, not 416 (media 4.2)" % s)
+            while n < 600 and sent < READ_AT_MOST:
+                n += 1
+                rng = "bytes=0-"
+                want = scan_answer(sent, rng, size, cut)
+                s, h, body = c.get(u, [("Range", rng)], limit=min(cut, READ_AT_MOST) + 1)
+                got = (s, (_h(h, "content-range") or "").strip())
+                if got != want:
+                    bad.append("read %d (%d bytes sent before): %d %s; media 4.2: %d %s" % (n, sent, got[0], got[1],
+                                                                                         want[0], want[1]))
+                    break
+                if s == 416:
+                    break
+                sent += len(body)
+            if not bad and sent < READ_AT_MOST and sent != cut:
+                bad.append("%d bytes served in all, not the cap of %d (the scan answer's scanBytes%s)" % (
+                    sent, cut, "" if cut != SCAN_FLOOR else ", or the floor, 4 MiB"))
+            if bad:
+                raise Fail("\n".join(bad))
+            if sent >= READ_AT_MOST:
+                return (PASS, "416 without Range; %d reads of bytes=0- served %d bytes within the cap of %d, read no "
+                        "further" % (n, sent, cut))
+            return "416 without Range; %d reads of bytes=0- served %d bytes, the last cut at the cap of %d (scanBytes), " \
+                   "then 416 bytes */%d" % (n - 1, sent, cut, size)
+        self.check("PB22", "playback 8, 2; media 4.2", "a scan's reads: within the scan answer's scanBytes (absent: "
+                   "4 MiB) in all, cut at the cap, then 416", cap)
+
+        def ticket():
+            if "pb" not in st:
+                raise Skip("no scan started")
+            j, c = st["pb"], self.client
+            base = j["base"]
+            bad = []
+            for name in ("master.m3u8", "subtitles/s0/0", "trickplay/0", "fonts/0"):
+                s, _, _ = c.get(base + name)
+                if s != 404:
+                    bad.append("%s under the scan ticket: %d, not 404 (MSFP Media fetching 4.2: file only)" % (name, s))
+            bad += self.head_405([j["url"]])
+            a = c.call("progress", {"id": j["id"]})
+            self.answers.append(a)
+            if a.status != 200 or not a.signed:
+                bad.append("progress of a scan: %s, not a signed 200 (MSFP Media playing 3)" % a.short())
+            self.signed(c.call("stop", {"id": j["id"]}), 200)
+            if bad:
+                raise Fail("\n".join(bad))
+            return "the scan ticket opens the file only; HEAD 405; progress 200; stop 200"
+        self.check("PB23", "media 4; MSFP Media fetching 4.2, 2.2; playback 3, 8", "a scan's ticket opens the file only; progress answered 200",
+                   ticket)
+        self.stop(st.get("pb"))

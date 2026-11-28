@@ -1,7 +1,9 @@
 """The checks of core 0 (spec/v0/core.md): the code, discovery, strangers,
 pairing, waiting, hello and versions, JSON, signatures, nonces, answers.
-The parts' checks are in parts.py; keys, addresses, servers that can't
-be called and the reader checks in keys.py. Each check names the file
+MSFP Media's checks are msfp-media's (msfpmedia.checks), run through
+the MSFP carrier (carrier.py); MSFP's checks of the parts that carry it
+are in parts.py; keys, addresses, servers that can't be called and the
+reader checks in keys.py. Each check names the file
 and section it tests, and whether that section says must or should."""
 
 import hashlib
@@ -10,12 +12,14 @@ import select
 import sys
 import time
 
-from . import clip
+from msfpmedia import clip
+from msfpmedia.report import FAIL, PASS, SKIP, Fail, Result, Skip  # noqa: F401 (Fail and Skip for the checks here)
+
+from .carrier import MsfpCarrier
 from .groups import GroupChecks
 from .keys import KeyChecks
 from .parts import PartChecks
 from .peer import PeerServer
-from .report import FAIL, PASS, SKIP, Result
 from .tls import Certificate, FileCertificate
 from .wire import (VERSION, H_DATE, H_KEY, H_NONCE, H_SIG, CertificateRefused, Client, Key, b64u, check_address,
                    check_base, dumps, fingerprint, has_null, host_of, is_int, parse_code, parse_ijson, proof,
@@ -31,14 +35,6 @@ IDENTITY_SIG = "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 SMALL_ORDER_KEY = "JuiVj8KyJ7BFw_SJ8u-Y8NXfrAXTxjM5sTgCiG1T_AU"
 MIXED_ORDER_KEY = "sVS9YhiK4oPdGH_v6MMfXidu3wg7TP8RydXP-FbHREA"
 NON_CANONICAL_KEY = "7v_______________________________________38"
-
-
-class Skip(Exception):
-    pass
-
-
-class Fail(Exception):
-    pass
 
 
 def derive_address(address, delta):
@@ -68,6 +64,7 @@ class Suite(PartChecks, KeyChecks, GroupChecks):
         self.address = args.address
         self.uncallable_address = None
         self.client = None
+        self.carrier = MsfpCarrier(self)        # what MSFP Media's checks reach the server through
         self.peer = None
         self.cert = None
         self.paired = False
@@ -885,7 +882,7 @@ class Suite(PartChecks, KeyChecks, GroupChecks):
             if not libs:
                 return "; nothing offered, titles not checked"
             t = self.signed(c.call("titles", {"libraries": libs}), 200)
-            from .content import video_key
+            from msfpmedia.content import video_key
             vids = [x.get("key") for x in t.json.get("titles", []) if isinstance(x, dict) and video_key(x.get("key"))]
             if vids:
                 raise Fail("titles holds video titles while video is off: %s (catalog 5)" % vids[:3])

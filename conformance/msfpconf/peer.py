@@ -11,8 +11,10 @@ import threading
 import time
 import urllib.parse
 
-from . import clip, ed25519
-from .copies import media_type
+from msfpmedia import clip
+from msfpmedia.copies import media_type
+
+from . import ed25519
 from .wire import (FED, STREAM, H_SIG, MAX_INT, NotIJSON, answer_message, b64u, commitment, decimal, dumps, has_null,
                    host_of, parse_ijson, read_revocation, read_rotation, request_message, split_hostport,
                    unb64u)

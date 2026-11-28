@@ -58,6 +58,21 @@ it passed, failed or was skipped. A document of MSFP Media is named so
 5`, `media 4.2`, `video 5.5`); groups of sections of different documents
 are separated by `;`.
 
+MSFP Media's checks are msfp-media's: the package `msfpmedia` in
+[msfp-media's conformance/](https://github.com/msfp-io/msfp-media/tree/main/conformance),
+which holds the checks of the language (listing, playing, fetching,
+video, music), its readers and their self-test against MSFP Media's
+vectors. This suite runs them through its MSFP carrier
+(`msfpconf/carrier.py`: its signed calls, the stream root, MSFP's
+limits and their refusal, `409` `stream-limit-reached`, the purpose
+scan, the refusal of a browser's fetch) and keeps MSFP's own checks:
+pairing, `hello`, keys, signatures, rotation, revocation, addresses,
+groups, the peer, a libraries answer's `limits`, scans, the race for the
+last stream and the switch of `local` titles (`msfpconf/parts.py`, run
+in their place among MSFP Media's). It needs a checkout of msfp-media
+beside this repository (`../msfp-media`), or the one `--media` names
+(the environment's `MSFP_MEDIA` too); it says so and stops without one.
+
 It needs Python 3 and its standard library, nothing else (tested with
 Python 3.13). Ed25519 is bundled in pure Python (the reference code of
 RFC 8032 with core section 2.1's point checks on top), and so is the
@@ -193,6 +208,7 @@ its own test server this way.
 | `--uncallable-watch SECONDS` | how long the suite watches that nothing connects to it once it says it can't be called (20) |
 | `--connect host:port` | connects elsewhere than the server's address says, the requests staying signed for the address |
 | `--key FILE` | keeps the suite's key between runs |
+| `--media DIR` | msfp-media's checkout, for MSFP Media's checks (default: `../msfp-media`, beside this repository) |
 | `--json FILE` | the results as JSON |
 | `-v` | the whole detail of passing checks too |
 
@@ -217,7 +233,7 @@ The run goes in this order; the counts are the checks in each group.
 | L | 5 | MSFP Media listing 2; playback 5; music 5.1 | `libraries`: IDs (no `kind`: a note when sent), `limits` (streams and downloads to 1,000, scans; `scanBytes` left them) and their ranges, opaque and stable IDs, bad bodies |
 | T | 15 | MSFP Media listing 3, 3.1 to 3.6, 4; catalog 5; MSFP Media video 3, 4; MSFP Media music 2, 3 | `titles`: canonical keys of every scheme (`tmdb`, `tvdb`, `mb`, `local`), the kind each names (no `kind` member), libraries, every copy as a caller keeps it (`mediaType`, open tokens, `codecs` required and readable for `h264`, `hevc`, `av1`, `vp9`, `aac`, `dts`, exact values, `fps` as a fraction, H.273 `colour`, `hdr` without `hdr10`, `hlg`, `dv`, `parts` as a count, `endMs`, `previewLayout` in its bounds, at most 16 copies), extras (themes among them) and `local` descriptions, `with`, `ids` (only on episodes and `tvdb` titles; music's on `mb` titles), music's descriptions (`mediaType`, `primaryType`, `secondaryTypes`, a track's dates and genres); order, paging, pages within 5,000 titles and 3 MiB with `next` whenever titles remain; `since` and `seq`, bad requests, the first library, changes adding up; extras only with their title; (`--watch-local`) `local` titles following the owner's switch (catalog 5); `titles` without `libraries` (every library the suite may see), with `kind` (that kind alone; a token that is no kind, none) and with `under` (the titles directly under that key, by MSFP Media listing 3.6's table; always the whole list), malformed filters a signed `404`. Members proposal 17 dropped are noted, not failed (a caller ignores them) |
 | I | 3 | MSFP Media listing 4.4; MSFP Media fetching 1, 3.4, 4.2 | the `image` call: `{"ticket"}`, no URL; a `local` title's image at `<stream root><ticket>/image` (a JPEG or PNG within 1 MiB and 4,096 pixels), that ticket opening nothing else, HEAD `405`, its refusals (`400`, `404`) |
-| PB | 27 | MSFP Media playing 2 to 6; MSFP Media base 3, 4; MSFP Media video 5; MSFP Media fetching 1; playback 2, 5 to 8 | `play`: the `400`s of `vectors/v0/playback.json` (members, `purpose`, `delivery`, `mediaType`, `transcode`, `replaces`, values that aren't tokens or media types, and `capabilities`, which MSFP refuses whatever it holds), keys not offered (`404`), a title no longer held (`404` `gone`, should, after T9), the answer as a viewer's server keeps it (an opaque playback ID and ticket of 128 bits, no URLs, its `etag`, `versionId` and `audioTrack` the catalog's, `subtitles` in video 5.4's forms for the formats it lists, `fontCount`, `progressSeconds` from 45 to 120 when sent), no `delivery` (the baseline: HLS, left as it is only when within H.264 High 4.1 8-bit SDR BT.709 and AAC-LC stereo 48 kHz); `progress` and `stop` with `at` and their bounds (`paused` a boolean in `progress`, `400` otherwise); the choice (only the normative minimum: a copy or audio track named wins; without one, the first copy and the file's default audio); the streams limit and the race for the last stream; `replaces` (the old playback ends with the new one's `200`, the two counted as one stream; one naming no live playback ignored); `delivery` `file`, `remux` (`video/mp4`), `transcode` (or `409` `delivery-refused` or `target-refused`), a transcode's video `copy` (the playlist's `CODECS` the copy's own) and `range` (`sdr` without `VIDEO-RANGE` PQ or HLG, `keep` made or refused), `burnSubtitle` with video `copy` refused (`target-refused`), a copy of several parts refused as `file` (`delivery-refused`), a restart on the same `etag` and bytes, the answer's `audioRenditions` matching the playlist; downloads (`409` when off, beside the streams, within `downloads`, the speed cap, late reports with `at`); scans (`409` when off, no stream used, `scanBytes` in the answer, reads cut at it, then `416`, the ticket opening the file only); unknown tokens and media types naming what to serve refused with `409`: `delivery-refused` for a `delivery`, `target-refused` for a remux's `mediaType`, a transcode codec or `range`; an unknown member ignored |
+| PB | 27 | MSFP Media playing 2 to 6; MSFP Media base 3, 4; MSFP Media video 5; MSFP Media fetching 1; playback 2, 5 to 8 | `play`: the `400`s of MSFP Media's `vectors/v0/playing.json` and of this repository's `vectors/v0/playback.json` (members, `purpose`, `delivery`, `mediaType`, `transcode`, `replaces`, values that aren't tokens or media types, and `capabilities`, which MSFP refuses whatever it holds, and the scan's forms), keys not offered (`404`), a title no longer held (`404` `gone`, should, after T9), the answer as a viewer's server keeps it (an opaque playback ID and ticket of 128 bits, no URLs, its `etag`, `versionId` and `audioTrack` the catalog's, `subtitles` in video 5.4's forms for the formats it lists, `fontCount`, `progressSeconds` from 45 to 120 when sent), no `delivery` (the baseline: HLS, left as it is only when within H.264 High 4.1 8-bit SDR BT.709 and AAC-LC stereo 48 kHz); `progress` and `stop` with `at` and their bounds (`paused` a boolean in `progress`, `400` otherwise); the choice (only the normative minimum: a copy or audio track named wins; without one, the first copy and the file's default audio); the streams limit and the race for the last stream; `replaces` (the old playback ends with the new one's `200`, the two counted as one stream; one naming no live playback ignored); `delivery` `file`, `remux` (`video/mp4`), `transcode` (or `409` `delivery-refused` or `target-refused`), a transcode's video `copy` (the playlist's `CODECS` the copy's own) and `range` (`sdr` without `VIDEO-RANGE` PQ or HLG, `keep` made or refused), `burnSubtitle` with video `copy` refused (`target-refused`), a copy of several parts refused as `file` (`delivery-refused`), a restart on the same `etag` and bytes, the answer's `audioRenditions` matching the playlist; downloads (`409` when off, beside the streams, within `downloads`, the speed cap, late reports with `at`); scans (`409` when off, no stream used, `scanBytes` in the answer, reads cut at it, then `416`, the ticket opening the file only); unknown tokens and media types naming what to serve refused with `409`: `delivery-refused` for a `delivery`, `target-refused` for a remux's `mediaType`, a transcode codec or `range`; an unknown member ignored |
 | M | 12 | MSFP Media fetching 1 to 4.2; MSFP Media video 5.5, 6; media 2 | the media of the first `play`, at the URLs the suite builds from the ticket: the HLS subset, playlists complete from the first fetch and the same on every fetch, renditions' names, segments, ranges (`206` and `416`), refusals (a query, browser headers, an unknown ticket), `405` for HEAD and other methods, WebVTT parts and whole tracks in their rebuilt form, ASS parts and whole tracks, picture parts, fonts 0 to `fontCount` − 1, a preview sheet under the playback's ticket by the catalog's `previewLayout`, and `404` for the names past the answer's counts (a font at `fontCount`, the sheet at the sheet count, a track not served apart in that form, a queue entry not asked) |
 | F | 4 | MSFP Media fetching 2, 3.2 | the file of a `delivery` `file`: `200` with the catalog's exact size, `ETag` and `Accept-Ranges`; ranges with `Content-Range` against the exact size, `416` with `bytes */<size>`; stable bytes; HEAD `405`, conditional headers ignored |
 | PV | 3 | MSFP Media video 5.5, 5.6; MSFP Media fetching 4.2 | `previews`: `{"ticket", "etag"}` for a copy with a `previewLayout`, no URL, the catalog's `etag`; its sheets by the catalog's layout under that ticket, `404` past the count; the ticket opening only its sheets; its refusals (`404` for a copy without `previewLayout`) |
@@ -341,16 +357,20 @@ python3 conformance/selftest.py --quick   # without the fault pass
 ```
 
 It checks the suite's readers against the cases of `vectors/v0/` (keys,
-code, exchanges, rotation, revocation, strict, media, video, playback,
-music and groups: every array the suite reads as a caller or a viewer's
-server, the codecs, answers, names, relayed types, previews, queue and
-lyrics among them, refusals of `play` as a caller reads them; the owning
-server's decisions of playback.json, requests to reports, are the fake's
-and the live checks'; strict.json's `titleRequests`, the owning server's
-reading of a `titles` request, is checked against the code the fake
-answers with; and
-those of `vectors/history/test-draft-strict.json` that core section 17 says hold for
-core 0), then runs the whole suite, over HTTPS both ways, against an
+code, exchanges, rotation, revocation, strict and groups, and MSFP's
+carrier vectors: a scan's answer and a libraries answer's `limits` in
+playback.json, the scan ticket's names and reads in media.json), those
+of `vectors/history/test-draft-strict.json` that core section 17 says
+hold for core 0, and MSFP Media's readers against msfp-media's
+`vectors/v0/` (base, listing, playing, fetching, video and music: every
+array the suite reads as a caller or a viewer's server, the codecs,
+answers, names, relayed types, previews, queue and lyrics among them,
+refusals of `play` as a caller reads them, base's encodings and JSON;
+the source's decisions of playing.json, requests to reports, are the
+fake's and the live checks'; listing.json's `titleRequests`, the
+source's reading of a `titles` request, is checked against the code the
+fake answers with), as msfp-media's `conformance/selftest.py` checks
+them alone. Then it runs the whole suite, over HTTPS both ways, against an
 in-process fake version 0 server (`msfpconf/fake.py`, built from the
 specification and the vectors, with the self-test as its operator):
 every check must pass. Then it runs again with deliberate faults in the
@@ -385,7 +405,8 @@ founds a group and makes its code, for the group checks.
 
 ## License
 
-The suite's code is under the [MIT license](LICENSE). The Ed25519
+The suite's code is under the [MIT license](LICENSE), as is msfp-media's
+`msfpmedia`, which it imports. The Ed25519
 reference code it bundles (`msfpconf/ed25519.py`) is the IETF Trust's,
 under the Simplified BSD License, whose notice is at the top of that
 file. The specification is under CC BY 4.0 and the vectors under CC0
