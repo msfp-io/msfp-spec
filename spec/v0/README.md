@@ -274,22 +274,19 @@ revocation statement, a `hello` carrying `core`, `parts`,
 `certificates` and `address`, and the `hello`s of a server that can't be
 called, with a rotation and a revocation pulled in an answer
 ([core section 17](core.md#17-test-vectors)), the addresses of servers
-that can't be called (`uncallableAddresses` in `strict.json`), media
-servers' language codes and the tags sent (`languageCodes` in
-`strict.json`), file and track names in media URLs (`mediaNames`), the
+that can't be called (`uncallableAddresses` in `strict.json`), the
 discovery document's `base` (`bases`), what a receiver keeps of a
-`hello`'s versions (`helloVersions`), the
-destinations a server
-refuses to connect to (`destinations` in `strict.json`), and WebVTT,
-HLS and PGS cases with their verdicts (`media.json`, MSFP Media's
-fetching section 3 and video section 6), music keys and titles with
-what a caller keeps (`music.json`, MSFP Media's music sections 2 and 3),
-and video titles with what a caller keeps (`video.json`, MSFP Media's
-video section 3), `play`, `progress` and `stop` requests and answers
-with deliveries, restarts, downloads and scans (`playback.json`, MSFP
-Media's playing and playback sections 5 to 8), and a group's events and
-the state they give, a code with a group, `group-join`'s proof and a
-sealed request mail (`groups.json`, groups sections 2, 3, 5 and 8.4).
+`hello`'s versions (`helloVersions`), the destinations a server refuses
+to connect to (`destinations` in `strict.json`), what MSFP decides of
+MSFP Media's playing and fetching as it carries them: the purpose scan,
+the refusal of a capability list, a scan answer's `scanBytes`, a scan
+ticket's names and reads, and what a caller keeps of `limits`
+(`playback.json` and `media.json`, playback sections 2, 5 and 8, media
+section 4.2), and a group's events and the state they give, a code with
+a group, `group-join`'s proof and a sealed request mail (`groups.json`,
+groups sections 2, 3, 5 and 8.4). MSFP Media's own cases, which hold
+under any carrier, are in
+[its vectors](https://github.com/msfp-io/msfp-media/tree/main/vectors).
 They come from the
 generator in [tools/vectors/](../../tools/vectors/), not from an
 implementation.

@@ -3,14 +3,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"slices"
 	"strings"
 )
 
-// verifyRevPlayback checks the playback vectors (MSFP Media's playing, as
-// MSFP's playback part carries it), read back from the files: each value
-// on its own.
+// verifyRevPlayback checks the playback vectors (what MSFP decides of
+// MSFP Media's playing as it carries it), read back from the files: each
+// value on its own.
 func verifyRevPlayback(read func(string) []byte) []error {
 	const file = "v0/playback.json"
 	var errs []error
@@ -158,27 +157,8 @@ func verifyRevPlayback(read func(string) []byte) []error {
 		names(list, n)
 	}
 	calls("requests", f.Requests)
-	calls("replaces", f.Replaces)
-	for _, c := range f.Replaces {
-		if c.Call != "play" || !strings.Contains(c.Text, `"replaces"`) {
-			bad("replaces %s: not a play with replaces", c.Name)
-		}
-	}
 	calls("deliveries", f.Deliveries)
-	calls("baseline", f.Baseline)
-	for _, c := range f.Baseline {
-		if c.Call != "play" || strings.Contains(c.Text, `"delivery"`) {
-			bad("baseline %s: not a play without delivery", c.Name)
-		}
-	}
-	calls("reports", f.Reports)
-	calls("downloads", f.Downloads)
 	calls("scans", f.Scans)
-	for _, c := range f.Downloads {
-		if c.Call == "play" && playbackPurposeOf(c.Text) != "download" {
-			bad("downloads %s: not a download", c.Name)
-		}
-	}
 	for _, c := range f.Scans {
 		if c.Call == "play" && playbackPurposeOf(c.Text) != "scan" {
 			bad("scans %s: not a scan", c.Name)
@@ -188,7 +168,7 @@ func verifyRevPlayback(read func(string) []byte) []error {
 	var n []string
 	for _, c := range f.Answers {
 		n = append(n, c.Name)
-		got, err := playbackKeepAnswer([]byte(c.Text), c.Asked, ctx.StreamRoot)
+		got, err := playbackKeepAnswer([]byte(c.Text), c.Asked, ctx.StreamRoot, msfpCarrier(0))
 		valid, _ := reason(err)
 		if valid != c.Valid || string(got) != c.Output {
 			bad("answers %s: the file says valid=%v, output %q; the rules give %v, %q", c.Name, c.Valid, c.Output, err, got)
@@ -212,49 +192,6 @@ func verifyRevPlayback(read func(string) []byte) []error {
 	names("answers", n)
 
 	n = nil
-	for _, c := range f.QueueEntries {
-		n = append(n, c.Name)
-		got, err := playbackQueueEntry(ctx, ctx.Limits, ctx.InUse, []byte(c.Request), []byte(c.Entry))
-		valid, _ := reason(err)
-		status, typ := playbackStatus(err)
-		if valid != c.Valid || string(got) != c.Output || status != c.Status || typ != c.Type {
-			bad("queueEntries %s: the file says valid=%v, output %q; the rules give %v, %q", c.Name, c.Valid, c.Output, err, got)
-		}
-		output("queueEntries "+c.Name, c.Output, c.Valid)
-	}
-	names("queueEntries", n)
-
-	n = nil
-	for _, c := range f.Refusals {
-		n = append(n, c.Name)
-		got := playbackReadRefusal(c.Status, c.Signed, []byte(c.Body), c.Purpose)
-		if string(playbackEncode(got)) != c.Output {
-			bad("refusals %s: the file says %s; the rules give %s", c.Name, c.Output, playbackEncode(got))
-		}
-		if !slices.Contains([]string{"asks again", "not playable", "busy now"}, got.Tells) || len(got.Instead) > 4 ||
-			len(got.Instead) > 0 && got.Tells != "asks again" || got.DropTitle && c.Status != 404 {
-			bad("refusals %s: %s out of the rules' forms", c.Name, c.Output)
-		}
-	}
-	names("refusals", n)
-
-	n = nil
-	for _, c := range f.Restarts {
-		n = append(n, c.Name)
-		r := playbackRestart(c.Reading, []byte(c.Request), c.Status, []byte(c.Answer), ctx.StreamRoot)
-		if r.Join != c.Valid || string(playbackEncode(r)) != c.Output {
-			bad("restarts %s: the file says valid=%v, output %q; the rules give %v, %s", c.Name, c.Valid, c.Output, r.Join, playbackEncode(r))
-		}
-		if (c.Status == 200) != (c.Answer != "") || (c.Status == 200) == (c.Type != "") {
-			bad("restarts %s: an answer goes with 200, a type with a refusal", c.Name)
-		}
-		if c.Valid && (c.Answer == "" || r.Offset != c.Reading.Offset) {
-			bad("restarts %s: a join without an answer, or at another byte", c.Name)
-		}
-	}
-	names("restarts", n)
-
-	n = nil
 	for _, c := range f.Limits {
 		n = append(n, c.Name)
 		got, err := playbackKeepLimits([]byte(c.Text))
@@ -266,18 +203,4 @@ func verifyRevPlayback(read func(string) []byte) []error {
 	}
 	names("limits", n)
 	return errs
-}
-
-// playbackBuiltName is a name fetching section 1 lets a viewer's server
-// build after <stream root><ticket>/ from a play answer.
-var playbackBuiltName = regexp.MustCompile(`^(master\.m3u8|file|(subtitles|ass|pictures)/s(0|[1-9][0-9]{0,2})|fonts/(0|[1-9][0-9]?))$`)
-
-// playbackPurposeOf is a play request's purpose ("play" when absent).
-func playbackPurposeOf(text string) string {
-	var o map[string]any
-	_ = json.Unmarshal([]byte(text), &o)
-	if p, ok := o["purpose"].(string); ok {
-		return p
-	}
-	return "play"
 }

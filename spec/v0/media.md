@@ -145,7 +145,10 @@ part of a copy, outside a watched playback
 - The viewer's server passes a `416` past the cap to its reader as a
   failed read.
 
-Test cases: `scans` in [vectors/v0/media.json](../../vectors/v0/media.json).
+Test cases: `names` (what a scan ticket opens) and `scans` in
+[vectors/v0/media.json](../../vectors/v0/media.json). The rest of
+fetching's cases are MSFP Media's, in
+[vectors/v0/fetching.json](https://github.com/msfp-io/msfp-media/blob/main/vectors/v0/fetching.json).
 
 ## 5. Security considerations
 

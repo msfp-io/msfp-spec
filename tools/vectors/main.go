@@ -3,9 +3,10 @@
 //	go run .          checks every vector file against the specification's rules
 //	go run . -write   writes vectors/history/test-draft-strict.json and vectors/v0/*.json, then checks
 //
-// The vectors check that every array MSFP Media's text points to is in
-// them: -media names where that text is (by default a checkout of
-// msfp-media beside this repository).
+// The check also reads the specification's text: every link it gives to
+// a vector file resolves, and every case group it names is in that file.
+// MSFP's text links to MSFP Media's vectors too: -media names a checkout
+// of msfp-media (by default beside this repository) to check those.
 //
 // vectors/history/test-draft.json is never written: it came from Overfin's code, and
 // implementations keep copies of it. The check regenerates it and
@@ -20,21 +21,12 @@ import (
 	"path/filepath"
 )
 
-// mediaSpec is MSFP Media's spec folder (-media).
-var mediaSpec string
-
-// readMediaSpec reads a file of MSFP Media's spec folder, or nil.
-func readMediaSpec(rel string) []byte {
-	b, _ := os.ReadFile(filepath.Join(mediaSpec, rel))
-	return b
-}
-
 func main() {
 	write := flag.Bool("write", false, "write the generated vector files before checking")
 	dir := flag.String("dir", "../../vectors", "the vectors folder")
-	media := flag.String("media", "../../../msfp-media/spec", "MSFP Media's spec folder (a checkout of msfp-io/msfp-media beside this one): the text that points to the vectors")
+	media := flag.String("media", "../../../msfp-media", "a checkout of msfp-io/msfp-media, beside this one: the vectors MSFP's text links to")
 	flag.Parse()
-	mediaSpec = *media
+	mediaRepo = *media
 
 	generated := []struct {
 		path string
@@ -48,8 +40,6 @@ func main() {
 		{"v0/revocation.json", genV0Revocation},
 		{"v0/strict.json", genV0Strict},
 		{"v0/media.json", genV0Media},
-		{"v0/music.json", genV0Music},
-		{"v0/video.json", genV0Video},
 		{"v0/groups.json", genV0Groups},
 		{"v0/playback.json", genV0Playback},
 	}
@@ -93,6 +83,12 @@ func main() {
 	// 2. Every value in the files checks out on its own, read back from
 	// the files rather than from the generator's variables.
 	for _, err := range verifyAll(read) {
+		fail("%v", err)
+	}
+
+	// 3. The text's links to the files, MSFP's and MSFP Media's, resolve,
+	// and the groups it names are in them.
+	for _, err := range verifyLinks(read, *dir) {
 		fail("%v", err)
 	}
 

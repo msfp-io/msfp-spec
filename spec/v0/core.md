@@ -2220,20 +2220,26 @@ generator also checks them.
 | `exchanges.json` | `pair` (B calls A, with commitments), `hello` (A to B, with `core`, `parts`, `certificates` and `address`; B answers without `playback`), a refused `hello` (signed `404`), and a `play` refused with `not-supported`; then B can't be called (section 7.5): its `hello` with `inbound: false`, its new address and `knownKey`, A's answer carrying `rotation` and `revocation` objects (A revokes "a" and rotates to "a2" in one action, sections 12.4, 12.6 and 12.7), and B's next `hello` with `knownKey` "a2", answered under "a2" |
 | `rotation.json` | A rotates from "a" to "a2", committing to "a3": the statement, both signatures, and the `rotate` exchange |
 | `revocation.json` | A revokes "a": the statement, its signature, and the `revoke` exchange |
-| `strict.json` | addresses and codes with their verdicts under core 0 (`https` only) |
-| `strict.json`, `destinations` | IP addresses a server connects to for a peer by default, or refuses (section 3.3) |
-| `strict.json`, `uncallableAddresses` | addresses of a server that can't be called, `https://msfp-<26>.invalid`, with their verdicts (section 5.2) |
-| `strict.json`, `languageCodes` | media servers' language codes and the tag sent for each, or none ([MSFP Media's base, section 2.4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#24-language-tags)) |
-| `strict.json`, `openTokens` | values of open fields, kept as tokens or dropped as malformed ([MSFP Media's base, section 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#3-unknown-values)) |
-| `strict.json`, `openMediaTypes` | values of media-type fields, kept as media types or dropped as malformed ([MSFP Media's base, section 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#3-unknown-values)) |
-| `strict.json`, `helloVersions` | `hello` bodies and the versions a receiver keeps of them, or a bad body: `"core":[0,2.5]` lists core 0, and an unknown member or part of `null` is ignored (sections 2.3 and 10.2) |
-| `strict.json`, `mediaNames` | file and track names in media URLs, with their verdicts ([MSFP Media's fetching, section 1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#1-the-urls)) |
-| `strict.json`, `bases` | values of the discovery document's `base`, with their verdicts (section 11) |
-| `playback.json` | `play`, `progress` and `stop` requests and answers, with deliveries, restarts, downloads and scans ([MSFP Media's playing](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md); scans: [playback section 8](playback.md#8-scan-access)) |
-| `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([MSFP Media's fetching, section 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#3-what-is-fetched), [MSFP Media's video, section 6](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#6-media)) |
-| `music.json` | music title keys and music titles, with their verdicts and what the caller keeps of each title ([MSFP Media's music, sections 2 and 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#2-title-keys)) |
-| `video.json` | video titles, with their verdicts and what the caller keeps of each, `video` included ([MSFP Media's video, section 3](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/video.md#3-titles)) |
+| [`strict.json`](../../vectors/v0/strict.json), `addresses` and `codes` | addresses and codes with their verdicts under core 0 (`https` only) |
+| [`strict.json`](../../vectors/v0/strict.json), `destinations` | IP addresses a server connects to for a peer by default, or refuses (section 3.3) |
+| [`strict.json`](../../vectors/v0/strict.json), `uncallableAddresses` | addresses of a server that can't be called, `https://msfp-<26>.invalid`, with their verdicts (section 5.2) |
+| [`strict.json`](../../vectors/v0/strict.json), `helloVersions` | `hello` bodies and the versions a receiver keeps of them, or a bad body: `"core":[0,2.5]` lists core 0, and an unknown member or part of `null` is ignored (sections 2.3 and 10.2) |
+| [`strict.json`](../../vectors/v0/strict.json), `bases` | values of the discovery document's `base`, with their verdicts (section 11) |
+| [`playback.json`](../../vectors/v0/playback.json), `requests`, `deliveries`, `answers`, `scans` and `limits` | what MSFP decides of MSFP Media's playing as it carries it: the purpose `scan`, the refusal of a capability list, a scan answer's `scanBytes`, a scan's limits and reads, and what a caller keeps of `limits` ([playback](playback.md) sections 2, 5 and 8) |
+| [`media.json`](../../vectors/v0/media.json), `names` and `scans` | the names a scan ticket opens, and the answers to a scan's fetches past its cap ([media section 4.2](media.md#42-scans)) |
 | `groups.json` | a group's events, valid and not, with their reasons and the state a copy computes; a code with a group; a request mail sealed with HPKE, with the recipient's key to open it ([groups](groups.md)) |
+
+MSFP Media's own cases, which hold under any carrier, are in
+[its vectors](https://github.com/msfp-io/msfp-media/tree/main/vectors):
+language codes and open values ([`base.json`](https://github.com/msfp-io/msfp-media/blob/main/vectors/v0/base.json)), pages, the
+titles request, opaque key parts and `local` images
+([`listing.json`](https://github.com/msfp-io/msfp-media/blob/main/vectors/v0/listing.json)), `play`, `progress` and `stop`
+([`playing.json`](https://github.com/msfp-io/msfp-media/blob/main/vectors/v0/playing.json); MSFP's refusal over a pairing's
+limits, `409` `stream-limit-reached`, is the carrier's refusal there),
+media names, ranges, the file's answers and HLS
+([`fetching.json`](https://github.com/msfp-io/msfp-media/blob/main/vectors/v0/fetching.json)), video titles, copies and the
+subtitle and font cases ([`video.json`](https://github.com/msfp-io/msfp-media/blob/main/vectors/v0/video.json)), and music
+([`music.json`](https://github.com/msfp-io/msfp-media/blob/main/vectors/v0/music.json)).
 
 The cases of [vectors/history/test-draft-strict.json](../../vectors/history/test-draft-strict.json)
 (keys, signatures, base64url, dates, integers, JSON) hold for core 0 too.
@@ -2655,7 +2661,7 @@ check of how Plex and Emby map onto MSFP
     effort, absent meaning the title's own sound
     ([MSFP Media's playing, sections 2.3 and 2.6](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/playing.md#26-choosing-the-copy-and-the-tracks));
     ISO 639-2 codes sent as ISO 639-1
-    ([MSFP Media's base, section 2.4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#24-language-tags), vectors `languageCodes`);
+    ([MSFP Media's base, section 2.4](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/base.md#24-language-tags), vectors `languageCodes` in [`base.json`](https://github.com/msfp-io/msfp-media/blob/main/vectors/v0/base.json));
     the tag "MusicBrainz Track Id" holds the recording MBID
     ([MSFP Media's music, section 1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/music.md#1-terms)); with `file`, the viewer's
     player selects `audioTrack` itself

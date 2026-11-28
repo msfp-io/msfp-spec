@@ -100,6 +100,13 @@ MSFP adds:
   no answer at all, means busy now, as
   [core section 8.3](core.md#83-limits-and-overload) says.
 
+Test cases: MSFP's, `requests` (the purpose scan, and a capability list
+refused), `deliveries` (a scan's file) and `answers` (a scan answer's
+scanBytes) in [vectors/v0/playback.json](../../vectors/v0/playback.json).
+The language's, which hold under any carrier, are in MSFP Media's
+[vectors/v0/playing.json](https://github.com/msfp-io/msfp-media/blob/main/vectors/v0/playing.json),
+MSFP's `409` `stream-limit-reached` being the carrier's refusal there.
+
 ## 3. progress
 
 `progress`, under the peer's base path, is
@@ -271,8 +278,8 @@ Between servers they are the owning server's choice, off by default
   only for titles of a peer whose `limits` allow downloads (`downloads`
   above 0).
 
-Test cases: `downloads` in
-[vectors/v0/playback.json](../../vectors/v0/playback.json).
+Test cases: `downloads` in MSFP Media's
+[vectors/v0/playing.json](https://github.com/msfp-io/msfp-media/blob/main/vectors/v0/playing.json).
 
 ## 8. Scan access
 

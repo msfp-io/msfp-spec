@@ -1,15 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 )
@@ -94,19 +90,6 @@ func (c core) answerMessage(nonce string, status int, contentType, body string) 
 	return strings.Join(lines, "\n")
 }
 
-// mediaType is the type/subtype of a Content-Type value, lowercase,
-// without parameters or white space; "-" for an absent header.
-func mediaType(ct string) string {
-	if i := strings.IndexByte(ct, ';'); i >= 0 {
-		ct = ct[:i]
-	}
-	ct = strings.ToLower(strings.TrimSpace(ct))
-	if ct == "" {
-		return "-"
-	}
-	return ct
-}
-
 func (c core) proof(secret, redeemer []byte, address string) string {
 	m := hmac.New(sha256.New, secret)
 	m.Write([]byte(c.pairing + "\n"))
@@ -114,99 +97,4 @@ func (c core) proof(secret, redeemer []byte, address string) string {
 	m.Write([]byte("\n"))
 	m.Write([]byte(address))
 	return b64.EncodeToString(m.Sum(nil))
-}
-
-// encode writes a vector file: two-space indents, no HTML escaping, a
-// final line feed.
-func encode(v any) []byte {
-	var buf bytes.Buffer
-	e := json.NewEncoder(&buf)
-	e.SetEscapeHTML(false)
-	e.SetIndent("", "  ")
-	if err := e.Encode(v); err != nil {
-		panic(err)
-	}
-	return buf.Bytes()
-}
-
-// openToken tells a token (MSFP Media base section 3): 1 to 32
-// characters of a-z 0-9 . _ -. The value of an open field is kept when
-// it is a token, known or not; when it isn't, an optional member is
-// dropped alone and a required one takes its holder with it. Every
-// part's open fields check their values with it.
-func openToken(s string) bool {
-	if len(s) < 1 || len(s) > 32 {
-		return false
-	}
-	for _, c := range []byte(s) {
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-') {
-			return false
-		}
-	}
-	return true
-}
-
-// openTokenValue is v when it is a string and a token (openToken),
-// else "": an open field keeps any token, known or not.
-func openTokenValue(v any) string {
-	if s, ok := v.(string); ok && openToken(s) {
-		return s
-	}
-	return ""
-}
-
-// openTokenReason is openToken with the reason a value isn't a token.
-func openTokenReason(s string) error {
-	if len(s) < 1 || len(s) > 32 {
-		return fmt.Errorf("%d bytes, not 1 to 32", len(s))
-	}
-	for _, c := range []byte(s) {
-		if !openToken(string(c)) {
-			return fmt.Errorf("byte %q outside a-z 0-9 . _ -", c)
-		}
-	}
-	return nil
-}
-
-// openMediaType tells a media type (MSFP Media base section 3): an
-// IANA-form media type, lowercase, exactly one /, no parameters, each
-// half starting with a letter or a digit, at most 127 characters of
-// a-z 0-9 . + - _ /. Fields that take one follow the rules of tokens:
-// kept when unknown, dropped as malformed otherwise. Every part's
-// media-type fields check their values with it.
-func openMediaType(s string) bool {
-	return openMediaTypeReason(s) == nil
-}
-
-// openMediaTypeValue is v when it is a string and a media type
-// (openMediaType), else "".
-func openMediaTypeValue(v any) string {
-	if s, ok := v.(string); ok && openMediaType(s) {
-		return s
-	}
-	return ""
-}
-
-// openMediaTypeReason is openMediaType with the reason a value isn't a
-// media type.
-func openMediaTypeReason(s string) error {
-	if len(s) < 1 || len(s) > 127 {
-		return fmt.Errorf("%d bytes, not 1 to 127", len(s))
-	}
-	for _, c := range []byte(s) {
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '+' || c == '-' || c == '_' || c == '/') {
-			return fmt.Errorf("byte %q outside a-z 0-9 . + - _ /", c)
-		}
-	}
-	top, sub, ok := strings.Cut(s, "/")
-	if !ok || strings.Contains(sub, "/") {
-		return errors.New("not exactly one /")
-	}
-	alnum := func(h string) bool {
-		return h != "" && (h[0] >= 'a' && h[0] <= 'z' || h[0] >= '0' && h[0] <= '9')
-	}
-	if !alnum(top) || !alnum(sub) {
-		return errors.New("a half that doesn't start with a letter or a digit")
-	}
-	return nil
 }

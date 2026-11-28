@@ -15,11 +15,6 @@ import (
 	"strconv"
 )
 
-type obj = map[string]any
-
-func str(o obj, k string) string { s, _ := o[k].(string); return s }
-func num(o obj, k string) int64  { f, _ := o[k].(float64); return int64(f) }
-
 func verifyAll(read func(string) []byte) []error {
 	var errs []error
 	bad := func(format string, a ...any) { errs = append(errs, fmt.Errorf(format, a...)) }
@@ -175,7 +170,6 @@ func verifyAll(read func(string) []byte) []error {
 	verdicts("history/test-draft-strict.json", "codes", func(x obj) error { _, err := readCode(str(x, "text"), draftCore.prefix, true); return err })
 	verdicts("v0/strict.json", "addresses", func(x obj) error { return checkAddress(str(x, "text"), false) })
 	verdicts("v0/strict.json", "codes", func(x obj) error { _, err := readCode(str(x, "text"), core0.prefix, false); return err })
-	verdicts("v0/strict.json", "mediaNames", func(x obj) error { return checkMediaName(str(x, "text")) })
 	verdicts("v0/strict.json", "bases", func(x obj) error { return checkBase(str(x, "text")) })
 	verdicts("v0/strict.json", "destinations", func(x obj) error { return checkDestination(str(x, "text")) })
 	verdicts("v0/strict.json", "uncallableAddresses", func(x obj) error { return checkUncallableAddress(str(x, "text")) })
@@ -186,66 +180,6 @@ func verifyAll(read func(string) []byte) []error {
 			bad("v0/strict.json: helloVersions %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
 		}
 	}
-	for _, v := range load("v0/strict.json")["languageCodes"].([]any) {
-		x := v.(obj)
-		got, err := sentTag(str(x, "text"))
-		if (err == nil) != (x["valid"] == true) || got != str(x, "output") {
-			bad("v0/strict.json: languageCodes %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "text"), x["valid"], str(x, "output"), err, got)
-		}
-	}
-	verdicts("v0/media.json", "hls", func(x obj) error { return checkPlaylist([]byte(str(x, "text"))) })
-	verdicts("v0/media.json", "pgs", func(x obj) error { return checkPGS(text(x)) })
-	for _, v := range load("v0/media.json")["webvtt"].([]any) {
-		x := v.(obj)
-		got, err := rebuildVTT(text(x))
-		if (err == nil) != (x["valid"] == true) || string(got) != str(x, "output") {
-			bad("v0/media.json: webvtt %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
-		}
-	}
-
-	mf := load("v0/music.json")
-	var libs []string
-	for _, l := range mf["libraries"].([]any) {
-		libs = append(libs, l.(string))
-	}
-	for _, v := range mf["keys"].([]any) {
-		x := v.(obj)
-		kind, err := checkMusicKey(str(x, "text"))
-		if (err == nil) != (x["valid"] == true) || kind != str(x, "kind") {
-			bad("v0/music.json: key %q: the file says valid=%v, kind %q; the rules give %v, %q", str(x, "text"), x["valid"], str(x, "kind"), err, kind)
-		}
-	}
-	for _, v := range mf["titles"].([]any) {
-		x := v.(obj)
-		got, err := keepMusicTitle([]byte(str(x, "text")), libs)
-		if (err == nil) != (x["valid"] == true) || string(got) != str(x, "output") {
-			bad("v0/music.json: title %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
-		}
-		if err == nil {
-			if e := checkIJSON(got); e != nil {
-				bad("v0/music.json: title %q: output: %v", str(x, "name"), e)
-			}
-		}
-	}
-
-	videoFile := load("v0/video.json")
-	var vlibs []string
-	for _, l := range videoFile["libraries"].([]any) {
-		vlibs = append(vlibs, l.(string))
-	}
-	for _, v := range videoFile["titles"].([]any) {
-		x := v.(obj)
-		got, err := keepVideoTitle([]byte(str(x, "text")), vlibs)
-		if (err == nil) != (x["valid"] == true) || string(got) != str(x, "output") {
-			bad("v0/video.json: title %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
-		}
-		if err == nil {
-			if e := checkIJSON(got); e != nil {
-				bad("v0/video.json: title %q: output: %v", str(x, "name"), e)
-			}
-		}
-	}
-
 	// vectors/v0/
 	keys := load("v0/keys.json")
 	checkKeys("v0/keys.json", keys["keys"].(obj), true)
@@ -390,11 +324,8 @@ func verifyAll(read func(string) []byte) []error {
 			bad("v0/groups.json: opened has no %s", k)
 		}
 	}
-	// The revision of version 0 (proposal 16): each part checks its own
-	// vectors in its own file (verify_rev_<part>.go).
-	errs = append(errs, verifyRevCatalog(read)...)
-	errs = append(errs, verifyRevVideo(read)...)
-	errs = append(errs, verifyRevMusic(read)...)
+	// MSFP's carrier vectors of MSFP Media: each part checks its own in
+	// its own file (verify_rev_<part>.go).
 	errs = append(errs, verifyRevMedia(read)...)
 	errs = append(errs, verifyRevPlayback(read)...)
 	return errs

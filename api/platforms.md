@@ -478,8 +478,8 @@ episode of a file by it).
 ## 5. What the spec should change or state
 
 All adopted by the owner on 2026-11-18, as proposed (point 8 with a
-region kept and 639-2/T codes too, and test cases, `languageCodes` in
-[vectors/v0/strict.json](../vectors/v0/strict.json); point 3's TMDB
+region kept and 639-2/T codes too, and test cases, `languageCodes` in MSFP Media's
+[vectors/v0/base.json](https://github.com/msfp-io/msfp-media/blob/main/vectors/v0/base.json); point 3's TMDB
 lookups in [video section 7](../spec/v0/video.md#7-security-considerations);
 point 11 in [core section 1](../spec/v0/core.md#1-overview-and-terms)).
 

@@ -111,15 +111,6 @@ const notFound = `{"type":"not-found","title":"Not found","status":404}` + "\n"
 
 // ---- vectors/v0-strict.json ----
 
-type verdict struct {
-	Name    string `json:"name,omitempty"`
-	Text    string `json:"text,omitempty"`
-	Hex     string `json:"hex,omitempty"`
-	Valid   bool   `json:"valid"`
-	Reason  string `json:"reason,omitempty"`
-	Comment string `json:"comment,omitempty"`
-}
-
 type sigVector struct {
 	Name      string `json:"name"`
 	Public    string `json:"public"`
@@ -140,13 +131,6 @@ type strictFile struct {
 	JSON       []verdict   `json:"json"`
 	Addresses  []verdict   `json:"addresses"`
 	Codes      []verdict   `json:"codes"`
-}
-
-func reason(err error) (bool, string) {
-	if err == nil {
-		return true, ""
-	}
-	return false, err.Error()
 }
 
 func keyVerdict(name string, pub []byte, comment string) verdict {
