@@ -23,6 +23,7 @@ from msfpmedia import load_vectors
 from msfpmedia.copies import check_previews_request, media_type, token, video_key
 from msfpmedia.media import serves
 from msfpmedia.listing import Malformed, kind_of, list_titles
+from msfpmedia.fake import ts_playlist
 from msfpmedia.playback import progress_seconds
 from msfpmedia.music import check_lyrics_request, check_queue_request, music_key
 
@@ -1195,6 +1196,9 @@ class FakeServer:
                                "purpose": purpose, "copy": cp, "title": t, "queue": [e["title"] for e in queue if e],
                                "queueProto": [e["protocol"] if e else "" for e in queue], "proto": proto,
                                "renditions": made, "sent": 0, "played": now, "kind": "playback",
+                               # MPEG-TS segments: the baseline's (MSFP Media playing 2.7), or a remux asked in mp2t
+                               "ts": (not delivery and "baselinemp4" not in self.faults)
+                               or (delivery == "remux" and str(j.get("mediaType", "")).endswith("/mp2t")),
                                "subtitles": served, "fontCount": fonts, "scanBytes": out.get("scanBytes"),
                                "sheetCount": -(-layout["tileCount"] // (layout["columns"] * layout["rows"])) if layout else 0}
         if old is not None:
@@ -1323,7 +1327,7 @@ class FakeServer:
         kind, proto = p["kind"], p.get("proto")
         if kind == "playback" and p["purpose"] in ("scan", "download"):
             kind = p["purpose"]
-        names = ["v0.m3u8", "init.mp4", "seg0.mp4", "seg-1.mp4"] + ["a%d.m3u8" % i for i in range(41)]
+        names = ["v0.m3u8", "init.mp4", "seg0.mp4", "seg-1.mp4", "seg0.ts", "seg-1.ts"] + ["a%d.m3u8" % i for i in range(41)]
         ticket = {"kind": kind, "protocol": proto, "subtitles": p.get("subtitles", []), "fontCount": p.get("fontCount", 0),
                   "sheetCount": p.get("sheetCount", 0), "queue": p.get("queueProto", []), "names": names}
         why = serves(ticket, name, TICKETS)
@@ -1343,8 +1347,12 @@ class FakeServer:
             body, ctype = self._master(p), "application/vnd.apple.mpegurl"
         elif name.endswith(".m3u8"):
             body, ctype = vec["a media playlist"]["text"].encode(), "application/vnd.apple.mpegurl"
+            if p.get("ts"):
+                body = ts_playlist(body)
             if "growing" in self.faults:
                 body = body.replace(b"#EXT-X-ENDLIST\n", b"")
+        elif name in ("seg0.ts", "seg-1.ts"):
+            body, ctype, ranged = (bytes([0x47]) + bytes(187)) * 20, "video/mp2t", True
         elif name in ("init.mp4", "seg0.mp4", "seg-1.mp4"):
             body, ctype, ranged = (bytes(range(256)) * 40)[:4000], "video/mp4", True
         elif name == "file":

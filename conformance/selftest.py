@@ -77,7 +77,8 @@ FAULTS = {
     "rangetoken": ["PB24"],         # an unknown range token refused with 400, not 409 (MSFP Media playing 2.7)
     "baseline": ["PB4"],            # the file served without delivery (MSFP Media playing 2.7: the baseline is HLS)
     "baselinecopy": ["PB4"],        # without delivery, a copy outside the baseline left unchanged (MSFP Media playing 2.7)
-    "baselinecap": ["PB4"],         # without delivery, a copy above the cap left unchanged (MSFP Media playing 2.7)
+    "baselinecap": ["PB4"],
+    "baselinemp4": ["M2"],          # the baseline served in mp4 segments (MSFP Media playing 2.7: MPEG-TS)         # without delivery, a copy above the cap left unchanged (MSFP Media playing 2.7)
     "renditions": ["PB17"],         # audioRenditions true in the answer, none in the playlist (MSFP Media playing 2.3)
     "container": ["T1"],            # a copy with container matroska, no mediaType (MSFP Media video 3.2: skipped by a caller)
     "nocodecs": ["T1"],             # an H.264 stream without codecs (MSFP Media video 3.5: required for the six)
