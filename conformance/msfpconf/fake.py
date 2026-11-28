@@ -1136,7 +1136,10 @@ class FakeServer:
                 method = "transcode"
         else:
             # The baseline (MSFP Media playing 2.7): left unchanged only when within it.
-            method = "remux" if self._within(cp, audio) or "baselinecopy" in self.faults else "transcode"
+            # Within the cap too (2.7): the lowest non-zero of the request's and the pairing's (2.2 step 6).
+            cap = min([x for x in (j.get("maxBitrateKbps", 0), lim["bitrateKbps"]) if x] or [0])
+            under = not cap or cp["size"] * 8 / cp["durationMs"] <= cap or "baselinecap" in self.faults
+            method = "remux" if (self._within(cp, audio) and under) or "baselinecopy" in self.faults else "transcode"
             if "baseline" in self.faults and "startPositionMs" in j and cp.get("parts", 1) < 2:
                 method = "direct"
         takes = method == "transcode" and not (tr.get("videoCodec") == "copy" and tr.get("audioCodec") == "copy")
