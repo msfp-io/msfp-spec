@@ -1,7 +1,8 @@
 # Proposal 19: MSFP Media
 
 Status: Adopted (2026-11-26), written (2026-11-27); vectors split
-(2026-11-27); conformance suite split, player mode (2026-11-28). Every choice below is the owner's, taken on
+(2026-11-27); conformance suite split, player mode, the capability
+list's open points settled (2026-11-28). Every choice below is the owner's, taken on
 2026-11-25 and 2026-11-26; where this text fills a gap the owner left to
 the writing, it says "writing choice". Written into a new spec,
 [msfp-media](https://github.com/msfp-io/msfp-media), and into spec/v0.
@@ -211,5 +212,10 @@ Version 0 is a draft; no servers run it outside the owner's.
 
 ## Open points
 
-None decided open. The capability list's shape is for the owner's
-review once written.
+None. The capability list's open points, found while building player
+mode and in a review of its checks, were settled by the owner on
+2026-11-28 (MSFP Media playing, open question 4): the cap wins over a
+match and binds the baseline, which is in MPEG-TS segments; a fact the
+listing leaves out is converted; required `codecs` and `maxRefFrames`
+off `h264` refused; `hdr`, `dv`, `transfers` and a lowercase 4CC said
+plainly.
