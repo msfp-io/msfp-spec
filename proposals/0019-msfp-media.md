@@ -1,13 +1,13 @@
 # Proposal 19: MSFP Media
 
 Status: Adopted (2026-11-26), written (2026-11-27); vectors split
-(2026-11-27). Every choice below is the owner's, taken on
+(2026-11-27); conformance suite split, player mode (2026-11-28). Every choice below is the owner's, taken on
 2026-11-25 and 2026-11-26; where this text fills a gap the owner left to
 the writing, it says "writing choice". Written into a new spec,
 [msfp-media](https://github.com/msfp-io/msfp-media), and into spec/v0.
 
 Touches: every part of spec/v0 except `groups`; the registry moves; the
-vectors moved after the text; the conformance suite follows (below). The
+vectors and the conformance suite moved after the text (below). The
 core's pairing, signing, keys and groups are untouched; so is `hello`'s
 list of parts.
 
@@ -182,7 +182,12 @@ server keys, rotation, revocation, groups and signed exchanges stay.
   base 2.1 and 2.2 gained their own cases, and four rules found while
   writing them (owner's, 2026-11-27): a body is an object, nested at
   most 64 levels, its numbers within a double's range, and hex never
-  empty. Next: the conformance suite's player mode.
+  empty. Third, the conformance suite: MSFP Media's checks in
+  msfp-media's suite, which a carrier runs through an adapter; MSFP's
+  suite runs them through its own (peer mode), and msfp-media's runs
+  them against a product's own API (player mode), from a binding file
+  the tester writes (its calls, paths, sign-in headers, stream root),
+  with the capability list's checks, which only player mode reaches.
 
 ## Alternatives considered
 
