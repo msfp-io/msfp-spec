@@ -158,6 +158,11 @@ it is). Between servers:
   *named* certificate (section 1); any other is refused.
 - **Never a browser.** A peer's ticket opens nothing for a browser
   (section 2), so a viewer's server can't hand one on by mistake.
+- **Proxies in front of the stream root.** A server whose stream root
+  sits behind a reverse proxy or a load balancer applies
+  [fetching section 4.1](https://github.com/msfp-io/msfp-media/blob/main/spec/v0/fetching.md#41-the-tickets-form)
+  to its access logs too: a peer's tickets, `scan` tickets included,
+  never stay in them.
 - **Scans** read a peer's copy outside a watched playback. Their cap
   (section 4.2) is the owning server's, enforced on every byte it sends,
   never left to the viewer's server.
