@@ -123,6 +123,11 @@ class MsfpCarrier(Carrier):
     every answer must be signed by the server (core 6.6)."""
 
     limit_refusal = (409, "stream-limit-reached")      # playback 6
+    carried_word = "signed"                             # core 6.6: every answer signed by the server
+    # MSFP's words in MSFP Media's checks' texts (msfpmedia.carrier.MSFP_WORDS): a pairing's limits, a peer, the
+    # viewer's and owning servers, a browser's headers refused on a fetch (playback 6, media 2).
+    limits_word, limits_holder, peer_word = "the pairing's", "a pairing", "this peer"
+    caller_word, source_word, refused_headers_word = "viewer's server", "owning server", "browser headers"
     refused_headers = (("an Origin header", "Origin", "https://example.org"),      # media 2: a browser's
                        ("Sec-Fetch-Site", "Sec-Fetch-Site", "same-origin"),
                        ("Sec-Fetch-Mode", "Sec-Fetch-Mode", "cors"))
